@@ -1,0 +1,8 @@
+## Interface: 120001
+## Title: DodoItemLevelOverlay
+## Notes: doodo的显示背包和身上装备等级的小助手
+## Author: Doodo
+## Version: 1.0
+## IconTexture: Interface\AddOns\DodoItemLevelOverlay\Media\Dodo.tga
+
+DodoItemLevelOverlay.lua

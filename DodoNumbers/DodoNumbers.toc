@@ -1,0 +1,10 @@
+## Interface: 120000
+## Title: DodoNumbers
+## Notes: doodo的伤害数字显示小助手
+## Author: Doodo
+## Version: 1.1.0
+## SavedVariables: DodoNumbersDB
+## IconTexture: Interface\AddOns\DodoNumbers\media\Dodo.tga
+
+Core.lua
+Options.lua

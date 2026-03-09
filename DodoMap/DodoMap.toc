@@ -1,0 +1,9 @@
+## Interface: 120001
+## Title: DodoMap
+## Notes: Shows player coordinates and lets you set temporary waypoints by coordinate.
+## Author: OpenAI
+## Version: 1.0.0
+## SavedVariables: DodoMapDB
+## IconTexture: Interface\AddOns\DodoMap\Media\Dodo
+
+DodoMap.lua

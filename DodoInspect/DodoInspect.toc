@@ -1,0 +1,8 @@
+## Interface: 120000
+## Title: DodoInspect
+## Notes: doodo的姓名版显示小助手
+## Author: Doodo
+## Version: 1.0.0
+## IconTexture: Interface\AddOns\DodoInspect\media\Dodo.tga
+
+DodoInspect.lua
