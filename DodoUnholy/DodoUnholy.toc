@@ -1,9 +1,11 @@
-## Interface: 120001
+## Interface: 120005
+## Group: Dodo
+## OptionalDeps: Dodo
 ## Title: DodoUnholy
 ## Notes: dodo的邪dk小助手
 ## Author: Doodo
 ## Version: 1.1.0
 ## SavedVariables: DodoUnholyDB
-## IconTexture: Interface\AddOns\DodoUnholy\media\Dodo.tga
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
 DodoUnholy.lua

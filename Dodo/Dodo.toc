@@ -1,0 +1,9 @@
+## Interface: 120005
+## Title: |cFF33FF99Dodo|r Pack
+## Notes: Doodo 系列插件整合包 —— 提供共享素材与公共库 (_G.Dodo)。下方子项可单独开关。
+## Author: Doodo
+## Version: 1.0.0
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## SavedVariables: DodoDB
+
+Shared.lua

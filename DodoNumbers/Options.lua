@@ -35,9 +35,9 @@ end
 
 local function CreateDropdown(parent, label, x, y, width)
   CreateLabel(parent, label, "GameFontNormal", x, y)
-  local dd = CreateFrame("Frame", nil, parent, "UIDropDownMenuTemplate")
-  dd:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 140, y + 10)
-  UIDropDownMenu_SetWidth(dd, width or 140)
+  local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+  dd:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 140, y + 12)
+  dd:SetWidth(width or 140)
   return dd
 end
 
@@ -78,7 +78,7 @@ function DN:InitOptions()
   local icon = panel:CreateTexture(nil, "ARTWORK")
   icon:SetSize(32, 32)
   icon:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
-  icon:SetTexture("Interface\\AddOns\\DodoNumbers\\media\\Dodo.tga")
+  icon:SetTexture("Interface\\AddOns\\Dodo\\Media\\Dodo.tga")
 
   local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetPoint("LEFT", icon, "RIGHT", 10, 0)
@@ -150,28 +150,14 @@ function DN:InitOptions()
     { value = 3, text = "弧线" },
   }
 
-  local function SetDropdownValue(value)
-    local db = DN.db
-    db.floatMode = value
+  floatDD:SetupMenu(function(_, rootDescription)
     for _, it in ipairs(FLOAT_MODES) do
-      if it.value == value then
-        UIDropDownMenu_SetText(floatDD, it.text)
-        break
-      end
-    end
-  end
-
-  UIDropDownMenu_Initialize(floatDD, function(self, level)
-    for _, it in ipairs(FLOAT_MODES) do
-      local info = UIDropDownMenu_CreateInfo()
-      info.text = it.text
-      info.value = it.value
-      info.func = function()
-        SetDropdownValue(it.value)
-      end
-      UIDropDownMenu_AddButton(info, level)
+      rootDescription:CreateRadio(it.text,
+        function() return (tonumber(DN.db.floatMode) or 1) == it.value end,
+        function() DN.db.floatMode = it.value end)
     end
   end)
+  floatDD:GenerateMenu()
 
   local function RefreshPreview()
     local db = DN.db
@@ -194,7 +180,7 @@ function DN:InitOptions()
     baseEB:SetText(tostring(db.basePx or 40))
     critEB:SetText(tostring(db.critMult or 2.0))
 
-    SetDropdownValue(tonumber(db.floatMode) or 1)
+    floatDD:GenerateMenu()
     dirEB:SetText(tostring(db.directionalScale or 0))
     durEB:SetText(tostring(db.rampDuration or 1.0))
     rndEB:SetText(tostring(db.randomXY or 0))

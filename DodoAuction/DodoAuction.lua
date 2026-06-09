@@ -243,7 +243,6 @@ DA.state = {
   rangeDays = DEFAULT_RANGE_DAYS,
   ordered = {},
   _chartRedrawScheduled = false,
-  pendingAutoRecordItemID = nil,
 }
 
 local function ScheduleChartRedraw()
@@ -336,28 +335,28 @@ end
 function DA:RunCommoditySearch(itemID, keepCurrentTab)
   if not itemID then return end
 
-  local entry = EnsureEntry(itemID)
+  local entry = DodoAuctionDB and DodoAuctionDB.items and DodoAuctionDB.items[itemID] or nil
+  if entry then
+    EnsureEntry(itemID) -- refresh name/icon for tracked items
+  end
 
   C_Timer.After(0, function()
     if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return end
 
-    if not keepCurrentTab then
-      if AuctionHouseFrameBuyTab and AuctionHouseFrameBuyTab.Click then
-        AuctionHouseFrameBuyTab:Click()
-      end
-    end
-
-    if self:TrySendExactSearch(itemID) then
-      return
-    end
-
-    -- 保持在出售页时，不要为了兜底搜索再强制切回购买页
     if keepCurrentTab then
+      -- Background search only: use API directly, don't navigate UI
+      self:TrySendExactSearch(itemID)
       return
     end
 
-    if entry and entry.name then
-      self:SearchItemByName(entry.name)
+    -- UI navigation: switch to Buy tab and search by name to drive AH UI
+    if AuctionHouseFrameBuyTab and AuctionHouseFrameBuyTab.Click then
+      AuctionHouseFrameBuyTab:Click()
+    end
+
+    local name = (entry and entry.name) or ((C_Item and C_Item.GetItemNameByID) and C_Item.GetItemNameByID(itemID) or nil)
+    if name then
+      self:SearchItemByName(name)
     end
   end)
 end
@@ -423,7 +422,6 @@ function DA:BeginBagRightClickFlow(itemID, bag, slot)
   if tracked then
     EnsureEntry(itemID)
     self.state.selectedItemID = itemID
-    self.state.pendingAutoRecordItemID = itemID
     self:RefreshList()
     self:RefreshChart()
     self:TryPostTrackedBagItem(bag, slot, itemID)
@@ -432,22 +430,19 @@ function DA:BeginBagRightClickFlow(itemID, bag, slot)
     self:RunCommoditySearch(itemID, true)
   else
     -- 未追踪商品：完全交还给暴雪默认出售逻辑，不要切去购买页
-    self.state.pendingAutoRecordItemID = nil
   end
 end
 
 function DA:TryAutoRecord(itemID)
   if not itemID then return end
-  if self.state.pendingAutoRecordItemID ~= itemID then return end
+  -- Auto-record for ANY tracked item when search results are available
   if not DodoAuctionDB or not DodoAuctionDB.items or not DodoAuctionDB.items[itemID] then
-    self.state.pendingAutoRecordItemID = nil
     return
   end
   if not HasEnoughLoadedDepthForOnePercent(itemID) then return end
 
-  self.state.pendingAutoRecordItemID = nil
   self.state.currentCommodityItemID = itemID
-  self:OnRecordClick()
+  self:AutoRecordTracked(itemID)
 end
 
 -- =========================
@@ -576,7 +571,6 @@ local function InitRow(self, row, rowsHost, index)
     if not row.itemID then return end
     DodoAuctionDB.items[row.itemID] = nil
     if self.state.selectedItemID == row.itemID then self.state.selectedItemID = nil end
-    if self.state.pendingAutoRecordItemID == row.itemID then self.state.pendingAutoRecordItemID = nil end
     self:RefreshList()
     self:RefreshChart()
   end)
@@ -653,42 +647,30 @@ function DA:EnsureUI()
   chartTitle:SetText("价格走势图")
   self.ui.chartTitle = chartTitle
 
-  local dd = CreateFrame("Frame", "DodoAuctionRangeDropdown", chartFrame, "UIDropDownMenuTemplate")
+  local RANGE_OPTIONS = {
+    { text = "1天",  days = 1 },
+    { text = "7天",  days = 7 },
+    { text = "30天", days = 30 },
+    { text = "全部", days = false }, -- false = 全部 (FilterByRange 把 falsy 当作不限范围)
+  }
+
+  local dd = CreateFrame("DropdownButton", "DodoAuctionRangeDropdown", chartFrame, "WowStyle1DropdownTemplate")
   dd:SetPoint("TOPRIGHT", chartFrame, "TOPRIGHT", -6, -2)
-  UIDropDownMenu_SetWidth(dd, 90)
-  UIDropDownMenu_SetText(dd, "7天")
+  dd:SetWidth(90)
   self.ui.rangeDropdown = dd
 
-  local function SetRange(days)
-    self.state.rangeDays = days
-    if days == 1 then
-      UIDropDownMenu_SetText(dd, "1天")
-    elseif days == 7 then
-      UIDropDownMenu_SetText(dd, "7天")
-    elseif days == 30 then
-      UIDropDownMenu_SetText(dd, "30天")
-    else
-      UIDropDownMenu_SetText(dd, "全部")
+  dd:SetupMenu(function(_, rootDescription)
+    for _, opt in ipairs(RANGE_OPTIONS) do
+      rootDescription:CreateRadio(opt.text,
+        function() return self.state.rangeDays == opt.days end,
+        function()
+          self.state.rangeDays = opt.days
+          dd:GenerateMenu()
+          self:RefreshChart()
+        end)
     end
-    self:RefreshChart()
-  end
-
-  UIDropDownMenu_Initialize(dd, function(_, level)
-    local info = UIDropDownMenu_CreateInfo()
-    info.notCheckable = true
-
-    info.text, info.func = "1天", function() SetRange(1) end
-    UIDropDownMenu_AddButton(info, level)
-
-    info.text, info.func = "7天", function() SetRange(7) end
-    UIDropDownMenu_AddButton(info, level)
-
-    info.text, info.func = "30天", function() SetRange(30) end
-    UIDropDownMenu_AddButton(info, level)
-
-    info.text, info.func = "全部", function() SetRange(nil) end
-    UIDropDownMenu_AddButton(info, level)
   end)
+  dd:GenerateMenu()
 
   local plot = CreateFrame("Frame", nil, chartFrame)
   plot:SetPoint("TOPLEFT", chartFrame, "TOPLEFT", 12, -34)
@@ -1002,23 +984,41 @@ function DA:RefreshRecordButton()
     return
   end
 
-  local entry = EnsureEntry(itemID)
-  self.ui.curLabel:SetText("当前商品：" .. NameWithStars(entry, itemID))
+  -- Only update existing entries; never create new ones here
+  local entry = DodoAuctionDB and DodoAuctionDB.items and DodoAuctionDB.items[itemID] or nil
+  if entry then
+    EnsureEntry(itemID) -- refresh name/icon/quality for tracked items
+  end
+
+  local displayName
+  if entry then
+    displayName = NameWithStars(entry, itemID)
+  else
+    local n = (C_Item and C_Item.GetItemNameByID) and C_Item.GetItemNameByID(itemID) or nil
+    displayName = n or ("item:" .. tostring(itemID))
+  end
+  self.ui.curLabel:SetText("当前商品：" .. displayName)
 
   local totalQty = (C_AuctionHouse.GetCommoditySearchResultsQuantity and C_AuctionHouse.GetCommoditySearchResultsQuantity(itemID)) or 0
   totalQty = tonumber(totalQty) or 0
   local num = (C_AuctionHouse.GetNumCommoditySearchResults and C_AuctionHouse.GetNumCommoditySearchResults(itemID)) or 0
 
-  if totalQty <= 0 or num <= 0 then
+  if entry or totalQty <= 0 or num <= 0 then
+    -- Already tracked (auto-records), or no data available
     self.ui.recordBtn:SetEnabled(false)
   else
+    -- New untracked item with data available: allow manual add
     self.ui.recordBtn:SetEnabled(true)
   end
 end
 
+-- Manual "记录" button: add a NEW item to the tracking list with its first data point
 function DA:OnRecordClick()
   local itemID = self.state.currentCommodityItemID
   if not itemID then return end
+
+  -- Only for untracked items (tracked items auto-record)
+  if DodoAuctionDB and DodoAuctionDB.items and DodoAuctionDB.items[itemID] then return end
 
   local avg, totalQty = ComputeCheapestOnePercentAvg(itemID)
   if not avg then
@@ -1033,9 +1033,26 @@ function DA:OnRecordClick()
     q = totalQty or 0,
   }
 
-  if not self.state.selectedItemID then
-    self.state.selectedItemID = itemID
-  end
+  self.state.selectedItemID = itemID
+  self:RefreshRecordButton()
+  self:RefreshList()
+  self:RefreshChart()
+end
+
+-- Auto-record a data point for an already-tracked item
+function DA:AutoRecordTracked(itemID)
+  if not itemID then return end
+  if not (DodoAuctionDB and DodoAuctionDB.items and DodoAuctionDB.items[itemID]) then return end
+
+  local avg, totalQty = ComputeCheapestOnePercentAvg(itemID)
+  if not avg then return end
+
+  local entry = EnsureEntry(itemID)
+  entry.records[#entry.records + 1] = {
+    t = Now(),
+    p = math.floor(avg + 0.5),
+    q = totalQty or 0,
+  }
 
   self:RefreshList()
   self:RefreshChart()
@@ -1066,7 +1083,6 @@ DA:SetScript("OnEvent", function(self, event, ...)
 
   if event == "AUCTION_HOUSE_CLOSED" then
     self.state.currentCommodityItemID = nil
-    self.state.pendingAutoRecordItemID = nil
     if self.ui and self.ui.panel then self.ui.panel:Hide() end
     return
   end

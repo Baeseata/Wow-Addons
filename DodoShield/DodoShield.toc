@@ -1,0 +1,12 @@
+## Interface: 120005
+## Group: Dodo
+## OptionalDeps: Dodo
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## Title: DodoShield
+## Notes: 进战斗按时间提醒,支持多方案
+## Author: Doodo
+## Version: 2.0.0
+## SavedVariables: DodoShieldDB
+
+Core.lua
+Options.lua

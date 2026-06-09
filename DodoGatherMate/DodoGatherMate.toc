@@ -1,11 +1,11 @@
 ## Interface: 120005
 ## Group: Dodo
 ## OptionalDeps: Dodo
-## Title: DodoMap
-## Notes: Shows player coordinates and lets you set temporary waypoints by coordinate.
+## Title: DodoGatherMate
+## Notes: 自动记录采集节点位置并在地图上显示
 ## Author: OpenAI
 ## Version: 1.0.0
-## SavedVariables: DodoMapDB
+## SavedVariables: DodoGatherMateDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
-DodoMap.lua
+DodoGatherMate.lua

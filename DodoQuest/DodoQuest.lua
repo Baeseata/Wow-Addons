@@ -349,18 +349,18 @@ local function refreshOptionsPanel()
     end
 end
 
-local function createCheckbox(parent, name, labelText, descriptionText, anchor, relativeTo, xOff, yOff, onClick)
+local function createCheckbox(parent, name, labelText, descriptionText, anchorTo, onClick)
     local check = CreateFrame("CheckButton", name, parent, "InterfaceOptionsCheckButtonTemplate")
-    check:SetPoint(anchor, relativeTo, anchor, xOff, yOff)
+    check:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", 0, -12)
 
-    local text = _G[name .. "Text"]
+    local text = check.Text or _G[name .. "Text"]
     if text then
         text:SetText(labelText)
     end
 
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", check, "BOTTOMLEFT", 4, -2)
-    desc:SetWidth(620)
+    desc:SetPoint("TOPLEFT", check, "BOTTOMLEFT", 26, -4)
+    desc:SetWidth(600)
     desc:SetJustifyH("LEFT")
     desc:SetText(descriptionText)
 
@@ -381,23 +381,20 @@ local function registerOptionsPanel()
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText(addonName)
+    title:SetText("DodoQuest")
 
     local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    subtitle:SetWidth(680)
+    subtitle:SetWidth(600)
     subtitle:SetJustifyH("LEFT")
-    subtitle:SetText("Lightweight auto quest helper for Retail. Holding Shift temporarily pauses all automation. Also supports older quest-list dialogue pages that show clickable quest names.")
+    subtitle:SetText("轻量级自动任务助手。按住 Shift 可以暂时暂停所有自动化操作。同时支持旧式任务列表对话页。")
 
     panel.enableCheck = createCheckbox(
         panel,
         addonName .. "EnableCheck",
-        "Enable automatic quest accept / turn-in",
-        "When enabled, DodoQuest automatically accepts normal quests, turns in completed quests, clicks single quest entries on older quest-list dialogue pages, and skips single safe gossip dialogue options.",
-        "TOPLEFT",
+        "启用自动接受/交付任务",
+        "开启后，DodoQuest 会自动接受普通任务、交付已完成的任务、点击旧式对话页中的单个任务条目，并跳过单一安全对话选项。",
         subtitle,
-        0,
-        -24,
         function(self)
             DodoQuestDB.enabled = self:GetChecked() and true or false
             refreshOptionsPanel()
@@ -407,23 +404,20 @@ local function registerOptionsPanel()
     panel.bestRewardCheck = createCheckbox(
         panel,
         addonName .. "BestRewardCheck",
-        "Automatically choose the most valuable reward",
-        "For quests with multiple choice rewards, automatically picks the option with the highest vendor sell value. If item price data is unavailable, it will wait instead of guessing.",
-        "TOPLEFT",
+        "自动选择最高价值奖励",
+        "对于有多个奖励可选的任务，自动选择卖店价格最高的物品。如果物品价格数据暂时不可用，会等待而不是随机选择。",
         panel.enableCheck.description,
-        -4,
-        -24,
         function(self)
             DodoQuestDB.autoBestReward = self:GetChecked() and true or false
             refreshOptionsPanel()
         end
     )
 
-    panel.note = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    panel.note:SetPoint("TOPLEFT", panel.bestRewardCheck.description, "BOTTOMLEFT", 0, -20)
-    panel.note:SetWidth(680)
-    panel.note:SetJustifyH("LEFT")
-    panel.note:SetText("Default values: automation enabled, auto-pick best reward disabled.")
+    local note = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    note:SetPoint("TOPLEFT", panel.bestRewardCheck.description, "BOTTOMLEFT", -26, -16)
+    note:SetWidth(600)
+    note:SetJustifyH("LEFT")
+    note:SetText("默认值：自动化已启用，自动选择奖励已关闭。")
 
     panel:SetScript("OnShow", refreshOptionsPanel)
 

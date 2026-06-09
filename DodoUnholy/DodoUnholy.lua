@@ -71,18 +71,35 @@ end
 
 local UNHOLY_SPEC_ID = 252
 
+-- Spec API: prefer C_SpecializationInfo namespace, fall back to deprecated globals (still present in 12.0.5)
+local function GetSpec()
+    if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
+        return C_SpecializationInfo.GetSpecialization()
+    end
+    if GetSpecialization then return GetSpecialization() end
+    return nil
+end
+
+local function GetSpecInfo(specIndex)
+    if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
+        return C_SpecializationInfo.GetSpecializationInfo(specIndex)
+    end
+    if GetSpecializationInfo then return GetSpecializationInfo(specIndex) end
+    return nil
+end
+
 function DodoUnholy:IsUnholyDeathKnight()
     local _, classTag = UnitClass("player")
     if classTag ~= "DEATHKNIGHT" then
         return false
     end
 
-    local specIndex = GetSpecialization and GetSpecialization()
+    local specIndex = GetSpec()
     if not specIndex then
         return false
     end
 
-    local specID = GetSpecializationInfo and GetSpecializationInfo(specIndex)
+    local specID = GetSpecInfo(specIndex)
     return specID == UNHOLY_SPEC_ID
 end
 

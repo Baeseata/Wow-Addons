@@ -9,7 +9,7 @@ DodoInspectDB = DodoInspectDB or {
   fontSize = 20,
   offsetX = 0,
   offsetY = -16,
-  twoLines = fause,
+  twoLines = false,
 }
 
 local function Round(x)
@@ -60,6 +60,25 @@ local function HideUI()
 end
 
 -- =========================
+-- Spec API helpers (prefer C_SpecializationInfo, fall back to deprecated globals — still present in 12.0.5)
+-- =========================
+local function GetInspectSpec(unit)
+  if C_SpecializationInfo and C_SpecializationInfo.GetInspectSpecialization then
+    return C_SpecializationInfo.GetInspectSpecialization(unit)
+  end
+  if GetInspectSpecialization then return GetInspectSpecialization(unit) end
+  return nil
+end
+
+local function GetSpecInfoByID(specID)
+  if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfoByID then
+    return C_SpecializationInfo.GetSpecializationInfoByID(specID)
+  end
+  if GetSpecializationInfoByID then return GetSpecializationInfoByID(specID) end
+  return nil
+end
+
+-- =========================
 -- Data getters
 -- =========================
 local function GetLocalizedRaceClass()
@@ -69,10 +88,9 @@ local function GetLocalizedRaceClass()
 end
 
 local function GetInspectSpecName()
-  if not GetInspectSpecialization then return nil end
-  local specID = GetInspectSpecialization("target")
+  local specID = GetInspectSpec("target")
   if not specID or specID <= 0 then return nil end
-  local _, name = GetSpecializationInfoByID(specID) -- localized
+  local _, name = GetSpecInfoByID(specID) -- localized
   return name
 end
 
@@ -93,7 +111,7 @@ local function GetInspectHeroTalentName()
     return nil
   end
 
-  local specID = GetInspectSpecialization and GetInspectSpecialization("target") or nil
+  local specID = GetInspectSpec("target")
   if not specID or specID <= 0 then return nil end
 
   local treeID = C_ClassTalents.GetTraitTreeForSpec and C_ClassTalents.GetTraitTreeForSpec(specID)

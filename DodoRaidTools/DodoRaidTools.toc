@@ -1,0 +1,11 @@
+## Interface: 120005
+## Group: Dodo
+## OptionalDeps: Dodo
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## Title: DodoRaidTools
+## Notes: doodo的团本辅助工具
+## Author: Doodo
+## Version: 0.5.0
+## SavedVariables: DodoRaidToolsDB
+
+Core.lua

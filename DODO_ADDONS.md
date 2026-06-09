@@ -2,8 +2,8 @@
 
 > 个人自用魔兽世界插件集合。所有 Dodo 插件由 Baeseata 维护，使用粉色 D 图标 (Dodo.tga)。
 > GitHub: https://github.com/Baeseata/Wow-Addons
-> 游戏版本: 正式服 至暗之夜 (The War Within) 12.0.1
-> Interface: 120001 (部分早期插件标注 120000)
+> 游戏版本: 正式服 至暗之夜 (Midnight) 12.0.5
+> Interface: 120005
 
 ---
 
@@ -140,7 +140,8 @@
 ## 通用技术模式
 
 - **语言**: Lua (WoW API)，所有UI文本中文本地化
-- **图标**: 粉色 D 图标 `Dodo.tga`，放在各插件 Media/ 目录下
+- **整合包结构**: 父插件 `Dodo`（`Dodo/` 目录）提供共享素材 `Dodo/Media/` 与公共库 `_G.Dodo`（`Shared.lua`，含 `Dodo.icon` / `Dodo.Media` / `Dodo.CopyDefaults` / `Dodo.Clamp` / `Dodo.Print` / `Dodo.Money` 等）；各子插件 TOC 加 `## Group: Dodo`，在插件列表中归入「Dodo 插件包」之下
+- **图标**: 粉色 D 图标 `Dodo.tga`，统一放在共享目录 `Dodo/Media/`，各子插件复用同一份（不再各存副本）
 - **数据持久化**: SavedVariables + 深拷贝机制保护已有数据
 - **命名规范**: 插件名以 `Dodo` 开头，全局变量/函数以插件名为前缀
 - **API 兼容**: 多数插件同时支持 12.0 新 API 和旧版 API
@@ -153,6 +154,6 @@
 ## 开发计划 & 备注
 
 - 所有 Dodo 插件为个人自用，按需迭代
-- 新插件命名继续以 `Dodo` 开头，使用 `Dodo.tga` 图标
+- 新插件命名继续以 `Dodo` 开头，TOC 加 `## Group: Dodo` 归入整合包，复用 `Dodo/Media/Dodo.tga` 图标与 `_G.Dodo` 公共库
 - Plater 为外部第三方插件，不做修改
 - 本地文件夹为准，GitHub repo 可能不是最新状态

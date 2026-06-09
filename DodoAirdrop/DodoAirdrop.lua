@@ -3,8 +3,7 @@ local addon = CreateFrame("Frame")
 _G[addonName] = addon
 
 local DB
-local ICON_SIZE = 32
-local DRAG_RADIUS = 80
+local ICON_SIZE = 31
 local DUPLICATE_WINDOW = 60
 
 local DEFAULTS = {
@@ -236,9 +235,10 @@ minimapButton.border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
 local function updateMinimapButtonPosition()
+    local radius = (Minimap:GetWidth() / 2) + 6
     local angle = math.rad(DB.minimap.angle or 210)
-    local x = math.cos(angle) * DRAG_RADIUS
-    local y = math.sin(angle) * DRAG_RADIUS
+    local x = math.cos(angle) * radius
+    local y = math.sin(angle) * radius
     minimapButton:ClearAllPoints()
     minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end

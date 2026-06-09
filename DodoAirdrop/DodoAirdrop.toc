@@ -1,8 +1,11 @@
-## Interface: 120001
+## Interface: 120005
+## Group: Dodo
+## OptionalDeps: Dodo
 ## Title: DodoAirdrop
 ## Notes: Tracks war mode airdrop talking head alerts and records last seen times per map.
 ## Author: OpenAI
 ## Version: 0.3.0
 ## SavedVariables: DodoAirdropDB
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
 DodoAirdrop.lua
