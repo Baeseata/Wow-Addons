@@ -60,20 +60,21 @@
 - HUD: 蓄力条(CastingBar 材质 + spark)、击球点圆盘(白球底)、抬杆侧视球杆模型、杆数/剩球 [已验证]
 - 球 + 球桌材质(渐变球面/高光、木框/绿绒渐变、球带、开球线/置球点)[已验证]
 - 目标球高亮(最小号在台球脉冲变亮)[已验证]
-- **严格 9 球规则 + 自由球 + 9 号非法进袋重摆 + 存读档(1 档)+ 最佳杆数记录** [**已写,尚未实机测试** <- 当前断点]
+- **严格 9 球规则 + 自由球 + 9 号非法进袋重摆 + 存读档(1 档)+ 最佳杆数记录** [**已写,尚未实机测试**]
+- **袋口"喉咙"吸入修复**: 球漏过库边线进入无库袋口区会被拉向袋心落袋(`POCKET_PULL` + `MouthPocket` + `ShotActive` 库外保活),治"母球卡在角袋颚口/库边外"的死区 bug [已写,待实机验证]。⚠️ **行为变化**: 蹭进袋口喉咙的球现在一律落袋 → 母球进喉咙 = scratch(自由球),不再"挂"在库上(符合真实台球)。
+- **HUD "返回开始" 按钮**: 随时回开始界面(打完一局也用它);开始面板抬到 HUD 之上 + 不透明 + 吃鼠标,避免 HUD 透底(`G.ReturnToMenu` + `DP.ShowStartScreen`)[已写,待实机验证]。
 
-**最近一步改了**: Physics.lua(firstHit/railAfter 记录)、Game.lua(整体重写加规则/自由球/存读档)、Core.lua(开始界面"继续"按钮)。
+**最近一步改了(本 session)**: Physics.lua(袋口吸入 `POCKET_PULL`/`MouthPocket`,`ShotActive` 库外保活)、Game.lua(`G.ReturnToMenu` + HUD"返回开始"按钮)、Core.lua(开始面板遮挡 HUD + 暴露 `DP.ShowStartScreen`)。上一 session: Physics(firstHit/railAfter)、Game(规则/自由球/存读档重写)、Core("继续"按钮)。
 
 ---
 
 ## 5. 待办 / 下一步 (TODO)
 
-1. **【最优先】实机测试上一步的规则 + 存读档**(还没测过):
-   - 碰错球 / 空杆 / scratch -> 是否罚 +1 杆(共 2)+ 进自由球放置?
-   - 自由球摆放手感(半透明=放不下)、左键确认?
-   - 先合法碰最小号 + 合法进 9 号 -> 判胜 + 记录最佳杆数(破纪录提示)?犯规进 9 号 -> 9 号重摆?
-   - "保存" -> 关窗 -> 开始界面"继续上次进度" -> 局面恢复?
-   - 任何 Lua 报错都要记下来修。
+1. **【最优先】实机验证(都还没测过)**:
+   - **袋口吸入**(本 session): 把母球/目标球往**角袋、中袋喉咙**蹭 -> 是否干脆落袋、不再卡库?母球进喉咙是否判 scratch + 自由球?台面上正常贴近袋口的球是否**不**被误吸?太"吸"或还卡就调 `POCKET_PULL`(Physics 顶部,现 1400)。
+   - **返回开始按钮**(本 session): 游戏中 / 打赢后点"返回开始" -> 是否干净回菜单(无 HUD 透底)、最佳杆数刷新?
+   - **规则 + 存读档**(上一 session 写的): 碰错球 / 空杆 / scratch -> 罚 +1 杆 + 自由球?合法进 9 号判胜 + 记录最佳?犯规进 9 号重摆?"保存" -> "继续上次进度" -> 局面恢复?
+   - 任何 Lua 报错都记下来修。
 2. **物理手感继续调**(常数见 §6),按实测反馈。
 3. **可选润色(未开始)**:
    - 音效(出杆/碰球/进袋/撞库,复用魔兽自带 SoundKit,带静音开关)
@@ -89,7 +90,7 @@
 **Physics.lua**(顶部常量):
 - `ROLL_DECEL = 135` 滚动摩擦减速(越小滚越远)
 - `WALL_REST = 0.72` 库边反弹系数 · `BALL_REST = 0.96` 球-球反弹
-- `MAX_SPEED = 1500` 满力球速
+- `MAX_SPEED = 1500` 满力球速 · `POCKET_PULL = 1400` 袋口喉咙吸力(球漏过库边线就被拉进袋;嫌太吸调小,嫌还卡调大)
 - `SPINF_ACCEL = 480` 跟/缩杆力度(缩杆回滚靠它)· `SPINF_DECAY = 0.5` 跟/缩杆衰减(越小回滚越久越夸张)
 - `SPIN_DECAY = 0.7` 侧塞衰减 · `THROW_K = 0.05` 目标球 throw 角 · `ENGLISH_K = 160` 侧塞吃库切向
 - `CURVE_ACCEL = 2600` masse 弧线弯度 · `CURVE_DECAY = 1.0` 弧线衰减
@@ -115,6 +116,7 @@
 - **键盘捕获**: `EnableKeyboard(true)` + OnKeyDown 里 `SetPropagateKeyboardInput(false)` 吞键;ESC 那一下 propagate(true) 放行关窗。进战必须 `EnableKeyboard(false)` 放开(10.1.5 起非安全代码战斗中不能调 SetPropagateKeyboardInput)。
 - **度数符号 °**: Lua 字符串里用字节转义 `\194\176`(UTF-8 的 °),别直接打字符。
 - **9 球规则裁定**(EndShot): 优先级 进袋 > 空杆 > 未先碰最小号 > 碰球后无球到库且未进球。合法进 9 号才判胜,犯规进 9 号 RespotNine 重摆。
+- **12.0 机密值(Secret Values)**: `UnitStat`/`GetCritChance`/`GetCombatRatingBonus` 等战斗属性 API **进战斗后返回 secret 值**:插件能存能传能 `string.format`,但**不能比较 / 加减 / `math.floor` / `tostring`**(否则报 "a secret number value, while execution tainted")。检测用 `issecretvalue(v)`;无法转回普通数字,只能跳过/占位。本 session 因此修了**同仓库 DodoStatHUD**(进战每帧刷屏报错):把属性计算 `pcall` 包住,战斗中算不出就沿用脱战前的值、脱战恢复。DodoPool 不读战斗属性,暂不受影响;但**任何读玩家战斗数值的功能都得防这条**。
 
 ---
 

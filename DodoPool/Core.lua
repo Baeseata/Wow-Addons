@@ -45,6 +45,10 @@ end
 
 local function ShowStartScreen()
     if playArea then playArea:Hide() end
+    -- 盖在 HUD 之上(HUD 控件后建、层级更高,这里把开始面板抬到它们之上完整遮住)
+    if startPanel and mainFrame then
+        startPanel:SetFrameLevel((mainFrame:GetFrameLevel() or 0) + 20)
+    end
     -- 刷新最佳杆数显示
     if startPanel and startPanel.recordText then
         local best = db and db.bestStrokes
@@ -60,6 +64,7 @@ local function ShowStartScreen()
     end
     startPanel:Show()
 end
+DP.ShowStartScreen = ShowStartScreen
 
 -- ============================================================
 -- 主窗口
@@ -110,12 +115,13 @@ end
 
 local function CreateStartPanel()
     local p = CreateFrame("Frame", nil, mainFrame)
-    p:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 12, -30)
+    p:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 12, -26)
     p:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -12, 12)
+    p:EnableMouse(true)   -- 吃掉点击,挡住下层 HUD 按钮(从牌桌返回菜单时盖在 HUD 之上)
 
     local bg = p:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0.06, 0.10, 0.07, 0.92)
+    bg:SetColorTexture(0.06, 0.10, 0.07, 1)
 
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     title:SetPoint("TOP", p, "TOP", 0, -50)

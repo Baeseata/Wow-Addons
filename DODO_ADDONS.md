@@ -20,6 +20,7 @@
 | DodoItemLevelOverlay | 装备/背包装等显示 | 450 | 品质分级着色、BOE检测、中文部位标签 |
 | DodoMap | 坐标显示与标记 | 499 | 实时坐标、坐标输入标记、设置面板 |
 | DodoNumbers | 战斗数字自定义 | 413 | CVar 管理、缩放/暴击/行为控制 |
+| DodoPool *(开发中)* | 单人九球台球小游戏 | ~1450 | 自带2D物理引擎、瞄准蓄力、旋转、9球规则;依赖 Dodo |
 | DodoQuest | 任务自动化 | 393 | 自动接交任务、最优奖励选择、Shift暂停 |
 | DodoRaidTools | 团本计时辅助 | 334 | 史诗宇宙之冕自动阶段计时(ENCOUNTER_TIMELINE 事件) |
 | DodoShield | 进战定时提醒 | 586 | 多方案、按秒数文字/声音提醒(如放罩子) |
@@ -120,6 +121,16 @@
   - 一键还原按钮
   - **文件结构**: Core.lua (CVar管理) + Options.lua (UI面板)
 
+### DodoPool (开发中 / v0.1.0)
+- **SavedVariables**: DodoPoolDB
+- **命令**: `/pool`, `/dodopool`
+- **依赖**: `Dodo` 父插件(`_G.Dodo`)
+- **功能**: 单人 9 球台球小游戏(WIP)
+  - 自带 2D 物理引擎:碰撞 / 库边 / 摩擦 / 落袋 / 旋转(跟杆缩杆、侧塞、masse 弧线)
+  - 鼠标拖拽瞄准蓄力,WASD 击球点,QE 抬杆;动态虚线预测;进战自动暂停
+  - 严格 9 球规则 + 自由球 + 存读档(1 档)+ 最佳杆数;袋口吸入防卡库
+  - 文件:Geometry / Render / Physics / Game / Core;开发上下文见 `DodoPool/CLAUDE.md`
+
 ### DodoQuest (v1.2.0)
 - **SavedVariables**: DodoQuestDB
 - **功能**: 轻量级任务自动化
@@ -180,6 +191,7 @@
 - **数据持久化**: SavedVariables + 深拷贝机制保护已有数据
 - **命名规范**: 插件名以 `Dodo` 开头，全局变量/函数以插件名为前缀
 - **API 兼容**: 多数插件同时支持 12.0 新 API 和旧版 API
+- **12.0 机密值(Secret Values)**: `UnitStat`/`GetCritChance`/`GetCombatRatingBonus` 等战斗属性 API 进战斗后返回 secret 值,插件不能比较/运算(会报 "a secret number value, while execution tainted")。读玩家战斗数值的功能要用 `issecretvalue()` 检测、`pcall` 兜底,战斗中沿用脱战前的值(DodoStatHUD 已按此修)
 - **错误处理**: pcall 包裹、安全类型转换
 - **设置面板**: 使用 Settings.RegisterCanvasLayoutCategory 集成到游戏设置
 - **小地图按钮**: 极坐标定位，Shift+左键拖动

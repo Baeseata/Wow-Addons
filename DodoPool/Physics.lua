@@ -28,6 +28,10 @@ local SPIN_DECAY  = 0.7     -- 侧塞(spinS)行进中衰减(每秒)
 local SPINF_ACCEL = 480     -- 跟杆/缩杆:沿出杆方向施力(缩杆够劲母球会回滚)
 local SPINF_DECAY = 0.5     -- 跟杆/缩杆衰减(慢些,撑到停球后还有劲回滚)
 
+-- 袋口"喉咙"吸力(加速度):球漏过库边线进了无库的袋口区后被拉向袋心落袋,
+-- 治"母球停在袋口颚口/库边外卡住"的死区 bug。需 > 摩擦才能把停住的球收进袋。
+local POCKET_PULL = 1400
+
 -- 落袋
 local function InPocket(b)
     local PR = geo.POCKET_R
@@ -48,6 +52,19 @@ local function NearPocket(b)
     return false
 end
 
+-- 袋口区域内最近的袋:返回袋心 px,py + 距离平方;不在任何袋口区返回 nil。
+-- 供"袋口喉咙吸入"用:球漏进袋口(库已关)就拉向最近袋心。
+local function MouthPocket(b)
+    local R2 = (geo.POCKET_R * 1.5) ^ 2
+    local best, bx, by
+    for _, p in ipairs(geo.Pockets()) do
+        local dx, dy = p.x - b.x, p.y - b.y
+        local d2 = dx * dx + dy * dy
+        if d2 <= R2 and (not best or d2 < best) then best, bx, by = d2, p.x, p.y end
+    end
+    return bx, by, best
+end
+
 function Physics.AnyMoving(balls)
     for _, b in ipairs(balls) do
         if b.active and (b.vx * b.vx + b.vy * b.vy) > STOP_V * STOP_V then
@@ -66,6 +83,11 @@ function Physics.ShotActive(balls)
             if (b.spinF or 0) > 0 then eff = eff * 0.5 end
             if eff > ROLL_DECEL * 1.1 then return true end
         end
+    end
+    -- 有球漏到库边线外(卡在袋口喉咙):继续模拟,让袋口吸力把它收进袋,别让这一杆就此结束
+    local W, H, R = geo.FELT_W, geo.FELT_H, geo.BALL_R
+    for _, b in ipairs(balls) do
+        if b.active and (b.x < R or b.x > W - R or b.y < R or b.y > H - R) then return true end
     end
     return false
 end
@@ -161,6 +183,17 @@ function Physics.Step(balls, dt, out)
                     if b.spinF > 0 then acc = acc * 0.5 end   -- 跟杆温和、缩杆够劲
                     b.vx = b.vx + (b.shotDirX or 0) * acc * h
                     b.vy = b.vy + (b.shotDirY or 0) * acc * h
+                end
+
+                -- 袋口喉咙吸入:球已漏过库边线(进了无库的袋口区)-> 拉向最近袋心落袋,
+                -- 杜绝卡在袋口颚口/库边外的死区(袋口区库是关的,不会把它弹回来)
+                if b.x < R or b.x > W - R or b.y < R or b.y > H - R then
+                    local mpx, mpy, md2 = MouthPocket(b)
+                    if mpx and md2 and md2 > 0.0001 then
+                        local d = math.sqrt(md2)
+                        b.vx = b.vx + (mpx - b.x) / d * POCKET_PULL * h
+                        b.vy = b.vy + (mpy - b.y) / d * POCKET_PULL * h
+                    end
                 end
 
                 -- 滚动摩擦(用施力后的实时速度,否则缩杆反向那一下会被旧速度错误抹掉)

@@ -241,6 +241,13 @@ local function EnsureHUD()
     saveBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -22, -78)
     saveBtn:SetText("保存")
     saveBtn:SetScript("OnClick", function() G.Save() end)
+
+    -- 返回开始界面(随时可回菜单;打完一局后用它回开始画面)
+    local menuBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    menuBtn:SetSize(80, 22)
+    menuBtn:SetPoint("TOPRIGHT", saveBtn, "BOTTOMRIGHT", 0, -4)
+    menuBtn:SetText("返回开始")
+    menuBtn:SetScript("OnClick", function() if G.ReturnToMenu then G.ReturnToMenu() end end)
 end
 
 local function UpdateHUD()
@@ -647,6 +654,17 @@ end)
 function G.OnWindowHidden()
     G.paused = false
     G.SetKeyboard(false)
+end
+
+-- 返回开始界面:停掉瞄准/键盘,交给 Core 显示开始面板(盖在 HUD 之上)
+function G.ReturnToMenu()
+    G.lmbDown = false
+    SetPowerBar(0)
+    HideAimVisuals()
+    G.SetKeyboard(false)
+    if G.winText then G.winText:Hide() end
+    if G.placeHint then G.placeHint:Hide() end
+    if DP.ShowStartScreen then DP.ShowStartScreen() end
 end
 
 -- ------------------------------------------------------------

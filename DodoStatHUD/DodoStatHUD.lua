@@ -136,14 +136,23 @@ local function GetCurrentPrimaryStatInfo()
 end
 
 local function EnsurePrimaryBaseline()
-    local key, _, current = GetCurrentPrimaryStatInfo()
+    -- 12.0 机密值:战斗中主属性读不到(secret),先不设基准(脱战后会再设)
+    local ok, key, _, current = pcall(GetCurrentPrimaryStatInfo)
+    if not ok or not key then return end
     if not DB.baselines[key] or DB.baselines[key] <= 0 then
         DB.baselines[key] = math.max(current, 1)
     end
 end
 
 local function SaveCurrentPrimaryBaseline()
-    local key, label, current = GetCurrentPrimaryStatInfo()
+    -- 战斗中主属性是机密值,无法运算 → 提示脱战后再设(避免报错)
+    local ok, key, label, current = pcall(GetCurrentPrimaryStatInfo)
+    if not ok or not key then
+        if optionsPanel and optionsPanel.baselineText then
+            optionsPanel.baselineText:SetText("战斗中无法读取主属性,请脱战后再保存基准。")
+        end
+        return
+    end
     DB.baselines[key] = math.max(current, 1)
 
     if optionsPanel and optionsPanel.baselineText then
@@ -401,7 +410,17 @@ local function UpdateHUD()
             local textFS = row.text
             local arrowFS = row.arrow
 
-            local text, roundedValue = GetDisplayDataForStat(statKey)
+            -- 12.0 机密值:战斗中属性 API 返回 secret,无法比较/运算。
+            -- pcall 包住计算,战斗中算不出来就沿用上次的值(脱战自动恢复实时),避免每帧报错。
+            DodoStatHUD.lastDisplay = DodoStatHUD.lastDisplay or {}
+            local ok, text, roundedValue = pcall(GetDisplayDataForStat, statKey)
+            if ok then
+                DodoStatHUD.lastDisplay[statKey] = { text = text, value = roundedValue }
+            else
+                local cached = DodoStatHUD.lastDisplay[statKey]
+                text = (cached and cached.text) or "--"
+                roundedValue = cached and cached.value
+            end
             local r, g, b = GetStatColor(statKey)
             local trend = UpdateTrendForStat(statKey, roundedValue or 0)
 
@@ -484,12 +503,14 @@ local function RefreshOptionsPanel()
     end
 
     if optionsPanel.baselineText then
-        local key, label = GetCurrentPrimaryStatInfo()
-        local base = DB.baselines[key]
-        if base and base > 0 then
-            optionsPanel.baselineText:SetText(string.format("当前基准：%s %d", label, base))
-        else
-            optionsPanel.baselineText:SetText(string.format("当前基准：%s 未设置", label))
+        local ok, key, label = pcall(GetCurrentPrimaryStatInfo)
+        if ok and key then
+            local base = DB.baselines[key]
+            if base and base > 0 then
+                optionsPanel.baselineText:SetText(string.format("当前基准：%s %d", label, base))
+            else
+                optionsPanel.baselineText:SetText(string.format("当前基准：%s 未设置", label))
+            end
         end
     end
 
