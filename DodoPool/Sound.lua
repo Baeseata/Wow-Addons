@@ -3,7 +3,8 @@
 -- 种类:cue 出杆 / clack 球碰球(脆) / soft 轻碰、滑杆、放球 / rail 撞库 / pocket 进袋 / win 胜利 / foul 犯规。
 -- 同类音带最小间隔节流(子步进一帧多次碰撞只响一下);开关存 DodoPoolDB.sound,开始界面与 HUD 各一个勾选框。
 -- 音量:WoW 的 PlaySound 没有音量参数 => 同帧把同一音效叠播 N 次(振幅叠加变响),
---       N = DodoPoolDB.soundVolume(1~5 档,开始界面滑条,默认 3)。
+--       N = DodoPoolDB.soundVolume(1~10 档,开始界面滑条,默认 3)。叠播只能加响,
+--       真正决定底子的是选音:音源本身轻(如 UI 点击声),叠几档都轻。
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -15,7 +16,8 @@ DP.Sound = S
 local SK = _G.SOUNDKIT or {}
 local KITS = {
     cue    = SK.IG_ABILITY_ICON_DROP or 838,                -- 出杆:闷击
-    clack  = SK.IG_MAINMENU_OPTION_CHECKBOX_ON or 856,      -- 球碰球:脆响
+    clack  = SK.MAP_PING or 3175,                           -- 球碰球(重):小地图 ping 的"咚",够响
+                                                            --   (原 856 勾选框咔哒太轻;备选 5274 拍卖行木槌)
     soft   = SK.U_CHAT_SCROLL_BUTTON or 1115,               -- 轻碰 / 滑杆 / 放自由球:轻嗒
     rail   = SK.IG_MAINMENU_OPTION_CHECKBOX_OFF or 857,     -- 撞库:闷嗒
     pocket = SK.LOOT_WINDOW_COIN_SOUND or 120,              -- 进袋:金币叮当
@@ -33,11 +35,11 @@ function S.Enabled()
     return not (db and db.sound == false)
 end
 
--- 音量档 1~5 = 同帧叠播次数
+-- 音量档 1~10 = 同帧叠播次数
 function S.Volume()
     local db = DP.db
     local v = (db and tonumber(db.soundVolume)) or 3
-    if v < 1 then v = 1 elseif v > 5 then v = 5 end
+    if v < 1 then v = 1 elseif v > 10 then v = 10 end
     return math.floor(v + 0.5)
 end
 
@@ -98,13 +100,13 @@ function S.CreateToggle(parent)
 end
 
 -- ------------------------------------------------------------
--- 音量滑条(1~5 档,开始界面用)。Slider 手搓贴图,不依赖模板
+-- 音量滑条(1~10 档,开始界面用)。Slider 手搓贴图,不依赖模板
 -- ------------------------------------------------------------
 function S.CreateVolumeSlider(parent)
     local sl = CreateFrame("Slider", nil, parent)
     sl:SetOrientation("HORIZONTAL")
-    sl:SetSize(120, 16)
-    sl:SetMinMaxValues(1, 5)
+    sl:SetSize(160, 16)
+    sl:SetMinMaxValues(1, 10)
     sl:SetValueStep(1)
     sl:SetObeyStepOnDrag(true)
     sl:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")

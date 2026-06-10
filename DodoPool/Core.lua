@@ -13,7 +13,7 @@ local DEFAULTS = {
     bestStrokes = nil,     -- 最佳(最少)杆数，nil = 暂无
     aimAssist   = "full",  -- full | line | none(瞄准辅助，后续用)
     sound       = true,    -- 音效开关(开始界面 / HUD 勾选框)
-    soundVolume = 3,       -- 音量 1~5(同帧叠播次数,开始界面滑条)
+    soundVolume = 3,       -- 音量 1~10(同帧叠播次数,开始界面滑条)
     minimapAngle = 205,    -- 小地图按钮角度
     windowPoint = nil,     -- 窗口位置(拖动后保存)
 }
