@@ -34,6 +34,15 @@ local CLEAR_BONUS   = 2     -- 全清奖励球数(一回合打空全场)
 local TRAIL_MAX     = 3     -- 彗星尾迹最长节数(每节 = 前一帧位置的余像)
 local TRAIL_BUDGET  = 240   -- 全场尾迹节数预算:球多自动缩短(≤80 球 3 节,≤120 球 2 节,再多 1 节)
 
+-- 球速渐变(0.2.2):基础球速随关数小幅上涨,单回合飞行拖久了再平滑快进,后期不耽误时间。
+-- 实现是纯"时间快进"(统一缩放 FLY 的 dt):弹道、落点与 1 倍速完全一致,只是播放变快。
+local LV_SPEED_GAIN  = 0.02 -- 每关基础提速 +2%(第 1 关 ×1.0)
+local LV_SPEED_MAX   = 1.6  -- 关数提速上限(此默认约 31 关到顶)
+local RAMP_START     = 4    -- 回合飞行多少秒后开始快进(短回合基本无感)
+local RAMP_FULL      = 12   -- 快进到几秒拉满(其间 smoothstep 渐变)
+local RAMP_MAX       = 2.0  -- 回合内快进上限(乘在关数提速之上)
+local SPEED_MULT_CAP = 2.6  -- 总倍速封顶(LV_SPEED_GAIN=0 + RAMP_MAX=1 即整体关闭渐变)
+
 local function Print(msg)
     if _G.Dodo and _G.Dodo.Print then _G.Dodo.Print("Bricks", msg) else print("|cff33ff99DodoBricks:|r " .. tostring(msg)) end
 end
@@ -302,6 +311,12 @@ function G.EnsureHUD()
     hud.balls:SetTextColor(0.95, 0.95, 0.95)
     hud.balls:SetText("球 ×1")
 
+    -- 当前球速倍率(球速渐变,×1.1 起显示)
+    hud.speed = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    hud.speed:SetPoint("LEFT", hud.balls, "RIGHT", 14, 0)
+    hud.speed:SetTextColor(0.5, 0.85, 1)
+    hud.speed:Hide()
+
     local menuBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     menuBtn:SetSize(76, 21)
     menuBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -10, -29)
@@ -434,6 +449,7 @@ local function Fire()
     G.ballsInPlay = G.ballTotal
     G.toLaunch = G.ballTotal
     G.launchTimer = 0
+    G.flyT = 0               -- 本回合飞行计时(球速渐变用,真实秒)
     G.nextX = nil
     G.turnHadBricks = next(G.bricks) ~= nil
     -- 尾迹节数:按全场预算分摊,球多自动缩短保性能
@@ -754,6 +770,39 @@ local function UpdateDescend(dt)
 end
 
 -- ------------------------------------------------------------
+-- 球速渐变:关数基础倍速 × 回合内快进(详见顶部参数注释)
+-- ------------------------------------------------------------
+local function LevelMult()
+    local m = 1 + LV_SPEED_GAIN * ((G.round or 1) - 1)
+    return m < LV_SPEED_MAX and m or LV_SPEED_MAX
+end
+
+local function SpeedMult()
+    local m = LevelMult()
+    local t = G.flyT or 0
+    if t > RAMP_START then
+        local p = Clamp((t - RAMP_START) / (RAMP_FULL - RAMP_START), 0, 1)
+        p = p * p * (3 - 2 * p)   -- smoothstep,渐变不突跳
+        m = m * (1 + (RAMP_MAX - 1) * p)
+    end
+    return m < SPEED_MULT_CAP and m or SPEED_MULT_CAP
+end
+
+-- HUD 倍速指示:×1.1 起显示,值(取整到 0.1)没变就不动文字
+local function UpdateSpeedHUD(m)
+    local shown = math.floor(m * 10 + 0.5) / 10
+    if shown < 1.1 then shown = nil end
+    if shown == G.speedShown then return end
+    G.speedShown = shown
+    if shown then
+        G.hud.speed:SetFormattedText("速 ×%.1f", shown)
+        G.hud.speed:Show()
+    else
+        G.hud.speed:Hide()
+    end
+end
+
+-- ------------------------------------------------------------
 -- 飞行驱动
 -- ------------------------------------------------------------
 local function UpdateLaunch(dt)
@@ -891,15 +940,22 @@ function G.Driver(elapsed)
     UpdateEffects(elapsed)
     if G.state == "AIM" then
         PulseItems()
+        UpdateSpeedHUD(LevelMult())
         UpdateAim()
     elseif G.state == "FLY" then
         PulseItems()
-        UpdateLaunch(elapsed)
-        Physics.Step(G.ctx, elapsed)
-        UpdateSliding(elapsed)
+        -- 球速渐变 = 统一快进:发射间隔/物理/落地滑行用同一个缩放 dt,弹道与 1 倍速一致
+        G.flyT = (G.flyT or 0) + elapsed
+        local m = SpeedMult()
+        UpdateSpeedHUD(m)
+        local dt = elapsed * m
+        UpdateLaunch(dt)
+        Physics.Step(G.ctx, dt)
+        UpdateSliding(dt)
         SyncBalls()
         CheckTurnEnd()
     elseif G.state == "DESCEND" then
+        UpdateSpeedHUD(LevelMult())
         UpdateDescend(elapsed)
     end
 end
