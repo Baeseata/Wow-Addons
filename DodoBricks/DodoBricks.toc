@@ -6,7 +6,7 @@
 ## Author: Doodo
 ## Version: 0.2.3
 ## SavedVariables: DodoBricksDB
-## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## IconTexture: Interface\Icons\ability_mage_arcanebarrage
 
 Geometry.lua
 Sound.lua

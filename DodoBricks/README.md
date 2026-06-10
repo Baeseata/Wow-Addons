@@ -28,7 +28,7 @@ There's no win condition - you play for the highest level you can reach.
 
 ## How to play
 
-- Open the game with the **pink D minimap button** or the slash command `/bricks` (also `/dodobricks`).
+- Open the game with the **minimap button** (arcane-missiles icon) or the slash command `/bricks` (also `/dodobricks`).
 - **Aim**: hold the **left mouse button** and point from the launcher toward where you want to shoot.
   A dotted line previews the first bounce. Release to launch; right-click (or aim too flat) to cancel.
 - The **first ball's landing spot** becomes your next launch point.

@@ -216,7 +216,7 @@ local function CreateMinimapButton()
     local icon = b:CreateTexture(nil, "ARTWORK")
     icon:SetSize(20, 20)
     icon:SetPoint("CENTER")
-    icon:SetTexture((_G.Dodo and _G.Dodo.icon) or "Interface\\Icons\\INV_Misc_Toy_10")
+    icon:SetTexture("Interface\\Icons\\ability_mage_arcanebarrage")
     b.icon = icon
 
     local border = b:CreateTexture(nil, "OVERLAY")
