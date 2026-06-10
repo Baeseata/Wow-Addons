@@ -150,7 +150,7 @@ local function CreateStartPanel()
 
     local hint = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOM", p, "BOTTOM", 0, 40)
-    hint:SetText("按住左键瞄准 · 松开发射 · 右键取消\n砖上数字 = 血量,每回合下压一行,压到底线就输了\n吃 \"+1\" 圆环涨球数 · 首球落点 = 下回合发射点 · 回合间自动存档")
+    hint:SetText("按住左键瞄准 · 松开发射 · 右键取消\n砖上数字 = 血量,每回合下压一行,压到底线就输了\n白环 +1 球 · 红环激光清行/列 · 橙环炸弹 3×3(整回合每颗球都触发)\n一回合全清有奖励 · 首球落点 = 下回合发射点 · 回合间自动存档")
     hint:SetJustifyH("CENTER")
 
     -- 音效开关 + 音量滑条(左下角)

@@ -24,10 +24,14 @@ local KITS = {
     descend = SK.AUCTION_WINDOW_CLOSE or 5275,            -- 砖下压:木槌闷敲(每回合一次)
     over    = SK.IG_QUEST_FAILED or 846,                  -- 游戏结束:失败短音
     best    = SK.IG_QUEST_LIST_COMPLETE or 875,           -- 新纪录:任务完成钟声
+    laser   = SK.IG_ABILITY_ICON_DROP or 838,             -- 激光触发:闷击(DodoPool 出杆同款,选音待实机迭代)
+    boom    = SK.AUCTION_WINDOW_OPEN or 5274,             -- 炸弹:重木槌"砰"
+    clear   = SK.IG_QUEST_LIST_COMPLETE or 875,           -- 全清奖励:钟声(与 best 共音,不同场合)
 }
 
 -- 同类最小间隔(秒)。GetTime 一帧内不变 => 同帧子步进里的连环碰撞天然只响一下
-local GAP = { hit = 0.06, launch = 0.09, brk = 0.09, item = 0.12, land = 0.2 }
+local GAP = { hit = 0.06, launch = 0.09, brk = 0.09, item = 0.12, land = 0.2,
+              laser = 0.1, boom = 0.15, clear = 0.5 }
 local ALIAS = { land = "launch" }   -- 落地与发球同为极轻嗒,共用节流桶
 local last = {}
 

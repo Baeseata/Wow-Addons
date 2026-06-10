@@ -179,17 +179,96 @@ function Render.PlaceAt(parent, fr, x, y)
 end
 
 -- ------------------------------------------------------------
--- "+1 球"道具:外环(白圈套深底)+ 中心小白球。返回 frame(含 .ring 供脉冲)。
+-- 道具:外环(颜色按种类)+ 中心图形。返回 frame(含 .ring 供脉冲)。
+-- kind: "ball" +1球(白环+小球) / "laserH" 横激光(红环+横杠) / "laserV" 竖激光(红环+竖杠)
+--       / "bomb" 炸弹(橙环+实心圆)
 -- ------------------------------------------------------------
-function Render.NewItem(parent)
+local ITEM_RING = {
+    ball   = { 0.95, 0.95, 0.95 },
+    laserH = { 1.00, 0.38, 0.32 },
+    laserV = { 1.00, 0.38, 0.32 },
+    bomb   = { 1.00, 0.62, 0.15 },
+}
+
+function Render.NewItem(parent, kind)
+    kind = kind or "ball"
     local R = geo.ITEM_R
     local f = CreateFrame("Frame", nil, parent)
     f:SetSize(2 * R + 8, 2 * R + 8)
     f:SetFrameLevel((parent:GetFrameLevel() or 0) + 4)
-    local ring = MakeCircle(f, 2 * R, "ARTWORK", 0.95, 0.95, 0.95, 0.9)
+    local rc = ITEM_RING[kind] or ITEM_RING.ball
+    local ring = MakeCircle(f, 2 * R, "ARTWORK", rc[1], rc[2], rc[3], 0.9)
     local hole = MakeCircle(f, 2 * R - 6, "ARTWORK", 0.045, 0.045, 0.085, 1)  -- 与棋盘底色一致,抠出环
-    MakeCircle(f, 8, "OVERLAY", 0.96, 0.96, 0.94, 1)                          -- 中心小球
+    if kind == "laserH" or kind == "laserV" then
+        local bar = f:CreateTexture(nil, "OVERLAY")
+        if kind == "laserH" then bar:SetSize(2 * R - 8, 3) else bar:SetSize(3, 2 * R - 8) end
+        bar:SetPoint("CENTER")
+        bar:SetColorTexture(1, 0.5, 0.45, 1)
+    elseif kind == "bomb" then
+        MakeCircle(f, 9, "OVERLAY", 1, 0.62, 0.15, 1)
+    else
+        MakeCircle(f, 8, "OVERLAY", 0.96, 0.96, 0.94, 1)
+    end
     f.ring, f.hole = ring, hole
+    return f
+end
+
+-- ------------------------------------------------------------
+-- 特效构件(Game 的特效池用):碎砖闪光 / 激光束 / 爆炸圈,都是 ADD 叠加发光
+-- ------------------------------------------------------------
+
+-- 碎砖闪光:与砖同形状的白色 ADD 贴图(三角同向折叠)
+function Render.NewBrickFlash(parent, shape, orient)
+    local S = geo.CELL - 2 * geo.BRICK_PAD
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(S, S)
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 7)
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetAllPoints()
+    t:SetColorTexture(1, 1, 1, 1)
+    t:SetBlendMode("ADD")
+    if shape == "tri" then CollapseToTriangle(t, S, orient) end
+    return f
+end
+
+-- 激光束:横贯整行 / 纵贯整列的发光条
+function Render.NewBeam(parent, horiz)
+    local f = CreateFrame("Frame", nil, parent)
+    if horiz then f:SetSize(geo.BOARD_W, 10) else f:SetSize(10, geo.ROWS * geo.CELL) end
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 7)
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetAllPoints()
+    t:SetColorTexture(1, 0.45, 0.4, 1)
+    t:SetBlendMode("ADD")
+    local core = f:CreateTexture(nil, "OVERLAY", nil, 1)
+    if horiz then
+        core:SetPoint("LEFT"); core:SetPoint("RIGHT"); core:SetHeight(3)
+    else
+        core:SetPoint("TOP"); core:SetPoint("BOTTOM"); core:SetWidth(3)
+    end
+    core:SetColorTexture(1, 0.9, 0.85, 1)
+    core:SetBlendMode("ADD")
+    return f
+end
+
+-- 爆炸圈:橙色发光圆,Game 里放大+淡出
+function Render.NewBoom(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    local D = geo.CELL * 2.2
+    f:SetSize(D, D)
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 7)
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetSize(D, D)
+    t:SetPoint("CENTER")
+    t:SetColorTexture(1, 0.55, 0.18, 0.9)
+    t:SetBlendMode("ADD")
+    ApplyCircleMask(f, t)
+    local core = f:CreateTexture(nil, "OVERLAY", nil, 1)
+    core:SetSize(D * 0.45, D * 0.45)
+    core:SetPoint("CENTER")
+    core:SetColorTexture(1, 0.9, 0.6, 0.9)
+    core:SetBlendMode("ADD")
+    ApplyCircleMask(f, core)
     return f
 end
 

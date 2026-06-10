@@ -145,7 +145,7 @@ local function StepBall(ctx, b, h)
         if ctx.OnBrickHit then ctx.OnBrickHit(best) end
     end
 
-    -- 道具(穿过即吃,不反弹)
+    -- 道具(穿过即触发,不反弹;+1 球吃掉即除,激光/炸弹常驻整回合由 Game 去重)
     local items = ctx.items
     if items and #items > 0 then
         local R2 = (r + geo.ITEM_R) ^ 2
@@ -153,7 +153,7 @@ local function StepBall(ctx, b, h)
             local it = items[i]
             local ix, iy = geo.CellCenter(it.col, it.row)
             if (b.x - ix) ^ 2 + (b.y - iy) ^ 2 <= R2 then
-                if ctx.OnItemHit then ctx.OnItemHit(it, i) end
+                if ctx.OnItemHit then ctx.OnItemHit(it, i, b) end
             end
         end
     end

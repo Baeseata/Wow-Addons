@@ -27,6 +27,10 @@ local BRICK_CHANCE  = 0.45  -- 刷新行每格出砖概率(道具格除外;一�
 local TRI_CHANCE    = 0.20  -- 新砖为三角形概率
 local DOUBLE_CHANCE = 0.12  -- 新砖双倍血概率("硬砖")
 local ORIENTS = { "BL", "BR", "TL", "TR" }
+local SPREAD_DEG    = 3     -- 多球散布:第 2 颗起随机偏 ±SPREAD_DEG/2 度(首颗严格按瞄准线,虚线才诚实)
+local SPECIAL_CHANCE = 0.22 -- 刷新行出特殊道具(激光/炸弹)概率(放在空格里,+1 球照旧每行必有)
+local SPECIAL_KINDS = { "laserH", "laserV", "bomb" }
+local CLEAR_BONUS   = 2     -- 全清奖励球数(一回合打空全场)
 
 local function Print(msg)
     if _G.Dodo and _G.Dodo.Print then _G.Dodo.Print("Bricks", msg) else print("|cff33ff99DodoBricks:|r " .. tostring(msg)) end
@@ -63,11 +67,13 @@ local function EnsureSetup()
     G.bricks = {}            -- set:brick -> true
     G.grid = {}              -- grid[row][col] = brick
     for r = 1, geo.ROWS do G.grid[r] = {} end
-    G.items = {}             -- array:{ col, row, frame }
+    G.items = {}             -- array:{ col, row, kind, frame }(kind: ball/laserH/laserV/bomb)
     G.balls = {}             -- 球结构池(随 ballTotal 增长)
     G.brickPool = {}         -- 回收池:key("sq"/"tri_BL"...) -> {frame...}
-    G.itemPool = {}
+    G.itemPool = {}          -- 道具回收池:kind -> {frame...}
     G.dots = {}
+    G.effects = {}           -- 活动特效:{ key, frame, t, dur, grow }
+    G.effectPool = {}        -- 特效回收池:key -> {frame...}
 
     -- 发射台:白球 + 余量文字 + 下回合落点虚影
     G.launcher = Render.NewBall(pa)
@@ -96,13 +102,19 @@ local function EnsureSetup()
         G.floats[i] = { fs = fs, t = nil, x = 0, y = 0 }
     end
 
+    -- 大字飘报(全清奖励等,板中央)
+    G.bigFs = pa:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    G.bigFs:SetTextColor(1, 0.85, 0.2)
+    G.bigFs:Hide()
+    G.bigT = nil
+
     -- 物理上下文(表常驻,字段引用共享)
     G.ctx = {
         balls = G.balls,
         grid = G.grid,
         items = G.items,
         OnBrickHit = function(brick) G.HitBrick(brick) end,
-        OnItemHit = function(item, idx) G.HitItem(item, idx) end,
+        OnItemHit = function(item, idx, ball) G.HitItem(item, idx, ball) end,
         OnBallLand = function(ball) G.BallLanded(ball) end,
     }
 
@@ -150,17 +162,90 @@ local function PlaceItem(it)
     Render.PlaceAt(G.gridLayer, it.frame, x, y)
 end
 
-local function GetItemFrame()
-    local fr = table.remove(G.itemPool)
-    if not fr then fr = Render.NewItem(G.gridLayer) end
+local function GetItemFrame(kind)
+    kind = kind or "ball"
+    local pool = G.itemPool[kind]
+    local fr = pool and table.remove(pool)
+    if not fr then fr = Render.NewItem(G.gridLayer, kind) end
     fr:Show()
     return fr
 end
 
 local function FreeItemFrame(it)
     it.frame:Hide()
-    table.insert(G.itemPool, it.frame)
+    local kind = it.kind or "ball"
+    G.itemPool[kind] = G.itemPool[kind] or {}
+    table.insert(G.itemPool[kind], it.frame)
     it.frame = nil
+end
+
+-- ------------------------------------------------------------
+-- 特效池(碎砖闪光 / 激光束 / 爆炸圈):ADD 发光,放大+淡出后回收。
+-- 结构 = 锚点占位帧(定位,不缩放)+ 视觉子帧(零偏移居中,缩放它):
+-- WoW 的 SetScale 会连锚点偏移一起缩放,直接缩放带大偏移的帧会漂移。
+-- ------------------------------------------------------------
+local function SpawnEffect(key, build, x, y, dur, grow)
+    local pool = G.effectPool[key]
+    local fr = pool and table.remove(pool)
+    if not fr then
+        fr = CreateFrame("Frame", nil, DBR.playArea)
+        fr:SetSize(2, 2)
+        fr:SetFrameLevel((DBR.playArea:GetFrameLevel() or 0) + 7)
+        local vis = build(fr)
+        vis:ClearAllPoints()
+        vis:SetPoint("CENTER", fr, "CENTER", 0, 0)
+        fr.vis = vis
+    end
+    fr:ClearAllPoints()
+    fr:SetPoint("CENTER", DBR.playArea, "BOTTOMLEFT", x, y)
+    fr.vis:SetScale(1)
+    fr:SetAlpha(1)
+    fr:Show()
+    table.insert(G.effects, { key = key, frame = fr, t = 0, dur = dur, grow = grow or 0 })
+end
+
+local function UpdateEffects(dt)
+    for i = #G.effects, 1, -1 do
+        local e = G.effects[i]
+        e.t = e.t + dt
+        local p = e.t / e.dur
+        if p >= 1 then
+            e.frame:Hide()
+            e.frame.vis:SetScale(1)
+            G.effectPool[e.key] = G.effectPool[e.key] or {}
+            table.insert(G.effectPool[e.key], e.frame)
+            table.remove(G.effects, i)
+        else
+            e.frame:SetAlpha(1 - p)
+            if e.grow > 0 then e.frame.vis:SetScale(1 + e.grow * p) end
+        end
+    end
+end
+
+local function BrickFlash(brick)
+    local key = "fx_" .. BrickKey(brick.shape, brick.orient)
+    local shape, orient = brick.shape, brick.orient
+    local cx, cy = geo.CellCenter(brick.col, brick.row)
+    SpawnEffect(key, function(p) return Render.NewBrickFlash(p, shape, orient) end,
+        cx, cy, 0.22, 0.35)
+end
+
+local function FireBeamH(row)
+    local _, cy = geo.CellCenter(0, row)
+    SpawnEffect("beamH", function(p) return Render.NewBeam(p, true) end,
+        geo.BOARD_W / 2, cy, 0.2, 0)
+end
+
+local function FireBeamV(col)
+    local cx = geo.CellCenter(col, 1)
+    SpawnEffect("beamV", function(p) return Render.NewBeam(p, false) end,
+        cx, geo.FLOOR + geo.ROWS * geo.CELL / 2, 0.2, 0)
+end
+
+local function FireBoom(col, row)
+    local cx, cy = geo.CellCenter(col, row)
+    SpawnEffect("boom", function(p) return Render.NewBoom(p) end,
+        cx, cy, 0.3, 0.6)
 end
 
 local function ClearBoard()
@@ -168,8 +253,17 @@ local function ClearBoard()
     wipe(G.bricks)
     for r = 1, geo.ROWS do wipe(G.grid[r]) end
     for i = #G.items, 1, -1 do FreeItemFrame(G.items[i]); table.remove(G.items, i) end
-    for _, b in ipairs(G.balls) do b.flying, b.sliding = false, false; b.frame:Hide() end
+    for _, b in ipairs(G.balls) do b.flying, b.sliding, b.itemTouch = false, false, nil; b.frame:Hide() end
     for _, fl in ipairs(G.floats) do fl.t = nil; fl.fs:Hide() end
+    for i = #G.effects, 1, -1 do
+        local e = G.effects[i]
+        e.frame:Hide(); e.frame.vis:SetScale(1)
+        G.effectPool[e.key] = G.effectPool[e.key] or {}
+        table.insert(G.effectPool[e.key], e.frame)
+        table.remove(G.effects, i)
+    end
+    G.bigT = nil
+    G.bigFs:Hide()
     G.marker:Hide()
     G.HideDots()
 end
@@ -327,12 +421,14 @@ local function Fire()
     for i = 1, G.ballTotal do
         local b = G.balls[i]
         b.flying, b.sliding, b.flatT, b.kick = false, false, 0, false
+        b.itemTouch = nil
         b.frame:Hide()
     end
     G.ballsInPlay = G.ballTotal
     G.toLaunch = G.ballTotal
     G.launchTimer = 0
     G.nextX = nil
+    G.turnHadBricks = next(G.bricks) ~= nil
     G.marker:Hide()
     G.HideDots()
     G.state = "FLY"
@@ -378,8 +474,10 @@ end
 -- 物理回调
 -- ------------------------------------------------------------
 function G.HitBrick(brick)
+    if not G.bricks[brick] then return end   -- 已被同帧的激光/炸弹链碎掉
     brick.hp = brick.hp - 1
     if brick.hp <= 0 then
+        BrickFlash(brick)
         G.grid[brick.row][brick.col] = nil
         G.bricks[brick] = nil
         FreeBrickFrame(brick)
@@ -401,15 +499,63 @@ local function AddFloat(x, y, text)
     end
 end
 
-function G.HitItem(item, idx)
-    table.remove(G.items, idx)
-    local x, y = geo.CellCenter(item.col, item.row)
-    -- gridLayer 可能带着下压偏移,但道具只在 FLY(偏移 0)被吃,直接用格坐标
-    FreeItemFrame(item)
-    G.ballTotal = G.ballTotal + 1
-    AddFloat(x, y, "+1")
-    Snd("item")
-    UpdateHUD()
+-- 板中央大字飘报(全清奖励)
+local function BigFloat(text)
+    G.bigFs:SetText(text)
+    G.bigT = 0
+    G.bigFs:Show()
+end
+
+function G.HitItem(item, idx, ball)
+    local kind = item.kind or "ball"
+    -- gridLayer 可能带着下压偏移,但道具只在 FLY(偏移 0)被触发,直接用格坐标
+    if kind == "ball" then
+        table.remove(G.items, idx)
+        local x, y = geo.CellCenter(item.col, item.row)
+        FreeItemFrame(item)
+        G.ballTotal = G.ballTotal + 1
+        AddFloat(x, y, "+1")
+        Snd("item")
+        UpdateHUD()
+        return
+    end
+
+    -- 激光/炸弹:整回合常驻,每颗球各触发一次,回合结束(被触发过)才消失
+    if ball then
+        ball.itemTouch = ball.itemTouch or {}
+        if ball.itemTouch[item] then return end
+        ball.itemTouch[item] = true
+    end
+    item.used = true
+
+    local targets = {}
+    if kind == "laserH" then
+        FireBeamH(item.row)
+        Snd("laser")
+        local line = G.grid[item.row]
+        for c = 0, geo.COLS - 1 do
+            if line[c] then targets[#targets + 1] = line[c] end
+        end
+    elseif kind == "laserV" then
+        FireBeamV(item.col)
+        Snd("laser")
+        for r = 1, geo.ROWS do
+            local br = G.grid[r][item.col]
+            if br then targets[#targets + 1] = br end
+        end
+    elseif kind == "bomb" then
+        FireBoom(item.col, item.row)
+        Snd("boom")
+        for r = item.row - 1, item.row + 1 do
+            local line = G.grid[r]
+            if line then
+                for c = item.col - 1, item.col + 1 do
+                    if line[c] then targets[#targets + 1] = line[c] end
+                end
+            end
+        end
+    end
+    for _, br in ipairs(targets) do G.HitBrick(br) end
 end
 
 function G.BallLanded(b)
@@ -425,42 +571,62 @@ end
 -- ------------------------------------------------------------
 -- 刷新行 / 下压 / 游戏结束
 -- ------------------------------------------------------------
-local function SpawnRow()
-    local itemCol = math.random(0, geo.COLS - 1)
-    local spawned = 0
-    local empties = {}
-    for col = 0, geo.COLS - 1 do
-        if col ~= itemCol then
-            if math.random() < BRICK_CHANCE then
-                local shape = (math.random() < TRI_CHANCE) and "tri" or "sq"
-                local orient = shape == "tri" and ORIENTS[math.random(4)] or nil
-                local hp = G.round * ((math.random() < DOUBLE_CHANCE) and 2 or 1)
-                local brick = { col = col, row = geo.ROWS, hp = hp, shape = shape, orient = orient }
-                brick.frame = GetBrickFrame(shape, orient)
-                brick.frame:SetHP(hp)
-                Render.PlaceBrick(G.gridLayer, brick.frame, col, geo.ROWS)
-                G.bricks[brick] = true
-                G.grid[geo.ROWS][col] = brick
-                spawned = spawned + 1
-            else
-                empties[#empties + 1] = col
-            end
-        end
-    end
-    if spawned == 0 and #empties > 0 then
-        -- 保底一块,不能空行
-        local col = empties[math.random(#empties)]
-        local hp = G.round
-        local brick = { col = col, row = geo.ROWS, hp = hp, shape = "sq" }
-        brick.frame = GetBrickFrame("sq")
-        brick.frame:SetHP(hp)
-        Render.PlaceBrick(G.gridLayer, brick.frame, col, geo.ROWS)
-        G.bricks[brick] = true
-        G.grid[geo.ROWS][col] = brick
-    end
-    local it = { col = itemCol, row = geo.ROWS, frame = GetItemFrame() }
+local function AddBrick(col, shape, orient, hp)
+    local brick = { col = col, row = geo.ROWS, hp = hp, shape = shape, orient = orient }
+    brick.frame = GetBrickFrame(shape, orient)
+    brick.frame:SetHP(hp)
+    Render.PlaceBrick(G.gridLayer, brick.frame, col, geo.ROWS)
+    G.bricks[brick] = true
+    G.grid[geo.ROWS][col] = brick
+end
+
+local function AddItem(col, kind)
+    local it = { col = col, row = geo.ROWS, kind = kind, frame = GetItemFrame(kind) }
     PlaceItem(it)
     table.insert(G.items, it)
+end
+
+local function SpawnRow()
+    local occupied = {}
+    local itemCol = math.random(0, geo.COLS - 1)
+    occupied[itemCol] = true
+
+    local spawned = 0
+    for col = 0, geo.COLS - 1 do
+        if not occupied[col] and math.random() < BRICK_CHANCE then
+            local shape = (math.random() < TRI_CHANCE) and "tri" or "sq"
+            local orient = shape == "tri" and ORIENTS[math.random(4)] or nil
+            local hp = G.round * ((math.random() < DOUBLE_CHANCE) and 2 or 1)
+            AddBrick(col, shape, orient, hp)
+            occupied[col] = true
+            spawned = spawned + 1
+        end
+    end
+    if spawned == 0 then
+        -- 保底一块,不能空行
+        local empties = {}
+        for col = 0, geo.COLS - 1 do
+            if not occupied[col] then empties[#empties + 1] = col end
+        end
+        if #empties > 0 then
+            local col = empties[math.random(#empties)]
+            AddBrick(col, "sq", nil, G.round)
+            occupied[col] = true
+        end
+    end
+
+    AddItem(itemCol, "ball")
+
+    -- 特殊道具(激光/炸弹):概率刷在剩余空格里
+    if math.random() < SPECIAL_CHANCE then
+        local empties = {}
+        for col = 0, geo.COLS - 1 do
+            if not occupied[col] then empties[#empties + 1] = col end
+        end
+        if #empties > 0 then
+            AddItem(empties[math.random(#empties)], SPECIAL_KINDS[math.random(#SPECIAL_KINDS)])
+        end
+    end
 end
 
 local function GameOver()
@@ -488,7 +654,7 @@ local function AutoSave()
                                       shape = brick.shape, orient = brick.orient }
     end
     for _, it in ipairs(G.items) do
-        sv.items[#sv.items + 1] = { col = it.col, row = it.row }
+        sv.items[#sv.items + 1] = { col = it.col, row = it.row, kind = it.kind or "ball" }
     end
     DodoBricksDB.save = sv
 end
@@ -498,23 +664,43 @@ local function StartDescend()
     if G.nextX then G.launchX = G.nextX end
     G.marker:Hide()
     PlaceLauncher()
+
+    -- 全清奖励:这回合开打时有砖、现在一块不剩
+    if G.turnHadBricks and next(G.bricks) == nil then
+        G.ballTotal = G.ballTotal + CLEAR_BONUS
+        BigFloat("全清!  +" .. CLEAR_BONUS .. " 球")
+        Snd("clear")
+    end
+    G.turnHadBricks = false
     SetCountText(G.ballTotal)
+
+    -- 被触发过的激光/炸弹:回合结束消失
+    for i = #G.items, 1, -1 do
+        local it = G.items[i]
+        if it.used then
+            table.remove(G.items, i)
+            FreeItemFrame(it)
+        end
+    end
 
     -- 最底行还有砖 => 再压就进发射条,游戏结束
     for brick in pairs(G.bricks) do
         if brick.row <= 1 then GameOver(); return end
     end
 
-    -- 最底行道具:压下去前自动吃掉
+    -- 最底行道具:+1 球压下去前自动吃掉,激光/炸弹直接消失
     for i = #G.items, 1, -1 do
         local it = G.items[i]
         if it.row <= 1 then
             local x, y = geo.CellCenter(it.col, it.row)
+            local kind = it.kind or "ball"
             table.remove(G.items, i)
             FreeItemFrame(it)
-            G.ballTotal = G.ballTotal + 1
-            AddFloat(x, y - geo.CELL, "+1")
-            Snd("item")
+            if kind == "ball" then
+                G.ballTotal = G.ballTotal + 1
+                AddFloat(x, y - geo.CELL, "+1")
+                Snd("item")
+            end
         end
     end
 
@@ -565,10 +751,20 @@ local function UpdateLaunch(dt)
     if G.toLaunch <= 0 then return end
     G.launchTimer = G.launchTimer - dt
     while G.launchTimer <= 0 and G.toLaunch > 0 do
-        local b = G.balls[G.ballsInPlay - G.toLaunch + 1]
+        local idx = G.ballsInPlay - G.toLaunch + 1
+        local b = G.balls[idx]
         b.x, b.y = G.launchX, geo.FLOOR
-        b.vx, b.vy = G.aimDirX * Physics.SPEED, G.aimDirY * Physics.SPEED
+        -- 多球散布:首颗严格按瞄准线(虚线诚实),第 2 颗起随机偏 ±SPREAD_DEG/2 度
+        local dx, dy = G.aimDirX, G.aimDirY
+        if idx > 1 and SPREAD_DEG > 0 then
+            local a = math.atan2(dy, dx) + (math.random() - 0.5) * math.rad(SPREAD_DEG)
+            local lo, hi = math.rad(MIN_ANGLE), math.rad(180 - MIN_ANGLE)
+            if a < lo then a = lo elseif a > hi then a = hi end
+            dx, dy = math.cos(a), math.sin(a)
+        end
+        b.vx, b.vy = dx * Physics.SPEED, dy * Physics.SPEED
         b.flying, b.sliding, b.flatT, b.kick = true, false, 0, false
+        b.itemTouch = nil
         b.frame:Show()
         G.toLaunch = G.toLaunch - 1
         G.launchTimer = G.launchTimer + LAUNCH_GAP
@@ -616,7 +812,7 @@ local function CheckTurnEnd()
     StartDescend()
 end
 
--- "+1" 飘字
+-- "+1" 飘字 + 板中央大字
 local function UpdateFloats(dt)
     for _, fl in ipairs(G.floats) do
         if fl.t then
@@ -632,6 +828,18 @@ local function UpdateFloats(dt)
             end
         end
     end
+    if G.bigT then
+        G.bigT = G.bigT + dt
+        if G.bigT >= 1.4 then
+            G.bigT = nil
+            G.bigFs:Hide()
+        else
+            local p = G.bigT / 1.4
+            G.bigFs:ClearAllPoints()
+            G.bigFs:SetPoint("CENTER", DBR.playArea, "CENTER", 0, 20 + 36 * p)
+            G.bigFs:SetAlpha(1 - p * p)
+        end
+    end
 end
 
 -- 道具呼吸脉冲
@@ -645,6 +853,7 @@ end
 function G.Driver(elapsed)
     if G.paused then return end
     UpdateFloats(elapsed)
+    UpdateEffects(elapsed)
     if G.state == "AIM" then
         PulseItems()
         UpdateAim()
@@ -721,6 +930,7 @@ function G.New()
     G.toLaunch = 0
     G.launchX = geo.BOARD_W / 2
     G.nextX = nil
+    G.turnHadBricks = false
     G.startBest = (DodoBricksDB and DodoBricksDB.bestLevel) or 0
     PlaceLauncher()
     G.launcher:Show()
@@ -764,7 +974,8 @@ function G.Load()
     end
     for _, d in ipairs(sv.items or {}) do
         if d.row and d.row >= 1 and d.row <= geo.ROWS and d.col and d.col >= 0 and d.col < geo.COLS then
-            local it = { col = d.col, row = d.row, frame = GetItemFrame() }
+            local kind = d.kind or "ball"
+            local it = { col = d.col, row = d.row, kind = kind, frame = GetItemFrame(kind) }
             PlaceItem(it)
             table.insert(G.items, it)
         end
