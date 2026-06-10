@@ -2,6 +2,8 @@
 -- 音效:复用魔兽自带 SoundKit(无自定义音频文件)。
 -- 种类:cue 出杆 / clack 球碰球(脆) / soft 轻碰、滑杆、放球 / rail 撞库 / pocket 进袋 / win 胜利 / foul 犯规。
 -- 同类音带最小间隔节流(子步进一帧多次碰撞只响一下);开关存 DodoPoolDB.sound,开始界面与 HUD 各一个勾选框。
+-- 音量:WoW 的 PlaySound 没有音量参数 => 同帧把同一音效叠播 N 次(振幅叠加变响),
+--       N = DodoPoolDB.soundVolume(1~5 档,开始界面滑条,默认 3)。
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -31,6 +33,22 @@ function S.Enabled()
     return not (db and db.sound == false)
 end
 
+-- 音量档 1~5 = 同帧叠播次数
+function S.Volume()
+    local db = DP.db
+    local v = (db and tonumber(db.soundVolume)) or 3
+    if v < 1 then v = 1 elseif v > 5 then v = 5 end
+    return math.floor(v + 0.5)
+end
+
+local function Emit(kit)
+    -- forceNoDuplicates 必须显式 false:一是上一声没播完会拒播吞掉连续碰撞声,
+    -- 二是"叠播加响度"全靠同帧重复播同一音效
+    for _ = 1, S.Volume() do
+        PlaySound(kit, "Master", false)
+    end
+end
+
 function S.Play(kind)
     if not S.Enabled() then return end
     local kit = KITS[kind]
@@ -42,8 +60,7 @@ function S.Play(kind)
         if last[bucket] and (now - last[bucket]) < gap then return end
         last[bucket] = now
     end
-    -- forceNoDuplicates 必须显式 false:否则上一声没播完会拒播,连续碰撞声被吞
-    PlaySound(kit, "Master", false)
+    Emit(kit)
 end
 
 -- ------------------------------------------------------------
@@ -51,10 +68,12 @@ end
 -- 贴图手搓,不依赖 UICheckButtonTemplate 之类可能变动的模板
 -- ------------------------------------------------------------
 local toggles = {}
+local volSliders = {}
 
 function S.SyncToggles()
     local on = S.Enabled()
     for _, cb in ipairs(toggles) do cb:SetChecked(on) end
+    for _, sl in ipairs(volSliders) do sl:Refresh() end
 end
 
 function S.CreateToggle(parent)
@@ -72,8 +91,59 @@ function S.CreateToggle(parent)
         local on = self:GetChecked() and true or false
         if DP.db then DP.db.sound = on end
         S.SyncToggles()
-        if on then PlaySound(KITS.clack, "Master", false) end   -- 开启给声反馈,关闭保持安静
+        if on then Emit(KITS.clack) end   -- 开启给声反馈,关闭保持安静
     end)
     toggles[#toggles + 1] = cb
     return cb
+end
+
+-- ------------------------------------------------------------
+-- 音量滑条(1~5 档,开始界面用)。Slider 手搓贴图,不依赖模板
+-- ------------------------------------------------------------
+function S.CreateVolumeSlider(parent)
+    local sl = CreateFrame("Slider", nil, parent)
+    sl:SetOrientation("HORIZONTAL")
+    sl:SetSize(120, 16)
+    sl:SetMinMaxValues(1, 5)
+    sl:SetValueStep(1)
+    sl:SetObeyStepOnDrag(true)
+    sl:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+
+    local rail = sl:CreateTexture(nil, "BACKGROUND")
+    rail:SetPoint("LEFT", 2, 0); rail:SetPoint("RIGHT", -2, 0)
+    rail:SetHeight(5)
+    rail:SetColorTexture(0, 0, 0, 0.55)
+
+    sl.caption = sl:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sl.caption:SetPoint("RIGHT", sl, "LEFT", -8, 0)
+    sl.caption:SetText("音量")
+    sl.valText = sl:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sl.valText:SetPoint("LEFT", sl, "RIGHT", 8, 0)
+    sl.valText:SetText("3")
+
+    -- 程序化刷新(进面板 / 别处改了开关时):同步值 + 可用态,不触发试听
+    function sl.Refresh(self)
+        self._noPreview = true
+        self:SetValue(S.Volume())
+        self._noPreview = false
+        self._lastVal = S.Volume()
+        self.valText:SetText(tostring(S.Volume()))
+        local on = S.Enabled()
+        self:SetAlpha(on and 1 or 0.45)
+        if on then self:Enable() else self:Disable() end
+    end
+
+    sl:SetScript("OnShow", sl.Refresh)
+    sl:SetScript("OnValueChanged", function(self, value)
+        local v = math.floor(value + 0.5)
+        if v == self._lastVal then return end
+        self._lastVal = v
+        if DP.db then DP.db.soundVolume = v end
+        self.valText:SetText(tostring(v))
+        if not self._noPreview then Emit(KITS.clack) end   -- 拖动即试听新音量
+    end)
+
+    volSliders[#volSliders + 1] = sl
+    sl:Refresh()
+    return sl
 end

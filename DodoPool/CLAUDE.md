@@ -64,9 +64,9 @@
 - **严格 9 球规则 + 自由球 + 9 号非法进袋重摆 + 存读档(1 档)+ 最佳杆数记录** [**已写,尚未实机测试**]
 - **袋口"喉咙"吸入修复**: 球漏过库边线进入无库袋口区会被拉向袋心落袋(`POCKET_PULL` + `MouthPocket` + `ShotActive` 库外保活),治"母球卡在角袋颚口/库边外"的死区 bug [已写,待实机验证]。⚠️ **行为变化**: 蹭进袋口喉咙的球现在一律落袋 → 母球进喉咙 = scratch(自由球),不再"挂"在库上(符合真实台球)。
 - **HUD "返回开始" 按钮**: 随时回开始界面(打完一局也用它);开始面板抬到 HUD 之上 + 不透明 + 吃鼠标,避免 HUD 透底(`G.ReturnToMenu` + `DP.ShowStartScreen`)[已写,待实机验证]。
-- **音效(SoundKit)**: 出杆 / 滑杆 / 球碰球(按碰撞速度分脆响、轻嗒两档)/ 撞库 / 进袋(金币声)/ 犯规 / 胜利 / 放自由球;同类音 70~150ms 节流防爆音;静音勾选框两处(开始界面左下 + HUD 保存键旁,状态同步,存 `DodoPoolDB.sound`,默认开)[已写,待实机验证]。
+- **音效(SoundKit)**: 出杆 / 滑杆 / 球碰球(按碰撞速度分脆响、轻嗒两档)/ 撞库 / 进袋(金币声)/ 犯规 / 胜利 / 放自由球;同类音 70~150ms 节流防爆音;静音勾选框两处(开始界面左下 + HUD 保存键旁,状态同步,存 `DodoPoolDB.sound`,默认开);**音量滑条 1~5 档**在开始界面(WoW PlaySound 无音量参数,靠同帧叠播 N 次加响度,5 档 ≈ +14dB;存 `DodoPoolDB.soundVolume` 默认 3,拖动即试听,静音时滑条置灰)[已写,待实机验证]。
 
-**最近一步改了(本 session)**: 新增 `Sound.lua`(SoundKit 选音 + 节流 + 勾选框);Physics.lua 碰撞/库边挂音效钩子(`SND_*` 阈值);Game.lua 出杆/滑杆/进袋/犯规/胜利/放球发声 + HUD 音效勾选框;Core.lua 开始界面勾选框 + 底部提示改为操控说明;版本 0.2.0。上一 session: 袋口吸入修复 + "返回开始"按钮。
+**最近一步改了(本 session)**: 音效全套 —— 新增 `Sound.lua`(SoundKit 选音 + 节流 + 勾选框 + **音量滑条/同帧叠播加响度**);Physics.lua 碰撞/库边挂音效钩子(`SND_*` 阈值);Game.lua 出杆/滑杆/进袋/犯规/胜利/放球发声 + HUD 音效勾选框;Core.lua 开始界面勾选框 + 音量滑条 + 底部提示改为操控说明;版本 0.2.0。上一 session: 袋口吸入修复 + "返回开始"按钮。
 
 ---
 
@@ -76,7 +76,7 @@
    - **袋口吸入**(本 session): 把母球/目标球往**角袋、中袋喉咙**蹭 -> 是否干脆落袋、不再卡库?母球进喉咙是否判 scratch + 自由球?台面上正常贴近袋口的球是否**不**被误吸?太"吸"或还卡就调 `POCKET_PULL`(Physics 顶部,现 1400)。
    - **返回开始按钮**(本 session): 游戏中 / 打赢后点"返回开始" -> 是否干净回菜单(无 HUD 透底)、最佳杆数刷新?
    - **规则 + 存读档**(更早 session 写的): 碰错球 / 空杆 / scratch -> 罚 +1 杆 + 自由球?合法进 9 号判胜 + 记录最佳?犯规进 9 号重摆?"保存" -> "继续上次进度" -> 局面恢复?
-   - **音效**(本 session): 出杆/碰球/撞库/进袋/犯规/胜利各事件是否响、轻重两档是否分明、开球炸球时是否刺耳爆音、勾选框静音是否立即生效 + 开始界面/HUD 两处同步、重登是否记住开关。嫌吵/嫌没声就调 Physics 顶部 `SND_*` 阈值或 Sound.lua `GAP`/`KITS`。
+   - **音效**(本 session): 出杆/碰球/撞库/进袋/犯规/胜利各事件是否响、轻重两档是否分明、开球炸球时是否刺耳爆音、勾选框静音是否立即生效 + 开始界面/HUD 两处同步、重登是否记住开关;**音量滑条** 1->5 是否明显变响(默认 3)、拖动有试听咔嗒、静音时滑条置灰不可拖、重登记住档位。嫌吵/嫌没声就调 Physics 顶部 `SND_*` 阈值或 Sound.lua `GAP`/`KITS`。
    - 任何 Lua 报错都记下来修。
 2. **物理手感继续调**(常数见 §6),按实测反馈。
 3. **可选润色(未开始)**:
@@ -105,7 +105,7 @@
 
 **Geometry.lua**: `FELT_W=860 FELT_H=430`(2:1)· `RAIL=32` · `BALL_R=13` · `POCKET_R=22` · `HEAD_X` 开球线 · `FOOT_X` 置球点。
 
-**音效**: Physics.lua `SND_BALL_HARD=260`(球碰球高于此用脆响)`SND_BALL_MIN=40`(低于不响)`SND_RAIL_MIN=60`(撞库低于不响,px/s)· Sound.lua `GAP` 同类最小间隔 / `KITS` 选音(SOUNDKIT 常量)。
+**音效**: Physics.lua `SND_BALL_HARD=260`(球碰球高于此用脆响)`SND_BALL_MIN=40`(低于不响)`SND_RAIL_MIN=60`(撞库低于不响,px/s)· Sound.lua `GAP` 同类最小间隔 / `KITS` 选音(SOUNDKIT 常量)· 音量 = 同帧叠播次数 `DodoPoolDB.soundVolume`(1~5,开始界面滑条)。
 
 **球的配色**(Render.lua `BALL_CLASS`,读 `RAID_CLASS_COLORS`): 1 盗贼黄 / 2 萨满蓝 / 3 DK 红 / 4 术士淡紫 / 5 德鲁伊橙 / 6 武僧玉绿 / 7 战士棕 / 8 圣骑粉 / 9 法师青;母球白。
 
@@ -120,7 +120,7 @@
 - **键盘捕获**: `EnableKeyboard(true)` + OnKeyDown 里 `SetPropagateKeyboardInput(false)` 吞键;ESC 那一下 propagate(true) 放行关窗。进战必须 `EnableKeyboard(false)` 放开(10.1.5 起非安全代码战斗中不能调 SetPropagateKeyboardInput)。
 - **度数符号 °**: Lua 字符串里用字节转义 `\194\176`(UTF-8 的 °),别直接打字符。
 - **9 球规则裁定**(EndShot): 优先级 进袋 > 空杆 > 未先碰最小号 > 碰球后无球到库且未进球。合法进 9 号才判胜,犯规进 9 号 RespotNine 重摆。
-- **PlaySound**: 第三参 `forceNoDuplicates` 要显式传 `false`,否则同一音效上一声未播完会拒播,连续碰撞声被吞;节流自己做(见 Sound.lua `GAP`,GetTime 一帧内不变 => 同帧子步进连环碰撞天然只响一下)。选音走 `SOUNDKIT.*` 常量名 + 数字兜底,条目不存在就静默跳过。勾选框贴图手搓(`Interface\Buttons\UI-CheckBox-*`),不依赖 `UICheckButtonTemplate`(12.0 模板时代少一事)。
+- **PlaySound**: 第三参 `forceNoDuplicates` 要显式传 `false`,否则同一音效上一声未播完会拒播,连续碰撞声被吞;节流自己做(见 Sound.lua `GAP`,GetTime 一帧内不变 => 同帧子步进连环碰撞天然只响一下)。选音走 `SOUNDKIT.*` 常量名 + 数字兜底,条目不存在就静默跳过。**没有音量参数** => 调音量唯一办法是同帧叠播 N 次(振幅同相叠加,2 次 ≈ +6dB,5 次 ≈ +14dB;也是 forceNoDuplicates 必须 false 的原因之二)。勾选框/滑条贴图全手搓(`Interface\Buttons\UI-CheckBox-*`、`UI-SliderBar-Button-Horizontal` + `SetObeyStepOnDrag`),不依赖 `UICheckButtonTemplate`/`OptionsSliderTemplate`(12.0 模板时代少一事)。
 - **12.0 机密值(Secret Values)**: `UnitStat`/`GetCritChance`/`GetCombatRatingBonus` 等战斗属性 API **进战斗后返回 secret 值**:插件能存能传能 `string.format`,但**不能比较 / 加减 / `math.floor` / `tostring`**(否则报 "a secret number value, while execution tainted")。检测用 `issecretvalue(v)`;无法转回普通数字,只能跳过/占位。本 session 因此修了**同仓库 DodoStatHUD**(进战每帧刷屏报错):把属性计算 `pcall` 包住,战斗中算不出就沿用脱战前的值、脱战恢复。DodoPool 不读战斗属性,暂不受影响;但**任何读玩家战斗数值的功能都得防这条**。
 
 ---
