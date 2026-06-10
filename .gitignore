@@ -2,3 +2,6 @@
 # These hold Chinese working notes and are intentionally not part of the shipped addons.
 CLAUDE.md
 DODO_ADDONS.md
+
+# Local publishing staging area (screenshots, zips for CurseForge uploads).
+.publish/

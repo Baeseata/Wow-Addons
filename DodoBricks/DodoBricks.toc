@@ -4,7 +4,7 @@
 ## Title: DodoBricks
 ## Notes: A numbered brick-breaker minigame. A stream of bouncing balls chips away at HP-bearing bricks; the bricks drop one row each round.
 ## Author: Doodo
-## Version: 0.2.3
+## Version: 1.0.0
 ## SavedVariables: DodoBricksDB
 ## IconTexture: Interface\Icons\ability_mage_arcanebarrage
 
