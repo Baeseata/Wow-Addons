@@ -31,6 +31,8 @@ local SPREAD_DEG    = 3     -- 多球散布:第 2 颗起随机偏 ±SPREAD_DEG/2
 local SPECIAL_CHANCE = 0.22 -- 刷新行出特殊道具(激光/炸弹)概率(放在空格里,+1 球照旧每行必有)
 local SPECIAL_KINDS = { "laserH", "laserV", "bomb" }
 local CLEAR_BONUS   = 2     -- 全清奖励球数(一回合打空全场)
+local TRAIL_MAX     = 3     -- 彗星尾迹最长节数(每节 = 前一帧位置的余像)
+local TRAIL_BUDGET  = 240   -- 全场尾迹节数预算:球多自动缩短(≤80 球 3 节,≤120 球 2 节,再多 1 节)
 
 local function Print(msg)
     if _G.Dodo and _G.Dodo.Print then _G.Dodo.Print("Bricks", msg) else print("|cff33ff99DodoBricks:|r " .. tostring(msg)) end
@@ -253,7 +255,11 @@ local function ClearBoard()
     wipe(G.bricks)
     for r = 1, geo.ROWS do wipe(G.grid[r]) end
     for i = #G.items, 1, -1 do FreeItemFrame(G.items[i]); table.remove(G.items, i) end
-    for _, b in ipairs(G.balls) do b.flying, b.sliding, b.itemTouch = false, false, nil; b.frame:Hide() end
+    for _, b in ipairs(G.balls) do
+        b.flying, b.sliding, b.itemTouch = false, false, nil
+        b.frame:Hide()
+        if b.ghosts then for k = 1, #b.ghosts do b.ghosts[k]:Hide() end end
+    end
     for _, fl in ipairs(G.floats) do fl.t = nil; fl.fs:Hide() end
     for i = #G.effects, 1, -1 do
         local e = G.effects[i]
@@ -268,11 +274,12 @@ local function ClearBoard()
     G.HideDots()
 end
 
--- 球结构池扩容到 n
+-- 球结构池扩容到 n(hx/hy = 前几帧位置环,画尾迹用;ghosts 懒建)
 local function EnsureBalls(n)
     for i = #G.balls + 1, n do
         G.balls[i] = { x = 0, y = 0, vx = 0, vy = 0, flying = false, sliding = false,
-                       flatT = 0, kick = false, frame = Render.NewBall(DBR.playArea) }
+                       flatT = 0, kick = false, hx = { 0, 0, 0 }, hy = { 0, 0, 0 },
+                       frame = Render.NewBall(DBR.playArea) }
         G.balls[i].frame:Hide()
     end
 end
@@ -429,6 +436,8 @@ local function Fire()
     G.launchTimer = 0
     G.nextX = nil
     G.turnHadBricks = next(G.bricks) ~= nil
+    -- 尾迹节数:按全场预算分摊,球多自动缩短保性能
+    G.trailN = math.min(TRAIL_MAX, math.floor(TRAIL_BUDGET / math.max(1, G.ballTotal)))
     G.marker:Hide()
     G.HideDots()
     G.state = "FLY"
@@ -765,6 +774,7 @@ local function UpdateLaunch(dt)
         b.vx, b.vy = dx * Physics.SPEED, dy * Physics.SPEED
         b.flying, b.sliding, b.flatT, b.kick = true, false, 0, false
         b.itemTouch = nil
+        for k = 1, TRAIL_MAX do b.hx[k], b.hy[k] = b.x, b.y end   -- 尾迹从出膛点收拢展开
         b.frame:Show()
         G.toLaunch = G.toLaunch - 1
         G.launchTimer = G.launchTimer + LAUNCH_GAP
@@ -790,15 +800,40 @@ local function UpdateSliding(dt)
     end
 end
 
+local function EnsureTrail(b, n)
+    b.ghosts = b.ghosts or {}
+    for k = #b.ghosts + 1, n do
+        b.ghosts[k] = Render.NewGhost(DBR.playArea, k)
+    end
+end
+
 local function SyncBalls()
     local pa = DBR.playArea
+    local trailN = G.trailN or 0
     for i = 1, G.ballsInPlay do
         local b = G.balls[i]
         if b.flying or b.sliding then
-            Render.PlaceAt(pa, b.frame, b.x, b.y)
+            Render.MoveAt(pa, b.frame, b.x, b.y)
             b.frame:Show()
         else
             b.frame:Hide()
+        end
+        -- 彗星尾迹:画在前几帧位置(只给飞行中的球;落地滑行不带尾)
+        local n = b.flying and trailN or 0
+        if n > 0 then
+            EnsureTrail(b, n)
+            local hx, hy = b.hx, b.hy
+            for k = 1, n do
+                local g = b.ghosts[k]
+                Render.MoveAt(pa, g, hx[k], hy[k])
+                g:Show()
+            end
+            for k = n + 1, #b.ghosts do b.ghosts[k]:Hide() end
+            -- 历史后移一格,记录本帧位置(下一帧的"上一帧")
+            for k = TRAIL_MAX, 2, -1 do hx[k], hy[k] = hx[k - 1], hy[k - 1] end
+            hx[1], hy[1] = b.x, b.y
+        elseif b.ghosts then
+            for k = 1, #b.ghosts do b.ghosts[k]:Hide() end
         end
     end
 end

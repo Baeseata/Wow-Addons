@@ -178,6 +178,29 @@ function Render.PlaceAt(parent, fr, x, y)
     fr:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
 end
 
+-- 热路径移动(球 + 尾迹每帧几百次):同名 CENTER 锚点直接替换,省掉 ClearAllPoints。
+-- 只能用在"从来只用 CENTER 锚"的帧上(球/尾迹/虚线点)。
+function Render.MoveAt(parent, fr, x, y)
+    fr:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
+end
+
+-- ------------------------------------------------------------
+-- 彗星尾迹余像:第 k 节(1 近 3 远),越远越小越淡,ADD 发光
+-- ------------------------------------------------------------
+local GHOST_SIZE  = { 0.78, 0.58, 0.38 }   -- 相对球的直径比例
+local GHOST_ALPHA = { 0.30, 0.16, 0.07 }
+
+function Render.NewGhost(parent, k)
+    local r = geo.BALL_R * (GHOST_SIZE[k] or 0.3)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(2 * r, 2 * r)
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 5)   -- 压在球(+6)之下、砖之上
+    local t = MakeCircle(f, 2 * r, "ARTWORK", 1, 1, 1, GHOST_ALPHA[k] or 0.05)
+    t:SetBlendMode("ADD")
+    f:Hide()
+    return f
+end
+
 -- ------------------------------------------------------------
 -- 道具:外环(颜色按种类)+ 中心图形。返回 frame(含 .ring 供脉冲)。
 -- kind: "ball" +1球(白环+小球) / "laserH" 横激光(红环+横杠) / "laserV" 竖激光(红环+竖杠)
