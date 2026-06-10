@@ -1,0 +1,16 @@
+## Interface: 120005
+## Group: Dodo
+## OptionalDeps: Dodo
+## Title: DodoBricks
+## Notes: 数字打砖块小游戏 -- 一串弹球打掉带血量的砖,砖每回合下压一行。
+## Author: Doodo
+## Version: 0.1.0
+## SavedVariables: DodoBricksDB
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+
+Geometry.lua
+Sound.lua
+Render.lua
+Physics.lua
+Game.lua
+Core.lua
