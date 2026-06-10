@@ -754,7 +754,7 @@ local function UpdateMinimapButtonFromCursor()
     local cx, cy = Minimap:GetCenter()
     if not cx then return end
     local mx, my = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
+    local scale = Minimap:GetEffectiveScale()
     mx, my = mx / scale, my / scale
     local dx, dy = mx - cx, my - cy
     if dx == 0 and dy == 0 then return end

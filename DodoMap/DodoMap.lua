@@ -297,7 +297,7 @@ local function UpdateMinimapButtonFromCursor()
     end
 
     local cursorX, cursorY = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
+    local scale = Minimap:GetEffectiveScale()
     cursorX = cursorX / scale
     cursorY = cursorY / scale
 

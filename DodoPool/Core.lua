@@ -196,7 +196,7 @@ local function UpdateMinimapButtonFromCursor()
     local cx, cy = Minimap:GetCenter()
     if not cx then return end
     local mx, my = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
+    local scale = Minimap:GetEffectiveScale()
     mx, my = mx / scale, my / scale
     local dx, dy = mx - cx, my - cy
     db.minimapAngle = math.deg(math.atan2(dy, dx))

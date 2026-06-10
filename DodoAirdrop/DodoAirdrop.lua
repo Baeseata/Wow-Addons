@@ -257,7 +257,7 @@ minimapButton:SetScript("OnUpdate", function(self)
     if not self.dragging then return end
     local mx, my = Minimap:GetCenter()
     local px, py = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
+    local scale = Minimap:GetEffectiveScale()
     px, py = px / scale, py / scale
     local angle = math.deg(math.atan2(py - my, px - mx))
     DB.minimap.angle = angle
