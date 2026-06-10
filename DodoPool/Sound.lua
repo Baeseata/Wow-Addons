@@ -16,10 +16,11 @@ DP.Sound = S
 local SK = _G.SOUNDKIT or {}
 local KITS = {
     cue    = SK.IG_ABILITY_ICON_DROP or 838,                -- 出杆:闷击
-    clack  = SK.MAP_PING or 3175,                           -- 球碰球(重):小地图 ping 的"咚",够响
-                                                            --   (原 856 勾选框咔哒太轻;备选 5274 拍卖行木槌)
-    soft   = SK.U_CHAT_SCROLL_BUTTON or 1115,               -- 轻碰 / 滑杆 / 放自由球:轻嗒
-    rail   = SK.IG_MAINMENU_OPTION_CHECKBOX_OFF or 857,     -- 撞库:闷嗒
+    clack  = SK.AUCTION_WINDOW_OPEN or 5274,                -- 球碰球(重):拍卖行木槌,响且是木头撞击声
+    soft   = SK.MAP_PING or 3175,                           -- 轻碰 / 滑杆 / 放自由球:小地图 ping 轻"咚"
+    rail   = SK.AUCTION_WINDOW_CLOSE or 5275,               -- 撞库:木槌闷敲
+    -- 选音变迁:碰撞三件套最初用 UI 点击声(856/1115/857)太轻 -> MAP_PING 仍轻 -> 木槌。
+    -- 还嫌轻的下一步是往 media/ 塞自己的台球 ogg 走 PlaySoundFile(插件内文件路径仍支持)。
     pocket = SK.LOOT_WINDOW_COIN_SOUND or 120,              -- 进袋:金币叮当
     win    = SK.IG_QUEST_LIST_COMPLETE or 875,              -- 胜利:任务完成钟声
     foul   = SK.IG_QUEST_FAILED or 846,                     -- 犯规:失败短音
