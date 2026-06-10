@@ -12,7 +12,7 @@ local Render = DP.Render
 local DEFAULTS = {
     bestStrokes = nil,     -- 最佳(最少)杆数，nil = 暂无
     aimAssist   = "full",  -- full | line | none(瞄准辅助，后续用)
-    sound       = true,    -- 音效开关(后续用)
+    sound       = true,    -- 音效开关(开始界面 / HUD 勾选框)
     minimapAngle = 205,    -- 小地图按钮角度
     windowPoint = nil,     -- 窗口位置(拖动后保存)
 }
@@ -157,7 +157,13 @@ local function CreateStartPanel()
 
     local hint = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOM", p, "BOTTOM", 0, 16)
-    hint:SetText("0.1.0 预览版 -- 当前仅台面展示")
+    hint:SetText("鼠标拖动瞄准蓄力 · WASD 击球点 · QE 抬杆 · 必须先碰最小号球")
+
+    -- 音效开关(左下角;与 HUD 勾选框状态同步)
+    if DP.Sound and DP.Sound.CreateToggle then
+        local cb = DP.Sound.CreateToggle(p)
+        cb:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 14, 10)
+    end
 
     startPanel = p
     DP.startPanel = p

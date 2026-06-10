@@ -32,6 +32,11 @@ local SPINF_DECAY = 0.5     -- 跟杆/缩杆衰减(慢些,撑到停球后还有�
 -- 治"母球停在袋口颚口/库边外卡住"的死区 bug。需 > 摩擦才能把停住的球收进袋。
 local POCKET_PULL = 1400
 
+-- 音效触发阈值(px/s;选音与节流在 Sound.lua)
+local SND_BALL_HARD = 260   -- 球碰球:相对法向速度高于此用脆响 clack,低于用轻嗒 soft
+local SND_BALL_MIN  = 40    -- 球碰球:低于此不响
+local SND_RAIL_MIN  = 60    -- 撞库:反弹后速度低于此不响
+
 -- 落袋
 local function InPocket(b)
     local PR = geo.POCKET_R
@@ -250,6 +255,9 @@ function Physics.Step(balls, dt, out)
                 if hit then
                     if b.spinF ~= 0 then b.spinF = b.spinF * 0.5 end
                     if out and out.firstHit then out.railAfter = true end
+                    if DP.Sound and (b.vx * b.vx + b.vy * b.vy) > SND_RAIL_MIN * SND_RAIL_MIN then
+                        DP.Sound.Play("rail")
+                    end
                 end
             end
         end
@@ -275,6 +283,13 @@ function Physics.Step(balls, dt, out)
                                 local imp = -(1 + BALL_REST) * vn / 2
                                 a.vx, a.vy = a.vx - imp * nx, a.vy - imp * ny
                                 c.vx, c.vy = c.vx + imp * nx, c.vy + imp * ny
+
+                                -- 碰撞音:按相对法向速度分轻重(同帧连环碰撞由 Sound 节流)
+                                if DP.Sound then
+                                    local hv = -vn
+                                    if hv >= SND_BALL_HARD then DP.Sound.Play("clack")
+                                    elseif hv >= SND_BALL_MIN then DP.Sound.Play("soft") end
+                                end
 
                                 -- 母球侧塞 throw:把目标球出球方向偏一点
                                 -- (跟杆/缩杆由自由滚动施力处理,碰撞处不清 spinF,母球带塞继续前进/回滚)

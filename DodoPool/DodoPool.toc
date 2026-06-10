@@ -4,11 +4,12 @@
 ## Title: DodoPool
 ## Notes: 九球台球小游戏 -- 小地图按钮打开，鼠标瞄准 + WASD/QE 调塞与抬杆。
 ## Author: Doodo
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: DodoPoolDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
 Geometry.lua
+Sound.lua
 Render.lua
 Physics.lua
 Game.lua

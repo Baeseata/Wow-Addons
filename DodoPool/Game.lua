@@ -248,6 +248,12 @@ local function EnsureHUD()
     menuBtn:SetPoint("TOPRIGHT", saveBtn, "BOTTOMRIGHT", 0, -4)
     menuBtn:SetText("返回开始")
     menuBtn:SetScript("OnClick", function() if G.ReturnToMenu then G.ReturnToMenu() end end)
+
+    -- 音效开关(随时可静音;与开始界面的勾选框状态同步)
+    if DP.Sound and DP.Sound.CreateToggle then
+        local cb = DP.Sound.CreateToggle(f)
+        cb:SetPoint("RIGHT", saveBtn, "LEFT", -42, 0)
+    end
 end
 
 local function UpdateHUD()
@@ -392,10 +398,12 @@ function Fire()
     local ox, oy = G.ox or 0, G.oy or 0
     local fx, fy = G.fireX, G.fireY
 
+    local miscued = false
     local mag = math.sqrt(ox * ox + oy * oy)
     if mag > MISCUE_SAFE then
         local chance = (mag - MISCUE_SAFE) / (1 - MISCUE_SAFE) * 0.5
         if math.random() < chance then
+            miscued = true
             frac = frac * 0.3
             local jit = (math.random() - 0.5) * 0.25
             local cs, sn = math.cos(jit), math.sin(jit)
@@ -414,6 +422,7 @@ function Fire()
     G.pottedThisShot = false
 
     local curveAmt = ox * math.sin(math.rad(G.elevDeg or 0))
+    if DP.Sound then DP.Sound.Play(miscued and "soft" or "cue") end
     Physics.ShootSpin(G.cue, fx, fy, frac, ox, oy, curveAmt)
 
     G.strokes = (G.strokes or 0) + 1
@@ -436,6 +445,7 @@ local function ProcessPockets()
             if b.num == 9 then G.ninePotted = true end
         end
     end
+    if DP.Sound then DP.Sound.Play("pocket") end
     UpdateHUD()
 end
 
@@ -511,6 +521,7 @@ local function EndShot()
     if foul then
         G.strokes = (G.strokes or 0) + 1   -- 击球已计 1 杆,犯规再罚 1 杆
         Print("犯规(" .. reason .. "),罚 1 杆,自由球。")
+        if DP.Sound then DP.Sound.Play("foul") end
     end
 
     G.ox, G.oy, G.elevDeg = 0, 0, 0
@@ -529,6 +540,7 @@ local function EndShot()
         end
         G.winText:Show()
         G.SetKeyboard(false)
+        if DP.Sound then DP.Sound.Play("win") end
         Print("制胜! 杆数 " .. (G.strokes or 0) .. "。再点小地图或 /pool 开新局。")
         return
     end
@@ -610,6 +622,7 @@ local function OnMouseDown(_, button)
         if button == "LeftButton" and G.placeLegal then
             G.cue.frame:SetAlpha(1)
             if G.placeHint then G.placeHint:Hide() end
+            if DP.Sound then DP.Sound.Play("soft") end
             G.state = "AIM"
         elseif button == "LeftButton" then
             Print("这里放不下,换个位置。")
