@@ -95,7 +95,7 @@ local function CreateMainFrame()
         if DBR.Game and DBR.Game.OnWindowHidden then DBR.Game.OnWindowHidden() end
     end)
 
-    if f.TitleText then f.TitleText:SetText("DodoBricks  Bricks") end
+    if f.TitleText then f.TitleText:SetText("DodoBricks") end
 
     -- Board area: portrait, centered in the lower part of the window, leaving the HUD bar at the top
     playArea = CreateFrame("Frame", "DodoBricksPlayArea", f)
@@ -150,8 +150,7 @@ local function CreateStartPanel()
 
     local hint = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOM", p, "BOTTOM", 0, 40)
-    hint:SetText("Hold left-click to aim - release to launch - right-click to cancel\nNumber on a brick = HP; bricks drop one row each round, reach the bottom line and you lose\nWhite ring +1 ball - red ring laser clears a row/column - orange ring bomb 3x3 (every ball triggers it all round)\nClear the whole board in one round for a bonus - first ball's landing spot = next launch point - autosaves between rounds")
-    hint:SetJustifyH("CENTER")
+    hint:SetText("Hold left-click to aim - release to launch")
 
     -- Sound toggle + volume slider (bottom-left)
     if DBR.Sound and DBR.Sound.CreateToggle then
@@ -159,7 +158,7 @@ local function CreateStartPanel()
         cb:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 14, 10)
         if DBR.Sound.CreateVolumeSlider then
             local sl = DBR.Sound.CreateVolumeSlider(p)
-            sl:SetPoint("LEFT", cb, "RIGHT", 84, 0)   -- leave room for the "Sound" label and the "Volume" caption
+            sl:SetPoint("LEFT", cb, "RIGHT", 130, 0)  -- leave room for the "Sound" label and the "Volume" caption (English labels are wider than the old Chinese ones)
         end
     end
 
@@ -250,7 +249,7 @@ local function CreateMinimapButton()
     end)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("DodoBricks Brick Breaker", 1, 1, 1)
+        GameTooltip:AddLine("DodoBricks", 1, 1, 1)
         GameTooltip:AddLine("Left-click: open/close the game", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Shift + left-drag: move the icon", 0.8, 0.8, 0.8)
         GameTooltip:Show()

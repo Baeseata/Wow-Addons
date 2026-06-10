@@ -166,7 +166,7 @@ local function CreateStartPanel()
         cb:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 14, 10)
         if DP.Sound.CreateVolumeSlider then
             local sl = DP.Sound.CreateVolumeSlider(p)
-            sl:SetPoint("LEFT", cb, "RIGHT", 84, 0)   -- leave room for the "Sound" label and the "Volume" caption
+            sl:SetPoint("LEFT", cb, "RIGHT", 130, 0)  -- leave room for the "Sound" label and the "Volume" caption (English labels are wider than the old Chinese ones)
         end
     end
 

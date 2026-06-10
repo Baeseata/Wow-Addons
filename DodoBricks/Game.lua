@@ -34,14 +34,13 @@ local CLEAR_BONUS   = 2     -- clear-all bonus balls (clearing the whole board i
 local TRAIL_MAX     = 3     -- max comet-trail segments (each segment = an afterimage of a previous frame's position)
 local TRAIL_BUDGET  = 240   -- total trail-segment budget across the board: auto-shortens when there are many balls (<=80 balls 3 seg, <=120 balls 2 seg, more = 1 seg)
 
--- Ball speed ramp (0.2.2): the base ball speed climbs slightly with the level, and a long single round smoothly fast-forwards, so later rounds don't drag.
--- The implementation is pure "time fast-forward" (uniformly scaling FLY's dt): trajectory and landing are identical to 1x speed, only the playback is faster.
-local LV_SPEED_GAIN  = 0.02 -- +2% base speed per level (level 1 = x1.0)
-local LV_SPEED_MAX   = 1.6  -- level speed-up cap (with this default, caps around level 31)
-local RAMP_START     = 4    -- how many seconds into a round's flight before fast-forward begins (short rounds feel nothing)
-local RAMP_FULL      = 12   -- how many seconds until fast-forward is maxed (smoothstep in between)
-local RAMP_MAX       = 2.0  -- in-round fast-forward cap (multiplied on top of the level speed-up)
-local SPEED_MULT_CAP = 2.6  -- total speed-multiplier cap (LV_SPEED_GAIN=0 + RAMP_MAX=1 disables the ramp entirely)
+-- Ball speed ramp (0.2.3): a pure function of how long this round's balls have been in flight --
+-- the longer they bounce, the faster the playback, from base speed up to RAMP_MAX x base.
+-- No level scaling and no HUD indicator. Pure "time fast-forward" (uniformly scaling FLY's dt):
+-- trajectory and landing are identical to 1x speed, only the playback is faster.
+local RAMP_START = 3    -- seconds of flight before the ramp begins (short rounds feel nothing)
+local RAMP_FULL  = 15   -- seconds of flight at which the ramp tops out (smoothstep in between)
+local RAMP_MAX   = 3.0  -- top multiplier = 300% of base speed (set 1 to disable the ramp)
 
 local function Print(msg)
     if _G.Dodo and _G.Dodo.Print then _G.Dodo.Print("Bricks", msg) else print("|cff33ff99DodoBricks:|r " .. tostring(msg)) end
@@ -310,12 +309,6 @@ function G.EnsureHUD()
     hud.balls:SetPoint("LEFT", hud.level, "RIGHT", 18, 0)
     hud.balls:SetTextColor(0.95, 0.95, 0.95)
     hud.balls:SetText("Balls x1")
-
-    -- current ball-speed multiplier (ball speed ramp, shown from x1.1 up)
-    hud.speed = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hud.speed:SetPoint("LEFT", hud.balls, "RIGHT", 14, 0)
-    hud.speed:SetTextColor(0.5, 0.85, 1)
-    hud.speed:Hide()
 
     local menuBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     menuBtn:SetSize(76, 21)
@@ -770,36 +763,14 @@ local function UpdateDescend(dt)
 end
 
 -- ------------------------------------------------------------
--- Ball speed ramp: level base multiplier x in-round fast-forward (see the parameter comments at the top)
+-- Ball speed ramp: a pure function of this round's flight time (see the parameter comments at the top)
 -- ------------------------------------------------------------
-local function LevelMult()
-    local m = 1 + LV_SPEED_GAIN * ((G.round or 1) - 1)
-    return m < LV_SPEED_MAX and m or LV_SPEED_MAX
-end
-
 local function SpeedMult()
-    local m = LevelMult()
     local t = G.flyT or 0
-    if t > RAMP_START then
-        local p = Clamp((t - RAMP_START) / (RAMP_FULL - RAMP_START), 0, 1)
-        p = p * p * (3 - 2 * p)   -- smoothstep, smooth ramp with no jump
-        m = m * (1 + (RAMP_MAX - 1) * p)
-    end
-    return m < SPEED_MULT_CAP and m or SPEED_MULT_CAP
-end
-
--- HUD multiplier indicator: shown from x1.1 up, don't touch the text if the value (rounded to 0.1) hasn't changed
-local function UpdateSpeedHUD(m)
-    local shown = math.floor(m * 10 + 0.5) / 10
-    if shown < 1.1 then shown = nil end
-    if shown == G.speedShown then return end
-    G.speedShown = shown
-    if shown then
-        G.hud.speed:SetFormattedText("Speed x%.1f", shown)
-        G.hud.speed:Show()
-    else
-        G.hud.speed:Hide()
-    end
+    if t <= RAMP_START then return 1 end
+    local p = Clamp((t - RAMP_START) / (RAMP_FULL - RAMP_START), 0, 1)
+    p = p * p * (3 - 2 * p)   -- smoothstep, smooth ramp with no jump
+    return 1 + (RAMP_MAX - 1) * p
 end
 
 -- ------------------------------------------------------------
@@ -940,22 +911,18 @@ function G.Driver(elapsed)
     UpdateEffects(elapsed)
     if G.state == "AIM" then
         PulseItems()
-        UpdateSpeedHUD(LevelMult())
         UpdateAim()
     elseif G.state == "FLY" then
         PulseItems()
         -- ball speed ramp = uniform fast-forward: launch interval / physics / landing slide use the same scaled dt, trajectory matches 1x
         G.flyT = (G.flyT or 0) + elapsed
-        local m = SpeedMult()
-        UpdateSpeedHUD(m)
-        local dt = elapsed * m
+        local dt = elapsed * SpeedMult()
         UpdateLaunch(dt)
         Physics.Step(G.ctx, dt)
         UpdateSliding(dt)
         SyncBalls()
         CheckTurnEnd()
     elseif G.state == "DESCEND" then
-        UpdateSpeedHUD(LevelMult())
         UpdateDescend(elapsed)
     end
 end

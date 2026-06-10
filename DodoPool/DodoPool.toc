@@ -4,7 +4,7 @@
 ## Title: DodoPool
 ## Notes: A single-player 9-ball pool minigame. Open with the minimap button; aim with the mouse, WASD/QE for english and cue elevation.
 ## Author: Doodo
-## Version: 0.2.0
+## Version: 0.2.1
 ## SavedVariables: DodoPoolDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
