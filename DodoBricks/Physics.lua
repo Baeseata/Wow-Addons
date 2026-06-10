@@ -1,10 +1,10 @@
 -- DodoBricks - Physics
--- 弹球飞行:匀速、无重力、无摩擦、完全弹性反弹;球与球不互撞(本类游戏惯例,也省性能)。
--- 碰撞统一用"最近点法":求球心到形状(方=AABB clamp,三角=三条边最近点)的最近点,
---   距离 < 半径即碰,法线 = 球心-最近点,速度沿法线镜像反射 + 位置推出。角点自然正确。
--- 砖在网格上 => 每子步只查球所在格 3x3 邻域,O(1),球上百颗不卡。
--- 子步进:每步位移 ≤ SUBSTEP_LEN(< 球半径),防穿模(DodoPool 同思路)。
--- 坐标:board 局部像素,原点左下。
+-- Ball flight: constant speed, no gravity, no friction, perfectly elastic bounce; balls don't collide with each other (genre convention, also saves performance).
+-- Collisions use a uniform "closest-point method": find the closest point from the ball center to the shape (square = AABB clamp, triangle = closest point on the three edges),
+--   distance < radius means a hit, normal = ball center - closest point, velocity mirror-reflected along the normal + position pushed out. Corners come out correct naturally.
+-- Bricks are on a grid => each sub-step only checks the 3x3 neighborhood of the ball's cell, O(1), hundreds of balls stay smooth.
+-- Sub-stepping: each step's displacement <= SUBSTEP_LEN (< ball radius), prevents tunneling (same idea as DodoPool).
+-- Coordinates: board local pixels, origin bottom-left.
 
 local DBR = _G.DodoBricks or {}
 _G.DodoBricks = DBR
@@ -14,20 +14,20 @@ DBR.Physics = Physics
 
 local geo = DBR.geo
 
--- 可调常量
-Physics.SPEED   = 900       -- 球速(px/s,恒定)
-local SUBSTEP_LEN = 6       -- 每子步最大位移(px,需 < BALL_R)
-local MAX_DT      = 0.05    -- 单帧最大推进(防掉帧时一口气穿模)
+-- Tunable constants
+Physics.SPEED   = 900       -- ball speed (px/s, constant)
+local SUBSTEP_LEN = 6       -- max displacement per sub-step (px, needs to be < BALL_R)
+local MAX_DT      = 0.05    -- max advance per frame (prevents tunneling in one go on a frame drop)
 
--- 防水平死弹:|vy| 低于 FLAT_VY 累计 FLAT_T 秒后,持续把球往当前纵向(近零则向下)拐,
--- 直到 |vy| 超过 FLAT_EXIT 才停手。治"最后一颗球横着弹半天不下来"。
+-- Anti horizontal stall: when |vy| stays below FLAT_VY for FLAT_T seconds, keep nudging the ball toward its current vertical direction (downward if near zero),
+-- until |vy| exceeds FLAT_EXIT. Fixes "the last ball bounces sideways forever and won't come down".
 local FLAT_VY   = 35
 local FLAT_T    = 3.5
 local FLAT_EXIT = 140
-local FLAT_KICK = 220       -- vy 修正速率(px/s 每秒)
+local FLAT_KICK = 220       -- vy correction rate (px/s per second)
 
 -- ------------------------------------------------------------
--- 形状最近点
+-- Closest point on a shape
 -- ------------------------------------------------------------
 local function ClosestOnSegment(px, py, ax, ay, bx, by)
     local abx, aby = bx - ax, by - ay
@@ -38,7 +38,7 @@ local function ClosestOnSegment(px, py, ax, ay, bx, by)
     return ax + abx * t, ay + aby * t
 end
 
--- 三角形三个顶点(直角在 orient 角;整格碰撞,留缝只是视觉)
+-- The triangle's three vertices (the right angle is at the orient corner; collision uses the full cell, the seam is only visual)
 local function TriVerts(x0, y0, x1, y1, orient)
     if orient == "BL" then return x0, y0, x1, y0, x0, y1
     elseif orient == "BR" then return x0, y0, x1, y0, x1, y1
@@ -46,7 +46,7 @@ local function TriVerts(x0, y0, x1, y1, orient)
     else return x1, y0, x1, y1, x0, y1 end   -- TR
 end
 
--- 球心 P 在三角形内?(AABB 内 + 斜边实心侧)
+-- Is the ball center P inside the triangle? (inside the AABB + on the solid side of the hypotenuse)
 local function InsideTri(px, py, x0, y0, x1, y1, orient)
     if px < x0 or px > x1 or py < y0 or py > y1 then return false end
     local u, v, C = px - x0, py - y0, x1 - x0
@@ -56,7 +56,7 @@ local function InsideTri(px, py, x0, y0, x1, y1, orient)
     else return u + v >= C end   -- TR
 end
 
--- 球心到砖的最近点。返回 cpx, cpy, inside
+-- Closest point from the ball center to a brick. Returns cpx, cpy, inside
 local function ClosestOnBrick(brick, px, py)
     local x0, y0, x1, y1 = geo.CellRect(brick.col, brick.row)
     if brick.shape ~= "tri" then
@@ -80,7 +80,7 @@ local function ClosestOnBrick(brick, px, py)
 end
 
 -- ------------------------------------------------------------
--- 单子步:推进一颗球。ctx = { grid, items, OnBrickHit, OnItemHit, OnBallLand }
+-- Single sub-step: advance one ball. ctx = { grid, items, OnBrickHit, OnItemHit, OnBallLand }
 -- ------------------------------------------------------------
 local function StepBall(ctx, b, h)
     local r = geo.BALL_R
@@ -89,12 +89,12 @@ local function StepBall(ctx, b, h)
     b.x = b.x + b.vx * h
     b.y = b.y + b.vy * h
 
-    -- 墙(左右顶)
+    -- walls (left/right/top)
     if b.x < r then b.x = r; b.vx = math.abs(b.vx)
     elseif b.x > W - r then b.x = W - r; b.vx = -math.abs(b.vx) end
     if b.y > H - r then b.y = H - r; b.vy = -math.abs(b.vy) end
 
-    -- 落地(球心到 FLOOR 且向下)=> 本回合该球结束
+    -- landing (ball center reaches FLOOR while moving down) => this ball is done for the round
     if b.y <= FLOOR and b.vy < 0 then
         b.y = FLOOR
         b.flying = false
@@ -102,7 +102,7 @@ local function StepBall(ctx, b, h)
         return
     end
 
-    -- 砖:3x3 邻域取穿透最深的一块结算(下一子步自然处理相邻第二块)
+    -- bricks: in the 3x3 neighborhood, resolve the one with the deepest penetration (the next sub-step naturally handles an adjacent second brick)
     local grid = ctx.grid
     local col, row = geo.CellAt(b.x, b.y)
     local best, bcp_x, bcp_y, bdepth
@@ -131,7 +131,7 @@ local function StepBall(ctx, b, h)
         if d > 0.001 then
             nx, ny = dx / d, dy / d
         else
-            -- 球心贴在/进了砖里(理论上子步够小不会发生):沿来向退出
+            -- ball center is touching / inside the brick (in theory a small enough sub-step prevents this): back out along the incoming direction
             local sp = math.sqrt(b.vx * b.vx + b.vy * b.vy)
             if sp > 0 then nx, ny = -b.vx / sp, -b.vy / sp else nx, ny = 0, 1 end
         end
@@ -145,7 +145,7 @@ local function StepBall(ctx, b, h)
         if ctx.OnBrickHit then ctx.OnBrickHit(best) end
     end
 
-    -- 道具(穿过即触发,不反弹;+1 球吃掉即除,激光/炸弹常驻整回合由 Game 去重)
+    -- items (triggered on pass-through, no bounce; +1 ball is consumed and removed, laser/bomb persist the whole round, deduped by Game)
     local items = ctx.items
     if items and #items > 0 then
         local R2 = (r + geo.ITEM_R) ^ 2
@@ -158,7 +158,7 @@ local function StepBall(ctx, b, h)
         end
     end
 
-    -- 防水平死弹
+    -- anti horizontal stall
     local avy = math.abs(b.vy)
     if b.kick then
         local s = (b.vy >= 0) and 1 or -1
@@ -178,7 +178,7 @@ local function StepBall(ctx, b, h)
 end
 
 -- ------------------------------------------------------------
--- 推进所有飞行中的球
+-- Advance all balls in flight
 -- ------------------------------------------------------------
 function Physics.Step(ctx, dt)
     if dt > MAX_DT then dt = MAX_DT end
@@ -193,9 +193,9 @@ function Physics.Step(ctx, dt)
 end
 
 -- ------------------------------------------------------------
--- 瞄准射线:从 (x,y) 沿单位向量 (ux,uy) 推进(带球半径),
--- 撞墙/砖即停。返回 hx, hy(球心接触位), rdx, rdy(反弹方向);走满 maxLen 返回末端且无反弹方向。
--- 道具不挡瞄准线。
+-- Aim ray: advance from (x,y) along the unit vector (ux,uy) (with the ball radius),
+-- stop at a wall/brick. Returns hx, hy (ball-center contact position), rdx, rdy (bounce direction); if it runs the full maxLen, returns the end point with no bounce direction.
+-- Items don't block the aim line.
 -- ------------------------------------------------------------
 function Physics.Raycast(ctx, x, y, ux, uy, maxLen)
     local r = geo.BALL_R

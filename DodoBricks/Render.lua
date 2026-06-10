@@ -1,8 +1,8 @@
 -- DodoBricks - Render
--- 棋盘/砖/球/道具的视觉。所有元素相对宿主帧左下角定位(board 坐标直接当像素偏移)。
--- 三角砖画法:纯色 texture 用 SetVertexOffset 把一个角折叠到相邻角上,渲染出实心直角三角形,
---             不需要任何自定义贴图;四个朝向 = 折叠不同的角(BL/BR/TL/TR = 直角所在角)。
--- 砖配色:沿用 DodoPool 的职业色板,按血量循环取色((hp-1)%9+1),每掉一滴血换一次色 = 伤害反馈。
+-- Visuals for the board / bricks / balls / items. All elements are positioned relative to the host frame's bottom-left corner (board coords used directly as pixel offsets).
+-- Triangle bricks: a solid-color texture is folded with SetVertexOffset, collapsing one corner onto an adjacent one to render a solid right triangle,
+--             with no custom textures needed; the four orientations = folding different corners (BL/BR/TL/TR = the corner holding the right angle).
+-- Brick colors: reuse DodoPool's class color palette, cycling by HP ((hp-1)%9+1), changing color each time a hit is taken = damage feedback.
 
 local DBR = _G.DodoBricks or {}
 _G.DodoBricks = DBR
@@ -14,17 +14,17 @@ local geo = DBR.geo
 
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
--- 血量 -> 职业 token(读 RAID_CLASS_COLORS 拿色,与 DodoPool 球色同源)
+-- HP -> class token (reads RAID_CLASS_COLORS for color, same source as DodoPool's ball colors)
 local TIER_CLASS = {
-    [1] = "ROGUE",       -- 黄
-    [2] = "SHAMAN",      -- 蓝
-    [3] = "DEATHKNIGHT", -- 红
-    [4] = "WARLOCK",     -- 淡紫
-    [5] = "DRUID",       -- 橙
-    [6] = "MONK",        -- 玉绿
-    [7] = "WARRIOR",     -- 棕
-    [8] = "PALADIN",     -- 粉
-    [9] = "MAGE",        -- 青
+    [1] = "ROGUE",       -- yellow
+    [2] = "SHAMAN",      -- blue
+    [3] = "DEATHKNIGHT", -- red
+    [4] = "WARLOCK",     -- light purple
+    [5] = "DRUID",       -- orange
+    [6] = "MONK",        -- jade green
+    [7] = "WARRIOR",     -- brown
+    [8] = "PALADIN",     -- pink
+    [9] = "MAGE",        -- cyan
 }
 local TIER_FALLBACK = {
     [1] = { 0.99, 0.96, 0.41 },
@@ -46,7 +46,7 @@ function Render.TierColor(hp)
     return f[1], f[2], f[3]
 end
 
--- 给一个 texture 套圆形遮罩(DodoPool 同款;贴图必须 SetPoint 否则不渲染)
+-- Apply a circle mask to a texture (same as DodoPool; the texture must be SetPoint or it won't render)
 local function ApplyCircleMask(host, tex)
     local m = host:CreateMaskTexture()
     m:SetAllPoints(tex)
@@ -66,33 +66,33 @@ end
 Render.MakeCircle = MakeCircle
 
 -- ------------------------------------------------------------
--- 三角形 texture:尺寸 S 的方块折叠成直角三角形
--- orient = 直角所在角:"BL" | "BR" | "TL" | "TR"
--- SetVertexOffset 顶点序号:1=左上 2=左下 3=右上 4=右下;y 正方向向上。
--- 折叠后两个渲染三角形之一退化为零面积,留下的恰是目标三角形(两种内部三角剖分下都成立)。
+-- Triangle texture: a square of size S folded into a right triangle
+-- orient = the corner holding the right angle: "BL" | "BR" | "TL" | "TR"
+-- SetVertexOffset vertex indices: 1=top-left 2=bottom-left 3=top-right 4=bottom-right; +y is up.
+-- After folding, one of the two rendered triangles degenerates to zero area, leaving exactly the target triangle (holds under both internal triangulations).
 -- ------------------------------------------------------------
 local function CollapseToTriangle(tex, S, orient)
-    -- 先清零四角(SetHP 重建时可能换尺寸)
+    -- zero all four corners first (a rebuild via SetHP may change the size)
     for i = 1, 4 do tex:SetVertexOffset(i, 0, 0) end
     if orient == "BL" then
-        tex:SetVertexOffset(3, -S, 0)   -- 右上角折到左上 => 剩 (0,0)(S,0)(0,S)
+        tex:SetVertexOffset(3, -S, 0)   -- fold the top-right corner onto top-left => leaves (0,0)(S,0)(0,S)
     elseif orient == "BR" then
-        tex:SetVertexOffset(1, 0, -S)   -- 左上角折到左下 => 剩 (0,0)(S,0)(S,S)
+        tex:SetVertexOffset(1, 0, -S)   -- fold the top-left corner onto bottom-left => leaves (0,0)(S,0)(S,S)
     elseif orient == "TL" then
-        tex:SetVertexOffset(4, -S, 0)   -- 右下角折到左下 => 剩 (0,0)(S,S)(0,S)
+        tex:SetVertexOffset(4, -S, 0)   -- fold the bottom-right corner onto bottom-left => leaves (0,0)(S,S)(0,S)
     elseif orient == "TR" then
-        tex:SetVertexOffset(2, S, 0)    -- 左下角折到右下 => 剩 (S,0)(S,S)(0,S)
+        tex:SetVertexOffset(2, S, 0)    -- fold the bottom-left corner onto bottom-right => leaves (S,0)(S,S)(0,S)
     end
 end
 
--- 直角角落的锚点名(内层三角形往直角缩进用)
+-- anchor name of the right-angle corner (the inner triangle insets toward the right angle)
 local ANCHOR_OF = { BL = "BOTTOMLEFT", BR = "BOTTOMRIGHT", TL = "TOPLEFT", TR = "TOPRIGHT" }
--- 数字往直角方向偏移的符号
+-- sign of the number's offset toward the right-angle corner
 local NUMOFF = { BL = { -1, -1 }, BR = { 1, -1 }, TL = { -1, 1 }, TR = { 1, 1 } }
 
 -- ------------------------------------------------------------
--- 砖:shape = "sq" | "tri";tri 带 orient。返回 frame(含 :SetHP(hp))。
--- 视觉尺寸 = CELL - 2*BRICK_PAD(留缝),碰撞仍按整格(Physics 管)。
+-- Brick: shape = "sq" | "tri"; tri carries orient. Returns a frame (with :SetHP(hp)).
+-- Visual size = CELL - 2*BRICK_PAD (leaves a seam), collision still uses the full cell (handled by Physics).
 -- ------------------------------------------------------------
 local hasGrad = (CreateColor ~= nil)
 
@@ -102,7 +102,7 @@ function Render.NewBrick(parent, shape, orient)
     b:SetSize(S, S)
     b.shape, b.orient = shape, orient
 
-    -- 外层 = 边框色(深),内层 = 主色渐变(下深上亮)
+    -- outer = border color (dark), inner = main color gradient (dark at bottom, bright at top)
     local outer = b:CreateTexture(nil, "BORDER")
     outer:SetAllPoints()
     local inner = b:CreateTexture(nil, "ARTWORK")
@@ -114,7 +114,7 @@ function Render.NewBrick(parent, shape, orient)
         inner:SetSize(SI, SI)
         local a = ANCHOR_OF[orient]
         local sx, sy = NUMOFF[orient][1], NUMOFF[orient][2]
-        inner:SetPoint(a, b, a, -sx * 2, -sy * 2)   -- 往三角内部缩 2px
+        inner:SetPoint(a, b, a, -sx * 2, -sy * 2)   -- inset 2px into the triangle
         CollapseToTriangle(inner, SI, orient)
     else
         inner:SetPoint("TOPLEFT", 2, -2)
@@ -149,7 +149,7 @@ function Render.NewBrick(parent, shape, orient)
     return b
 end
 
--- 砖放到格(col,row),带视觉下移偏移 dy(下压动画用;0 = 到位)
+-- Place a brick at cell (col,row), with a visual downward offset dy (used by the descend animation; 0 = in place)
 function Render.PlaceBrick(parent, brick, col, row, dy)
     local x0, y0 = geo.CellRect(col, row)
     brick:ClearAllPoints()
@@ -157,7 +157,7 @@ function Render.PlaceBrick(parent, brick, col, row, dy)
 end
 
 -- ------------------------------------------------------------
--- 弹球(白,小高光)。返回 frame。
+-- Ball (white, small highlight). Returns a frame.
 -- ------------------------------------------------------------
 function Render.NewBall(parent)
     local r = geo.BALL_R
@@ -178,23 +178,23 @@ function Render.PlaceAt(parent, fr, x, y)
     fr:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
 end
 
--- 热路径移动(球 + 尾迹每帧几百次):同名 CENTER 锚点直接替换,省掉 ClearAllPoints。
--- 只能用在"从来只用 CENTER 锚"的帧上(球/尾迹/虚线点)。
+-- Hot-path move (ball + trail, hundreds of times per frame): replace the same CENTER anchor directly, skipping ClearAllPoints.
+-- Only usable on frames that "only ever use the CENTER anchor" (ball / trail / aim dots).
 function Render.MoveAt(parent, fr, x, y)
     fr:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
 end
 
 -- ------------------------------------------------------------
--- 彗星尾迹余像:第 k 节(1 近 3 远),越远越小越淡,ADD 发光
+-- Comet trail afterimage: segment k (1 near, 3 far), smaller and fainter the farther out, ADD glow
 -- ------------------------------------------------------------
-local GHOST_SIZE  = { 0.78, 0.58, 0.38 }   -- 相对球的直径比例
+local GHOST_SIZE  = { 0.78, 0.58, 0.38 }   -- size ratio relative to the ball's diameter
 local GHOST_ALPHA = { 0.30, 0.16, 0.07 }
 
 function Render.NewGhost(parent, k)
     local r = geo.BALL_R * (GHOST_SIZE[k] or 0.3)
     local f = CreateFrame("Frame", nil, parent)
     f:SetSize(2 * r, 2 * r)
-    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 5)   -- 压在球(+6)之下、砖之上
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 5)   -- below the ball (+6), above the bricks
     local t = MakeCircle(f, 2 * r, "ARTWORK", 1, 1, 1, GHOST_ALPHA[k] or 0.05)
     t:SetBlendMode("ADD")
     f:Hide()
@@ -202,9 +202,9 @@ function Render.NewGhost(parent, k)
 end
 
 -- ------------------------------------------------------------
--- 道具:外环(颜色按种类)+ 中心图形。返回 frame(含 .ring 供脉冲)。
--- kind: "ball" +1球(白环+小球) / "laserH" 横激光(红环+横杠) / "laserV" 竖激光(红环+竖杠)
---       / "bomb" 炸弹(橙环+实心圆)
+-- Item: outer ring (color by kind) + center shape. Returns a frame (with .ring for the pulse).
+-- kind: "ball" +1 ball (white ring + small ball) / "laserH" horizontal laser (red ring + horizontal bar) / "laserV" vertical laser (red ring + vertical bar)
+--       / "bomb" bomb (orange ring + solid circle)
 -- ------------------------------------------------------------
 local ITEM_RING = {
     ball   = { 0.95, 0.95, 0.95 },
@@ -221,7 +221,7 @@ function Render.NewItem(parent, kind)
     f:SetFrameLevel((parent:GetFrameLevel() or 0) + 4)
     local rc = ITEM_RING[kind] or ITEM_RING.ball
     local ring = MakeCircle(f, 2 * R, "ARTWORK", rc[1], rc[2], rc[3], 0.9)
-    local hole = MakeCircle(f, 2 * R - 6, "ARTWORK", 0.045, 0.045, 0.085, 1)  -- 与棋盘底色一致,抠出环
+    local hole = MakeCircle(f, 2 * R - 6, "ARTWORK", 0.045, 0.045, 0.085, 1)  -- same as the board background, punches out the ring
     if kind == "laserH" or kind == "laserV" then
         local bar = f:CreateTexture(nil, "OVERLAY")
         if kind == "laserH" then bar:SetSize(2 * R - 8, 3) else bar:SetSize(3, 2 * R - 8) end
@@ -237,10 +237,10 @@ function Render.NewItem(parent, kind)
 end
 
 -- ------------------------------------------------------------
--- 特效构件(Game 的特效池用):碎砖闪光 / 激光束 / 爆炸圈,都是 ADD 叠加发光
+-- Effect pieces (used by Game's effect pool): brick flash / laser beam / explosion ring, all ADD-blended glow
 -- ------------------------------------------------------------
 
--- 碎砖闪光:与砖同形状的白色 ADD 贴图(三角同向折叠)
+-- Brick flash: a white ADD texture in the same shape as the brick (triangle folded the same way)
 function Render.NewBrickFlash(parent, shape, orient)
     local S = geo.CELL - 2 * geo.BRICK_PAD
     local f = CreateFrame("Frame", nil, parent)
@@ -254,7 +254,7 @@ function Render.NewBrickFlash(parent, shape, orient)
     return f
 end
 
--- 激光束:横贯整行 / 纵贯整列的发光条
+-- Laser beam: a glowing bar spanning a full row / full column
 function Render.NewBeam(parent, horiz)
     local f = CreateFrame("Frame", nil, parent)
     if horiz then f:SetSize(geo.BOARD_W, 10) else f:SetSize(10, geo.ROWS * geo.CELL) end
@@ -274,7 +274,7 @@ function Render.NewBeam(parent, horiz)
     return f
 end
 
--- 爆炸圈:橙色发光圆,Game 里放大+淡出
+-- Explosion ring: an orange glowing circle, grown + faded out in Game
 function Render.NewBoom(parent)
     local f = CreateFrame("Frame", nil, parent)
     local D = geo.CELL * 2.2
@@ -296,7 +296,7 @@ function Render.NewBoom(parent)
 end
 
 -- ------------------------------------------------------------
--- 瞄准虚线点(小白点)
+-- Aim dot (small white dot)
 -- ------------------------------------------------------------
 function Render.NewDot(parent)
     local f = CreateFrame("Frame", nil, parent)
@@ -307,7 +307,7 @@ function Render.NewDot(parent)
 end
 
 -- ------------------------------------------------------------
--- 棋盘静态部分:深底 + 左右上细壁 + 发射条 + 地线。只建一次。
+-- Static parts of the board: dark base + thin left/right/top walls + launch strip + floor line. Built once.
 -- ------------------------------------------------------------
 function Render.BuildBoard(parent)
     if parent._built then return end
@@ -315,27 +315,27 @@ function Render.BuildBoard(parent)
 
     local W, H, FLOOR = geo.BOARD_W, geo.BOARD_H, geo.FLOOR
 
-    -- 越界裁剪:下压动画时顶部刷新行从板外滑入,不能画出棋盘外
+    -- Clip overflow: during the descend animation the top spawn row slides in from outside the board, must not draw outside it
     parent:SetClipsChildren(true)
 
-    -- 深色底
+    -- dark base
     local bg = parent:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.045, 0.045, 0.085, 1)
 
-    -- 发射条(底部,略亮一点)
+    -- launch strip (bottom, slightly brighter)
     local strip = parent:CreateTexture(nil, "BACKGROUND", nil, 1)
     strip:SetPoint("BOTTOMLEFT", 0, 0)
     strip:SetPoint("TOPRIGHT", parent, "BOTTOMLEFT", W, FLOOR)
     strip:SetColorTexture(0.08, 0.08, 0.13, 1)
 
-    -- 地线(球落回 / 砖压到这条线就完了)
+    -- floor line (a ball falling back / a brick pushed to this line = game over)
     local floorLine = parent:CreateTexture(nil, "BORDER")
     floorLine:SetPoint("BOTTOMLEFT", 0, FLOOR - 1)
     floorLine:SetPoint("TOPRIGHT", parent, "BOTTOMLEFT", W, FLOOR)
     floorLine:SetColorTexture(0.75, 0.3, 0.3, 0.35)
 
-    -- 左 / 右 / 顶细壁(反弹边界的视觉提示)
+    -- left / right / top thin walls (visual hint for the bounce boundaries)
     local function wall(x1, y1, x2, y2)
         local t = parent:CreateTexture(nil, "BORDER")
         t:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", x1, y1)

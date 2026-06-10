@@ -1,7 +1,7 @@
 -- DodoBricks - Geometry
--- 棋盘几何常量。坐标系与 DodoPool 同款:board 局部像素,原点左下,+x 右 +y 上。
--- 网格:COLS 列 x ROWS 行,row=1 是最底下一行砖(紧贴发射线),row=ROWS 是顶部刷新行。
--- 发射条(launch strip)在 y ∈ [0, FLOOR),球的"地面"= FLOOR(球心到达即算落地)。
+-- Board geometry constants. Same coordinate system as DodoPool: board local pixels, origin bottom-left, +x right +y up.
+-- Grid: COLS columns x ROWS rows. row=1 is the bottom row of bricks (against the launch line), row=ROWS is the top spawn row.
+-- The launch strip is at y in [0, FLOOR); the ball's "floor" = FLOOR (a ball center reaching it counts as landed).
 
 local DBR = _G.DodoBricks or {}
 _G.DodoBricks = DBR
@@ -9,32 +9,32 @@ _G.DodoBricks = DBR
 local geo = {}
 DBR.geo = geo
 
-geo.COLS  = 7      -- 列数(经典 Ballz 布局)
-geo.ROWS  = 9      -- 可视砖行数;砖被压到 row 0(进发射条)= 游戏结束
-geo.CELL  = 56     -- 格子边长(px)
-geo.FLOOR = 30     -- 发射条高度;球飞行区下边界 y = FLOOR
+geo.COLS  = 7      -- number of columns (classic Ballz layout)
+geo.ROWS  = 9      -- visible brick rows; a brick pushed to row 0 (into the launch strip) = game over
+geo.CELL  = 56     -- cell side length (px)
+geo.FLOOR = 30     -- launch strip height; the ball flight region's lower bound y = FLOOR
 
 geo.BOARD_W = geo.COLS * geo.CELL                -- 392
 geo.BOARD_H = geo.FLOOR + geo.ROWS * geo.CELL    -- 534
 
-geo.BALL_R   = 7    -- 弹球半径
-geo.ITEM_R   = 10   -- "+1 球"道具的拾取半径(视觉略小)
-geo.BRICK_PAD = 3   -- 砖视觉内缩(碰撞用整格,视觉留缝;相邻砖之间不可穿缝)
+geo.BALL_R   = 7    -- ball radius
+geo.ITEM_R   = 10   -- pickup radius of the "+1 ball" item (slightly smaller visually)
+geo.BRICK_PAD = 3   -- brick visual inset (collision uses the full cell, the gap is only visual; adjacent bricks have no passable seam)
 
--- 格子 (col 0..COLS-1, row 1..ROWS) -> 碰撞 AABB(整格)
+-- cell (col 0..COLS-1, row 1..ROWS) -> collision AABB (full cell)
 function geo.CellRect(col, row)
     local x0 = col * geo.CELL
     local y0 = geo.FLOOR + (row - 1) * geo.CELL
     return x0, y0, x0 + geo.CELL, y0 + geo.CELL
 end
 
--- 格子中心
+-- cell center
 function geo.CellCenter(col, row)
     local x0, y0 = geo.CellRect(col, row)
     return x0 + geo.CELL / 2, y0 + geo.CELL / 2
 end
 
--- 球心 (x,y) 落在哪个格(row 可能 <1 或 >ROWS,调用方自己判界)
+-- which cell does ball center (x,y) land in (row may be <1 or >ROWS, the caller checks bounds itself)
 function geo.CellAt(x, y)
     local col = math.floor(x / geo.CELL)
     local row = math.floor((y - geo.FLOOR) / geo.CELL) + 1

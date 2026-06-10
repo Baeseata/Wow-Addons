@@ -1,8 +1,8 @@
 -- DodoPool - Physics
--- 2D 运动物理 + 旋转(效果分离式):
---   * 基础:子步进积分、球-球弹性碰撞、库边反弹、滚动摩擦、落袋、停止判定
---   * 旋转(只母球带):spinF 跟杆/缩杆、spinS 侧塞、curve masse 弧线;各为独立可调项
--- 坐标:felt 局部像素，原点左下，+x 右 +y 上。
+-- 2D motion physics + spin (effect-separated):
+--   * Base: sub-step integration, ball-on-ball elastic collision, cushion bounce, rolling friction, pocketing, stop detection
+--   * Spin (cue ball only): spinF follow/draw, spinS english, curve masse; each an independent tunable
+-- Coordinates: felt local pixels, origin bottom-left, +x right +y up.
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -12,32 +12,32 @@ DP.Physics = Physics
 
 local geo = DP.geo
 
--- 基础常量(像素 / 秒)
-local ROLL_DECEL = 135      -- 滚动摩擦减速度
-local STOP_V     = 5        -- 低于此速判停
-local WALL_REST  = 0.72     -- 库边反弹系数
-local BALL_REST  = 0.96     -- 球-球反弹系数
-Physics.MAX_SPEED = 1500    -- 满力球速
+-- Base constants (pixels / second)
+local ROLL_DECEL = 135      -- rolling-friction deceleration
+local STOP_V     = 5        -- below this speed counts as stopped
+local WALL_REST  = 0.72     -- cushion restitution
+local BALL_REST  = 0.96     -- ball-on-ball restitution
+Physics.MAX_SPEED = 1500    -- full-power ball speed
 
--- 旋转效果系数(可调;符号/强度按手感反馈再翻/调)
-local THROW_K    = 0.05     -- throw:侧塞给目标球的偏转角(弧度,满塞)
-local ENGLISH_K  = 160      -- 侧塞吃库:撞库后沿库面加的切向速度
-local CURVE_ACCEL = 2600    -- masse:弧线侧向加速度(满 curve)
-local CURVE_DECAY = 1.0     -- curve 衰减(每秒)
-local SPIN_DECAY  = 0.7     -- 侧塞(spinS)行进中衰减(每秒)
-local SPINF_ACCEL = 480     -- 跟杆/缩杆:沿出杆方向施力(缩杆够劲母球会回滚)
-local SPINF_DECAY = 0.5     -- 跟杆/缩杆衰减(慢些,撑到停球后还有劲回滚)
+-- Spin effect coefficients (tunable; sign/strength to be flipped/adjusted per feel feedback)
+local THROW_K    = 0.05     -- throw: deflection angle english imparts to the object ball (radians, full english)
+local ENGLISH_K  = 160      -- english off the cushion: tangential speed added along the cushion after a rail hit
+local CURVE_ACCEL = 2600    -- masse: lateral acceleration of the curve (full curve)
+local CURVE_DECAY = 1.0     -- curve decay (per second)
+local SPIN_DECAY  = 0.7     -- english (spinS) decay while travelling (per second)
+local SPINF_ACCEL = 480     -- follow/draw: force along the shot direction (a strong draw makes the cue ball roll back)
+local SPINF_DECAY = 0.5     -- follow/draw decay (slow, so it lasts and still has draw left after the ball stops)
 
--- 袋口"喉咙"吸力(加速度):球漏过库边线进了无库的袋口区后被拉向袋心落袋,
--- 治"母球停在袋口颚口/库边外卡住"的死区 bug。需 > 摩擦才能把停住的球收进袋。
+-- Pocket "throat" pull (acceleration): once a ball slips past the cushion line into the railless pocket region it is pulled toward the pocket center and drops,
+-- fixing the dead-zone bug where "the cue ball stops in the pocket jaws / outside the cushion and gets stuck". Must be > friction to draw a stopped ball into the pocket.
 local POCKET_PULL = 1400
 
--- 音效触发阈值(px/s;选音与节流在 Sound.lua)
-local SND_BALL_HARD = 260   -- 球碰球:相对法向速度高于此用脆响 clack,低于用轻嗒 soft
-local SND_BALL_MIN  = 40    -- 球碰球:低于此不响
-local SND_RAIL_MIN  = 60    -- 撞库:反弹后速度低于此不响
+-- Sound trigger thresholds (px/s; sound choice and throttle live in Sound.lua)
+local SND_BALL_HARD = 260   -- ball-on-ball: relative normal speed above this uses the sharp clack, below uses the soft tap
+local SND_BALL_MIN  = 40    -- ball-on-ball: below this is silent
+local SND_RAIL_MIN  = 60    -- rail hit: silent if post-bounce speed is below this
 
--- 落袋
+-- Pocketing
 local function InPocket(b)
     local PR = geo.POCKET_R
     for _, p in ipairs(geo.Pockets()) do
@@ -47,7 +47,7 @@ local function InPocket(b)
     return false
 end
 
--- 靠近袋口(靠近时不撞库)
+-- Near a pocket (don't bounce off the cushion when close)
 local function NearPocket(b)
     local R = geo.POCKET_R * 1.5
     for _, p in ipairs(geo.Pockets()) do
@@ -57,8 +57,8 @@ local function NearPocket(b)
     return false
 end
 
--- 袋口区域内最近的袋:返回袋心 px,py + 距离平方;不在任何袋口区返回 nil。
--- 供"袋口喉咙吸入"用:球漏进袋口(库已关)就拉向最近袋心。
+-- Nearest pocket within the pocket region: returns pocket-center px,py + distance squared; nil if not in any pocket region.
+-- Used by "pocket throat suction": a ball that slips into the pocket region (cushion already off) is pulled toward the nearest pocket center.
 local function MouthPocket(b)
     local R2 = (geo.POCKET_R * 1.5) ^ 2
     local best, bx, by
@@ -79,7 +79,7 @@ function Physics.AnyMoving(balls)
     return false
 end
 
--- 这一杆是否仍在进行:有球在动,或母球残余跟/缩杆仍足以推动静止的它(否则就该结束)。
+-- Whether this shot is still going: a ball is moving, or the cue ball's leftover follow/draw is still enough to push it from rest (otherwise it should end).
 function Physics.ShotActive(balls)
     if Physics.AnyMoving(balls) then return true end
     for _, b in ipairs(balls) do
@@ -89,7 +89,7 @@ function Physics.ShotActive(balls)
             if eff > ROLL_DECEL * 1.1 then return true end
         end
     end
-    -- 有球漏到库边线外(卡在袋口喉咙):继续模拟,让袋口吸力把它收进袋,别让这一杆就此结束
+    -- A ball slipped past the cushion line (stuck in a pocket throat): keep simulating so the pocket pull draws it in, don't let the shot end here
     local W, H, R = geo.FELT_W, geo.FELT_H, geo.BALL_R
     for _, b in ipairs(balls) do
         if b.active and (b.x < R or b.x > W - R or b.y < R or b.y > H - R) then return true end
@@ -97,19 +97,19 @@ function Physics.ShotActive(balls)
     return false
 end
 
--- 出杆(带旋转)。dir 单位向量, frac 力度[0,1], ox/oy 击球点[-1,1], curveAmt = ox*sin(抬杆)
+-- Shoot (with spin). dir unit vector, frac power [0,1], ox/oy strike point [-1,1], curveAmt = ox*sin(elevation)
 function Physics.ShootSpin(cue, dirx, diry, frac, ox, oy, curveAmt)
     local s = Physics.MAX_SPEED * frac
     cue.vx, cue.vy = dirx * s, diry * s
-    cue.shotDirX, cue.shotDirY = dirx, diry   -- 跟杆/缩杆沿此固定方向施力
-    cue.touchedObject = false    -- 本杆母球是否碰到目标球(判空杆犯规)
-    cue.spinF = oy or 0          -- 上塞跟杆(+) / 下塞缩杆(-)
-    cue.spinS = ox or 0          -- 左右侧塞
-    cue.curve = curveAmt or 0    -- masse 弧线量(侧塞 * 抬杆)
+    cue.shotDirX, cue.shotDirY = dirx, diry   -- follow/draw applies force along this fixed direction
+    cue.touchedObject = false    -- whether the cue ball touched an object ball this shot (for the no-contact foul)
+    cue.spinF = oy or 0          -- top english = follow (+) / bottom english = draw (-)
+    cue.spinS = ox or 0          -- left/right english
+    cue.curve = curveAmt or 0    -- masse curve amount (english * elevation)
 end
 
--- 预测母球轨迹(动态瞄准虚线用):含 masse 弧线 + 摩擦,遇库边/目标球/停下即止。
--- 返回 felt 坐标点列表。不含跟杆/缩杆(那是落点后行为,瞄准线只示路径与弧线)。
+-- Predict the cue ball path (for the dynamic aim dashes): includes masse curve + friction, stops at a cushion/object ball/standstill.
+-- Returns a list of felt-coordinate points. Excludes follow/draw (that is post-landing behavior; the aim line only shows the path and the curve).
 function Physics.PredictCuePath(sx, sy, dirx, diry, speed, curveAmt, balls)
     local R, W, H = geo.BALL_R, geo.FELT_W, geo.FELT_H
     local x, y = sx, sy
@@ -143,7 +143,7 @@ function Physics.PredictCuePath(sx, sy, dirx, diry, speed, curveAmt, balls)
     return pts
 end
 
--- 推进一帧。out.pocketed 收集本帧落袋(调用方 wipe)。
+-- Advance one frame. out.pocketed collects balls pocketed this frame (caller wipes it).
 function Physics.Step(balls, dt, out)
     local W, H, R = geo.FELT_W, geo.FELT_H, geo.BALL_R
     local n = #balls
@@ -164,7 +164,7 @@ function Physics.Step(balls, dt, out)
     local h = dt / sub
 
     for _ = 1, sub do
-        -- 位移 + masse 弧线 + 摩擦 + 旋转衰减
+        -- displacement + masse curve + friction + spin decay
         for _, b in ipairs(balls) do
             if b.active then
                 b.x = b.x + b.vx * h
@@ -172,9 +172,9 @@ function Physics.Step(balls, dt, out)
 
                 local sp = math.sqrt(b.vx * b.vx + b.vy * b.vy)
 
-                -- masse 弧线:垂直速度方向施加侧向加速度
+                -- masse curve: apply lateral acceleration perpendicular to the velocity
                 if b.curve ~= 0 and sp > 1 then
-                    local lx, ly = -b.vy / sp, b.vx / sp     -- 左法线
+                    local lx, ly = -b.vy / sp, b.vx / sp     -- left normal
                     local ca = b.curve * CURVE_ACCEL * h
                     b.vx = b.vx + lx * ca
                     b.vy = b.vy + ly * ca
@@ -182,16 +182,16 @@ function Physics.Step(balls, dt, out)
                     if math.abs(b.curve) < 0.001 then b.curve = 0 end
                 end
 
-                -- 跟杆/缩杆:沿出杆方向施力(缩杆够强母球会先前进再回滚)
+                -- follow/draw: apply force along the shot direction (a strong-enough draw makes the cue ball move forward first then roll back)
                 if b.spinF ~= 0 then
                     local acc = b.spinF * SPINF_ACCEL
-                    if b.spinF > 0 then acc = acc * 0.5 end   -- 跟杆温和、缩杆够劲
+                    if b.spinF > 0 then acc = acc * 0.5 end   -- gentle follow, punchy draw
                     b.vx = b.vx + (b.shotDirX or 0) * acc * h
                     b.vy = b.vy + (b.shotDirY or 0) * acc * h
                 end
 
-                -- 袋口喉咙吸入:球已漏过库边线(进了无库的袋口区)-> 拉向最近袋心落袋,
-                -- 杜绝卡在袋口颚口/库边外的死区(袋口区库是关的,不会把它弹回来)
+                -- pocket throat suction: a ball has slipped past the cushion line (into the railless pocket region) -> pull it toward the nearest pocket center and drop it,
+                -- eliminating the dead zone of getting stuck in the pocket jaws / outside the cushion (the cushion is off in the pocket region, so it won't bounce it back)
                 if b.x < R or b.x > W - R or b.y < R or b.y > H - R then
                     local mpx, mpy, md2 = MouthPocket(b)
                     if mpx and md2 and md2 > 0.0001 then
@@ -201,7 +201,7 @@ function Physics.Step(balls, dt, out)
                     end
                 end
 
-                -- 滚动摩擦(用施力后的实时速度,否则缩杆反向那一下会被旧速度错误抹掉)
+                -- rolling friction (use the post-force live speed, otherwise the draw's reverse step gets wrongly cancelled by the old speed)
                 local fsp = math.sqrt(b.vx * b.vx + b.vy * b.vy)
                 if fsp > 0 then
                     local dec = ROLL_DECEL * h
@@ -213,7 +213,7 @@ function Physics.Step(balls, dt, out)
                     end
                 end
 
-                -- spinF / spinS 行进中缓慢衰减
+                -- spinF / spinS slowly decay while travelling
                 if b.spinF ~= 0 then
                     b.spinF = b.spinF * (1 - math.min(1, SPINF_DECAY * h))
                     if math.abs(b.spinF) < 0.001 then b.spinF = 0 end
@@ -225,7 +225,7 @@ function Physics.Step(balls, dt, out)
             end
         end
 
-        -- 落袋
+        -- pocketing
         for _, b in ipairs(balls) do
             if b.active and InPocket(b) then
                 b.active = false
@@ -234,7 +234,7 @@ function Physics.Step(balls, dt, out)
             end
         end
 
-        -- 库边反弹(+ 侧塞吃库)
+        -- cushion bounce (+ english off the cushion)
         for _, b in ipairs(balls) do
             if b.active and not NearPocket(b) then
                 local hit = false
@@ -262,7 +262,7 @@ function Physics.Step(balls, dt, out)
             end
         end
 
-        -- 球-球碰撞(等质量弹性 + 母球旋转传递)
+        -- ball-on-ball collision (equal-mass elastic + cue spin transfer)
         for i = 1, n do
             local a = balls[i]
             if a.active then
@@ -284,15 +284,15 @@ function Physics.Step(balls, dt, out)
                                 a.vx, a.vy = a.vx - imp * nx, a.vy - imp * ny
                                 c.vx, c.vy = c.vx + imp * nx, c.vy + imp * ny
 
-                                -- 碰撞音:按相对法向速度分轻重(同帧连环碰撞由 Sound 节流)
+                                -- collision sound: split light/heavy by relative normal speed (chained same-frame collisions throttled by Sound)
                                 if DP.Sound then
                                     local hv = -vn
                                     if hv >= SND_BALL_HARD then DP.Sound.Play("clack")
                                     elseif hv >= SND_BALL_MIN then DP.Sound.Play("soft") end
                                 end
 
-                                -- 母球侧塞 throw:把目标球出球方向偏一点
-                                -- (跟杆/缩杆由自由滚动施力处理,碰撞处不清 spinF,母球带塞继续前进/回滚)
+                                -- cue ball english throw: deflect the object ball's outgoing direction a bit
+                                -- (follow/draw is handled by the free-rolling force step; don't clear spinF at collision, the cue ball keeps moving/rolling back with english)
                                 local cue, obj
                                 if a.num == 0 then cue, obj = a, c
                                 elseif c.num == 0 then cue, obj = c, a end

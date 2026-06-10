@@ -1,6 +1,6 @@
 -- DodoPool - Render
--- 把球桌/球画到一个 playArea 帧上。playArea 尺寸 = felt(FELT_W x FELT_H)，
--- 所有元素相对 playArea 左下角定位 (felt 坐标直接当像素偏移)。
+-- Draws the table/balls onto a playArea frame. playArea size = felt (FELT_W x FELT_H),
+-- all elements positioned relative to playArea's bottom-left corner (felt coords used directly as pixel offsets).
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -10,23 +10,23 @@ DP.Render = Render
 
 local geo = DP.geo
 
--- 圆形遮罩(暴雪自带头像圆形 alpha mask，把方块裁成圆)
+-- Circle mask (Blizzard's built-in portrait circular alpha mask, crops a square into a circle)
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
--- 球号 -> 职业 token(读 RAID_CLASS_COLORS 拿色，保证跟客户端一致)
+-- Ball number -> class token (reads RAID_CLASS_COLORS for color, to stay consistent with the client)
 local BALL_CLASS = {
-    [1] = "ROGUE",       -- 黄
-    [2] = "SHAMAN",      -- 蓝
-    [3] = "DEATHKNIGHT", -- 红
-    [4] = "WARLOCK",     -- 淡紫
-    [5] = "DRUID",       -- 橙
-    [6] = "MONK",        -- 玉绿
-    [7] = "WARRIOR",     -- 棕
-    [8] = "PALADIN",     -- 粉
-    [9] = "MAGE",        -- 青
+    [1] = "ROGUE",       -- yellow
+    [2] = "SHAMAN",      -- blue
+    [3] = "DEATHKNIGHT", -- red
+    [4] = "WARLOCK",     -- light purple
+    [5] = "DRUID",       -- orange
+    [6] = "MONK",        -- jade green
+    [7] = "WARRIOR",     -- brown
+    [8] = "PALADIN",     -- pink
+    [9] = "MAGE",        -- cyan
 }
 
--- 读不到职业色表时的兜底硬编码(近似职业色)
+-- Hardcoded fallback when the class color table can't be read (approximate class colors)
 local BALL_FALLBACK = {
     [1] = { 0.99, 0.96, 0.41 },
     [2] = { 0.00, 0.44, 0.87 },
@@ -46,7 +46,7 @@ function Render.BallColor(n)
     return f[1], f[2], f[3]
 end
 
--- 给一个 texture 套圆形遮罩
+-- Apply a circle mask to a texture
 local function ApplyCircleMask(host, tex)
     local m = host:CreateMaskTexture()
     m:SetAllPoints(tex)
@@ -55,25 +55,25 @@ local function ApplyCircleMask(host, tex)
     return m
 end
 
--- 建一颗球。num=0 表示母球(白、无号)。返回 ball 帧(含 .tex/.num/.glow)。
+-- Create a ball. num=0 means the cue ball (white, no number). Returns the ball frame (with .tex/.num/.glow).
 function Render.NewBall(parent, num)
     local r = geo.BALL_R
     local b = CreateFrame("Frame", nil, parent)
     b:SetSize(2 * r, 2 * r)
     b:SetFrameLevel((parent:GetFrameLevel() or 0) + 5)
 
-    -- 底色
+    -- base color
     local tex = b:CreateTexture(nil, "BORDER")
     tex:SetAllPoints()
     if num == 0 then
-        tex:SetColorTexture(0.95, 0.95, 0.93, 1) -- 母球白
+        tex:SetColorTexture(0.95, 0.95, 0.93, 1) -- cue ball white
     else
         tex:SetColorTexture(Render.BallColor(num))
     end
     ApplyCircleMask(b, tex)
     b.tex = tex
 
-    -- 球面阴影:下暗上微亮(假球体),圆形遮罩
+    -- Ball surface shading: dark at the bottom, faintly bright at the top (fake sphere), circle mask
     local shade = b:CreateTexture(nil, "ARTWORK")
     shade:SetAllPoints()
     if shade.SetGradient and CreateColor then
@@ -84,7 +84,7 @@ function Render.NewBall(parent, num)
         shade:Hide()
     end
 
-    -- 高光(左上),让球面有反光点
+    -- Highlight (top-left), gives the ball surface a reflection point
     local hi = b:CreateTexture(nil, "OVERLAY")
     hi:SetSize(r * 0.8, r * 0.8)
     hi:SetPoint("CENTER", b, "CENTER", -r * 0.34, r * 0.36)
@@ -92,7 +92,7 @@ function Render.NewBall(parent, num)
     ApplyCircleMask(b, hi)
     b.hi = hi
 
-    -- 目标高亮(只在"该打的球"上脉冲显示),叠在球面、号码之下
+    -- Target highlight (only pulses on "the ball to hit"), layered below the surface shade and the number
     local tgt = b:CreateTexture(nil, "OVERLAY")
     tgt:SetAllPoints()
     tgt:SetColorTexture(1, 0.95, 0.4, 1)
@@ -113,13 +113,13 @@ function Render.NewBall(parent, num)
     return b
 end
 
--- 把球放到 felt 坐标 (x,y)
+-- Place a ball at felt coordinate (x,y)
 function Render.PlaceBall(parent, ball, x, y)
     ball:ClearAllPoints()
     ball:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
 end
 
--- 建球桌静态部分:木框 + 绿绒 + 球带 + 6 个袋 + 标记。只建一次。
+-- Build the static parts of the table: wooden frame + felt + cushions + 6 pockets + markings. Built once.
 function Render.BuildTable(parent)
     if parent._built then return end
     parent._built = true
@@ -127,7 +127,7 @@ function Render.BuildTable(parent)
     local W, H, RAIL = geo.FELT_W, geo.FELT_H, geo.RAIL
     local hasGrad = (CreateColor ~= nil)
 
-    -- 木框(四周外扩 RAIL)+ 竖向渐变 bevel(上亮下暗)
+    -- Wooden frame (expanded outward by RAIL on all sides) + vertical gradient bevel (bright top, dark bottom)
     local rail = parent:CreateTexture(nil, "BACKGROUND")
     rail:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -RAIL, -RAIL)
     rail:SetPoint("TOPRIGHT", parent, "BOTTOMLEFT", W + RAIL, H + RAIL)
@@ -137,7 +137,7 @@ function Render.BuildTable(parent)
         rail:SetGradient("VERTICAL", CreateColor(0.20, 0.11, 0.05, 1), CreateColor(0.45, 0.27, 0.13, 1))
     end
 
-    -- 绿绒台面 + 竖向微渐变(假光照)
+    -- Green felt surface + slight vertical gradient (fake lighting)
     local felt = parent:CreateTexture(nil, "BACKGROUND", nil, 1)
     felt:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
     felt:SetSize(W, H)
@@ -147,7 +147,7 @@ function Render.BuildTable(parent)
         felt:SetGradient("VERTICAL", CreateColor(0.07, 0.33, 0.18, 1), CreateColor(0.14, 0.50, 0.29, 1))
     end
 
-    -- 球带(cushion):四条深绿带贴内边(袋会盖在上面,形成缺口)
+    -- Cushions: four dark-green strips along the inner edge (pockets layer over them, forming gaps)
     local cw = 11
     local function strip(x1, y1, x2, y2)
         local t = parent:CreateTexture(nil, "BORDER")
@@ -160,7 +160,7 @@ function Render.BuildTable(parent)
     strip(0, 0, cw, H)
     strip(W - cw, 0, W, H)
 
-    -- 袋(黑圆,画在球带之上)
+    -- Pockets (black circles, drawn over the cushions)
     for _, p in ipairs(geo.Pockets()) do
         local pk = parent:CreateTexture(nil, "ARTWORK")
         pk:SetSize(2 * geo.POCKET_R, 2 * geo.POCKET_R)
@@ -169,7 +169,7 @@ function Render.BuildTable(parent)
         ApplyCircleMask(parent, pk)
     end
 
-    -- 标记:开球线 + 置球点
+    -- Markings: break line + foot spot
     local head = parent:CreateTexture(nil, "BORDER")
     head:SetSize(2, H - 2 * cw)
     head:SetPoint("CENTER", parent, "BOTTOMLEFT", geo.HEAD_X, H / 2)

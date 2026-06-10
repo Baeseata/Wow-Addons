@@ -2,7 +2,7 @@
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoPool
-## Notes: 九球台球小游戏 -- 小地图按钮打开，鼠标瞄准 + WASD/QE 调塞与抬杆。
+## Notes: A single-player 9-ball pool minigame. Open with the minimap button; aim with the mouse, WASD/QE for english and cue elevation.
 ## Author: Doodo
 ## Version: 0.2.0
 ## SavedVariables: DodoPoolDB

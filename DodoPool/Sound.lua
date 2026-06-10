@@ -1,10 +1,10 @@
 -- DodoPool - Sound
--- 音效:复用魔兽自带 SoundKit(无自定义音频文件)。
--- 种类:cue 出杆 / clack 球碰球(脆) / soft 轻碰、滑杆、放球 / rail 撞库 / pocket 进袋 / win 胜利 / foul 犯规。
--- 同类音带最小间隔节流(子步进一帧多次碰撞只响一下);开关存 DodoPoolDB.sound,开始界面与 HUD 各一个勾选框。
--- 音量:WoW 的 PlaySound 没有音量参数 => 同帧把同一音效叠播 N 次(振幅叠加变响),
---       N = DodoPoolDB.soundVolume(1~10 档,开始界面滑条,默认 3)。叠播只能加响,
---       真正决定底子的是选音:音源本身轻(如 UI 点击声),叠几档都轻。
+-- Sound effects: reuse WoW's built-in SoundKit (no custom audio files).
+-- Kinds: cue (cue strike) / clack (ball-on-ball, sharp) / soft (light tap, miscue slide, ball placement) / rail (cushion hit) / pocket (pocketed) / win (victory) / foul.
+-- Minimum-interval throttle per kind (so a multi-collision sub-step within one frame only sounds once); the toggle is stored in DodoPoolDB.sound, with one checkbox on the start screen and one on the HUD.
+-- Volume: WoW's PlaySound has no volume parameter => play the same sound N times in the same frame (amplitude stacks, gets louder),
+--       N = DodoPoolDB.soundVolume (levels 1~10, start-screen slider, default 3). Stacking can only add loudness;
+--       what really sets the baseline is the sound choice: if the source is quiet (e.g. a UI click), it stays quiet at any level.
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -12,23 +12,23 @@ _G.DodoPool = DP
 local S = {}
 DP.Sound = S
 
--- 选音:经 SOUNDKIT 常量表取条目,名字不存在则数字兜底;两者都没有就静默跳过该音
+-- Sound choice: look entries up in the SOUNDKIT constant table; if the name is missing fall back to the number; if neither exists, silently skip that sound
 local SK = _G.SOUNDKIT or {}
 local KITS = {
-    cue    = SK.IG_ABILITY_ICON_DROP or 838,                -- 出杆:闷击
-    clack  = SK.AUCTION_WINDOW_OPEN or 5274,                -- 球碰球(重):拍卖行木槌,响且是木头撞击声
-    soft   = SK.MAP_PING or 3175,                           -- 轻碰 / 滑杆 / 放自由球:小地图 ping 轻"咚"
-    rail   = SK.AUCTION_WINDOW_CLOSE or 5275,               -- 撞库:木槌闷敲
-    -- 选音变迁:碰撞三件套最初用 UI 点击声(856/1115/857)太轻 -> MAP_PING 仍轻 -> 木槌。
-    -- 还嫌轻的下一步是往 media/ 塞自己的台球 ogg 走 PlaySoundFile(插件内文件路径仍支持)。
-    pocket = SK.LOOT_WINDOW_COIN_SOUND or 120,              -- 进袋:金币叮当
-    win    = SK.IG_QUEST_LIST_COMPLETE or 875,              -- 胜利:任务完成钟声
-    foul   = SK.IG_QUEST_FAILED or 846,                     -- 犯规:失败短音
+    cue    = SK.IG_ABILITY_ICON_DROP or 838,                -- cue strike: muffled knock
+    clack  = SK.AUCTION_WINDOW_OPEN or 5274,                -- ball-on-ball (hard): auction-house mallet, loud and wood-on-wood
+    soft   = SK.MAP_PING or 3175,                           -- light tap / miscue slide / placing ball-in-hand: minimap ping, a soft "tock"
+    rail   = SK.AUCTION_WINDOW_CLOSE or 5275,               -- cushion hit: muffled mallet
+    -- Sound-choice history: the collision trio first used UI click sounds (856/1115/857), too quiet -> MAP_PING still quiet -> mallet.
+    -- The next step if still too quiet is to drop our own pool ogg into media/ and use PlaySoundFile (in-addon file paths are still supported).
+    pocket = SK.LOOT_WINDOW_COIN_SOUND or 120,              -- pocketed: coin jingle
+    win    = SK.IG_QUEST_LIST_COMPLETE or 875,              -- victory: quest-complete chime
+    foul   = SK.IG_QUEST_FAILED or 846,                     -- foul: short failure tone
 }
 
--- 同类最小间隔(秒)。GetTime 一帧内不变 => 同帧子步进里的连环碰撞天然只响第一下
+-- Minimum interval per kind (seconds). GetTime is constant within a frame => chained collisions in the same sub-step naturally only sound on the first
 local GAP = { clack = 0.07, soft = 0.07, rail = 0.09, pocket = 0.15 }
-local ALIAS = { soft = "clack" }   -- soft 与 clack 都是球碰球,共用节流桶
+local ALIAS = { soft = "clack" }   -- soft and clack are both ball-on-ball, share one throttle bucket
 local last = {}
 
 function S.Enabled()
@@ -36,7 +36,7 @@ function S.Enabled()
     return not (db and db.sound == false)
 end
 
--- 音量档 1~10 = 同帧叠播次数
+-- Volume level 1~10 = number of same-frame stacked plays
 function S.Volume()
     local db = DP.db
     local v = (db and tonumber(db.soundVolume)) or 3
@@ -45,8 +45,8 @@ function S.Volume()
 end
 
 local function Emit(kit)
-    -- forceNoDuplicates 必须显式 false:一是上一声没播完会拒播吞掉连续碰撞声,
-    -- 二是"叠播加响度"全靠同帧重复播同一音效
+    -- forceNoDuplicates must be explicitly false: one, if the previous sound hasn't finished it would refuse to play and swallow consecutive collision sounds;
+    -- two, "stacking for loudness" relies entirely on replaying the same sound in the same frame
     for _ = 1, S.Volume() do
         PlaySound(kit, "Master", false)
     end
@@ -67,8 +67,8 @@ function S.Play(kind)
 end
 
 -- ------------------------------------------------------------
--- 静音勾选框(开始界面 + HUD 各一个,状态互相同步)
--- 贴图手搓,不依赖 UICheckButtonTemplate 之类可能变动的模板
+-- Mute checkbox (one on the start screen + one on the HUD, states sync with each other)
+-- Textures handcrafted, not relying on UICheckButtonTemplate or other templates that may change
 -- ------------------------------------------------------------
 local toggles = {}
 local volSliders = {}
@@ -88,20 +88,20 @@ function S.CreateToggle(parent)
     cb:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
     cb.label = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     cb.label:SetPoint("LEFT", cb, "RIGHT", 1, 0)
-    cb.label:SetText("音效")
+    cb.label:SetText("Sound")
     cb:SetScript("OnShow", function(self) self:SetChecked(S.Enabled()) end)
     cb:SetScript("OnClick", function(self)
         local on = self:GetChecked() and true or false
         if DP.db then DP.db.sound = on end
         S.SyncToggles()
-        if on then Emit(KITS.clack) end   -- 开启给声反馈,关闭保持安静
+        if on then Emit(KITS.clack) end   -- audible feedback when turning on, stay silent when turning off
     end)
     toggles[#toggles + 1] = cb
     return cb
 end
 
 -- ------------------------------------------------------------
--- 音量滑条(1~10 档,开始界面用)。Slider 手搓贴图,不依赖模板
+-- Volume slider (levels 1~10, used on the start screen). Slider textures handcrafted, no template
 -- ------------------------------------------------------------
 function S.CreateVolumeSlider(parent)
     local sl = CreateFrame("Slider", nil, parent)
@@ -119,12 +119,12 @@ function S.CreateVolumeSlider(parent)
 
     sl.caption = sl:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sl.caption:SetPoint("RIGHT", sl, "LEFT", -8, 0)
-    sl.caption:SetText("音量")
+    sl.caption:SetText("Volume")
     sl.valText = sl:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sl.valText:SetPoint("LEFT", sl, "RIGHT", 8, 0)
     sl.valText:SetText("3")
 
-    -- 程序化刷新(进面板 / 别处改了开关时):同步值 + 可用态,不触发试听
+    -- Programmatic refresh (on entering the panel / when the toggle was changed elsewhere): sync value + enabled state, without triggering a preview
     function sl.Refresh(self)
         self._noPreview = true
         self:SetValue(S.Volume())
@@ -143,7 +143,7 @@ function S.CreateVolumeSlider(parent)
         self._lastVal = v
         if DP.db then DP.db.soundVolume = v end
         self.valText:SetText(tostring(v))
-        if not self._noPreview then Emit(KITS.clack) end   -- 拖动即试听新音量
+        if not self._noPreview then Emit(KITS.clack) end   -- dragging previews the new volume
     end)
 
     volSliders[#volSliders + 1] = sl

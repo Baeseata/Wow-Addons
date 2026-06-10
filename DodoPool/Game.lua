@@ -1,7 +1,7 @@
 -- DodoPool - Game
--- 状态机 + 摆球 + 鼠标瞄准蓄力 + WASD 塞点 / QE 抬杆(masse) + 出杆循环 + HUD + 进战暂停。
--- 严格 9 球规则:必须先碰最小号球、碰球后须有球到库或进球,否则犯规;犯规罚 1 杆 + 自由球;
--- 合法把 9 号打进即胜,犯规进 9 号则重摆;存读档(1 档)+ 最佳杆数记录。
+-- State machine + racking + mouse aim/charge + WASD strike point / QE elevation (masse) + shot loop + HUD + combat pause.
+-- Strict 9-ball rules: must hit the lowest-numbered ball first, and after contact a ball must reach a cushion or be pocketed, otherwise it is a foul; a foul costs 1 stroke + ball-in-hand;
+-- legally pocketing the 9-ball wins; pocketing it on a foul re-spots it; save/load (1 slot) + best-strokes record.
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -12,7 +12,7 @@ G.held = {}
 
 local geo, Physics, Render
 
--- 操控参数(可调)
+-- Control parameters (tunable)
 local MAX_PULL    = 230
 local MIN_PULL    = 14
 local STICK_LEN   = 150
@@ -52,7 +52,7 @@ local function MakeCircle(host, size, layer, r, g, b, a)
 end
 
 -- ------------------------------------------------------------
--- 球(结构+视觉)只建一次
+-- Balls (struct + visuals), built once
 -- ------------------------------------------------------------
 local function EnsureBalls()
     if G.balls then return end
@@ -83,7 +83,7 @@ local function SyncVisuals()
 end
 
 -- ------------------------------------------------------------
--- 台面视觉:球杆三段 + 动态虚线 + 胜利 / 暂停
+-- Table visuals: 3-section cue + dynamic dashes + victory / pause
 -- ------------------------------------------------------------
 local function EnsureVisuals()
     if G.cueTip then return end
@@ -104,7 +104,7 @@ local function EnsureVisuals()
 
     local pause = pa:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     pause:SetPoint("CENTER"); pause:SetTextColor(1, 0.4, 0.4)
-    pause:SetText("战斗中已暂停"); pause:Hide()
+    pause:SetText("Paused in combat"); pause:Hide()
     G.pauseText = pause
 
     local hint = pa:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -179,17 +179,17 @@ local function EnsureHUD()
     local hud = {}
     G.hud = hud
 
-    if f.hud then f.hud:SetText("|cff9dd6a0鼠标拖动瞄准蓄力·松开击球·右键取消  |  WASD 击球点  QE 抬杆|r") end
+    if f.hud then f.hud:SetText("|cff9dd6a0Drag to aim and charge - release to shoot - right-click to cancel  |  WASD strike point  QE elevation|r") end
 
     hud.strokes = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hud.strokes:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -52)
-    hud.strokes:SetText("杆数: 0")
+    hud.strokes:SetText("Strokes: 0")
 
     hud.balls = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hud.balls:SetPoint("TOPRIGHT", f, "TOPRIGHT", -22, -52)
-    hud.balls:SetText("剩球: 9")
+    hud.balls:SetText("Balls left: 9")
 
-    -- 蓄力条(CastingBar 材质)
+    -- Power bar (CastingBar texture)
     local pbW, pbH = 300, 20
     local pframe = CreateFrame("Frame", nil, f)
     pframe:SetSize(pbW, pbH)
@@ -209,18 +209,18 @@ local function EnsureHUD()
     pborder:SetTexture("Interface\\CastingBar\\UI-CastingBar-Border")
     hud.powerBar, hud.powerSpark, hud.powerW = pb, spark, pbW - 4
     local plabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    plabel:SetPoint("RIGHT", pframe, "LEFT", -8, 0); plabel:SetText("蓄力")
+    plabel:SetPoint("RIGHT", pframe, "LEFT", -8, 0); plabel:SetText("Power")
 
-    -- 击球点圆盘
+    -- Strike-point disc
     local sw = CreateFrame("Frame", nil, f)
     sw:SetSize(2 * STRIKE_RAD, 2 * STRIKE_RAD)
     sw:SetPoint("TOPLEFT", f, "TOPLEFT", 150, -28)
     MakeCircle(sw, 2 * STRIKE_RAD, "ARTWORK", 0.93, 0.93, 0.9, 1)
     hud.strikeDot = MakeCircle(sw, 12, "OVERLAY", 1, 0.85, 0.1, 1)
     local slabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    slabel:SetPoint("TOP", sw, "BOTTOM", 0, -1); slabel:SetText("击球点")
+    slabel:SetPoint("TOP", sw, "BOTTOM", 0, -1); slabel:SetText("Strike point")
 
-    -- 抬杆侧视球杆(0~45 度)
+    -- Cue elevation side view (0~45 degrees)
     local eg = CreateFrame("Frame", nil, f)
     eg:SetSize(72, 64)
     eg:SetPoint("LEFT", sw, "RIGHT", 18, 0)
@@ -233,23 +233,23 @@ local function EnsureHUD()
     cueL:SetThickness(4); cueL:SetColorTexture(0.86, 0.70, 0.40, 1)
     hud.elevCue = cueL
     hud.elevText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hud.elevText:SetPoint("TOP", eg, "BOTTOM", 0, -1); hud.elevText:SetText("抬杆 0\194\176")
+    hud.elevText:SetPoint("TOP", eg, "BOTTOM", 0, -1); hud.elevText:SetText("Elev 0\194\176")
 
-    -- 保存按钮
+    -- Save button
     local saveBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     saveBtn:SetSize(64, 22)
     saveBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -22, -78)
-    saveBtn:SetText("保存")
+    saveBtn:SetText("Save")
     saveBtn:SetScript("OnClick", function() G.Save() end)
 
-    -- 返回开始界面(随时可回菜单;打完一局后用它回开始画面)
+    -- Return to the start screen (go back to the menu anytime; also used to return to the start screen after finishing a game)
     local menuBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     menuBtn:SetSize(80, 22)
     menuBtn:SetPoint("TOPRIGHT", saveBtn, "BOTTOMRIGHT", 0, -4)
-    menuBtn:SetText("返回开始")
+    menuBtn:SetText("Menu")
     menuBtn:SetScript("OnClick", function() if G.ReturnToMenu then G.ReturnToMenu() end end)
 
-    -- 音效开关(随时可静音;与开始界面的勾选框状态同步)
+    -- Sound toggle (mute anytime; state syncs with the start-screen checkbox)
     if DP.Sound and DP.Sound.CreateToggle then
         local cb = DP.Sound.CreateToggle(f)
         cb:SetPoint("RIGHT", saveBtn, "LEFT", -42, 0)
@@ -258,8 +258,8 @@ end
 
 local function UpdateHUD()
     if not G.hud then return end
-    G.hud.strokes:SetText("杆数: " .. (G.strokes or 0))
-    G.hud.balls:SetText("剩球: " .. (G.ballsLeft or 0))
+    G.hud.strokes:SetText("Strokes: " .. (G.strokes or 0))
+    G.hud.balls:SetText("Balls left: " .. (G.ballsLeft or 0))
 end
 
 local function SetPowerBar(frac)
@@ -294,11 +294,11 @@ local function UpdateStrikeHUD()
     local px, py, L = 56, 18, 48
     G.hud.elevCue:SetStartPoint("BOTTOMLEFT", px, py)
     G.hud.elevCue:SetEndPoint("BOTTOMLEFT", px - L * math.cos(rad), py + L * math.sin(rad))
-    G.hud.elevText:SetText(string.format("抬杆 %d\194\176", math.floor((G.elevDeg or 0) + 0.5)))
+    G.hud.elevText:SetText(string.format("Elev %d\194\176", math.floor((G.elevDeg or 0) + 0.5)))
 end
 
 -- ------------------------------------------------------------
--- 键盘捕获
+-- Keyboard capture
 -- ------------------------------------------------------------
 local function OnKeyDown(self, key)
     if key == "ESCAPE" then self:SetPropagateKeyboardInput(true); return end
@@ -341,7 +341,7 @@ local function ApplyHeldKeys(dt)
 end
 
 -- ------------------------------------------------------------
--- 瞄准 / 出杆
+-- Aim / shoot
 -- ------------------------------------------------------------
 local Fire
 
@@ -409,11 +409,11 @@ function Fire()
             local cs, sn = math.cos(jit), math.sin(jit)
             fx, fy = fx * cs - fy * sn, fx * sn + fy * cs
             ox, oy = 0, 0
-            Print("滑杆!")
+            Print("Miscue!")
         end
     end
 
-    -- 本杆"必须先碰"的最小号球 + 重置裁定标志
+    -- The lowest-numbered ball this shot "must hit first" + reset the ruling flags
     G.requiredBall = nil
     for n = 1, 9 do if G.struct[n].active then G.requiredBall = n; break end end
     G._out.firstHit = nil
@@ -454,7 +454,7 @@ local function ResetCueSpin()
     c.spinF, c.spinS, c.curve, c.shotDirX, c.shotDirY = 0, 0, 0, 0, 0
 end
 
--- 9 号非法进袋 -> 重摆到置球点(被占就沿长轴顺延)
+-- Illegal 9-ball pocketing -> re-spot to the foot spot (shift along the long axis if occupied)
 local function RespotNine()
     local s = G.struct[9]
     local r = geo.BALL_R
@@ -481,13 +481,13 @@ local function RespotNine()
     G.ballsLeft = (G.ballsLeft or 0) + 1
 end
 
--- 进入自由球放置模式
+-- Enter ball-in-hand placement mode
 local function EnterPlace()
     G.cue.active = true
     G.cue.vx, G.cue.vy = 0, 0
     ResetCueSpin()
     HideAimVisuals()
-    if G.placeHint then G.placeHint:SetText("自由球:移动鼠标放置母球,左键确认"); G.placeHint:Show() end
+    if G.placeHint then G.placeHint:SetText("Ball-in-hand: move the mouse to place the cue ball, left-click to confirm"); G.placeHint:Show() end
     G.state = "PLACE"
 end
 
@@ -495,17 +495,17 @@ local function EndShot()
     local scratched = G.scratched
     local firstHit = G._out.firstHit
 
-    -- 犯规裁定(优先级:进袋 > 空杆 > 未先碰最小号 > 碰球后无球到库且未进球)
+    -- Foul ruling (priority: scratch > no contact > didn't hit the lowest ball first > no ball reached a cushion after contact and nothing pocketed)
     local foul, reason = false, nil
-    if scratched then foul, reason = true, "母球进袋"
-    elseif firstHit == nil then foul, reason = true, "空杆未碰到球"
+    if scratched then foul, reason = true, "cue ball pocketed (scratch)"
+    elseif firstHit == nil then foul, reason = true, "no contact with any ball"
     elseif firstHit ~= G.requiredBall then
-        foul, reason = true, ("未先碰最小号球(应碰 " .. tostring(G.requiredBall) .. ",实先碰 " .. tostring(firstHit) .. ")")
+        foul, reason = true, ("didn't hit the lowest ball first (should hit " .. tostring(G.requiredBall) .. ", actually hit " .. tostring(firstHit) .. ")")
     elseif not (G._out.railAfter or G.pottedThisShot) then
-        foul, reason = true, "碰球后无球到库且未进球"
+        foul, reason = true, "no ball reached a cushion after contact and nothing was pocketed"
     end
 
-    -- 9 号:合法进袋胜;犯规进袋重摆
+    -- 9-ball: legal pocketing wins; foul pocketing re-spots
     local win = false
     if G.ninePotted then
         if not foul then win = true else RespotNine() end
@@ -519,8 +519,8 @@ local function EndShot()
     end
 
     if foul then
-        G.strokes = (G.strokes or 0) + 1   -- 击球已计 1 杆,犯规再罚 1 杆
-        Print("犯规(" .. reason .. "),罚 1 杆,自由球。")
+        G.strokes = (G.strokes or 0) + 1   -- the shot already counted 1 stroke, the foul adds another
+        Print("Foul (" .. reason .. "), +1 stroke penalty, ball-in-hand.")
         if DP.Sound then DP.Sound.Play("foul") end
     end
 
@@ -534,14 +534,14 @@ local function EndShot()
         local best = DodoPoolDB and DodoPoolDB.bestStrokes
         if not best or G.strokes < best then
             if DodoPoolDB then DodoPoolDB.bestStrokes = G.strokes end
-            G.winText:SetText("你赢了! 杆数 " .. (G.strokes or 0) .. "  新纪录!")
+            G.winText:SetText("You win! Strokes " .. (G.strokes or 0) .. "  New record!")
         else
-            G.winText:SetText("你赢了! 杆数 " .. (G.strokes or 0))
+            G.winText:SetText("You win! Strokes " .. (G.strokes or 0))
         end
         G.winText:Show()
         G.SetKeyboard(false)
         if DP.Sound then DP.Sound.Play("win") end
-        Print("制胜! 杆数 " .. (G.strokes or 0) .. "。再点小地图或 /pool 开新局。")
+        Print("Victory! Strokes " .. (G.strokes or 0) .. ". Click the minimap or /pool to start a new game.")
         return
     end
 
@@ -550,7 +550,7 @@ local function EndShot()
 end
 
 -- ------------------------------------------------------------
--- 目标球高亮(最小号在台的球,脉冲变亮)
+-- Target-ball highlight (the lowest-numbered ball on the table, pulses brighter)
 -- ------------------------------------------------------------
 local function UpdateTargetHighlight()
     if not G.struct then return end
@@ -569,7 +569,7 @@ local function UpdateTargetHighlight()
     end
 end
 
--- 自由球放置(每帧)
+-- Ball-in-hand placement (per frame)
 local function UpdatePlace()
     local cue = G.cue
     local r = geo.BALL_R
@@ -599,7 +599,7 @@ local function UpdatePlace()
 end
 
 -- ------------------------------------------------------------
--- 驱动(每帧)
+-- Driver (per frame)
 -- ------------------------------------------------------------
 local function Driver(_, elapsed)
     if G.paused then return end
@@ -625,7 +625,7 @@ local function OnMouseDown(_, button)
             if DP.Sound then DP.Sound.Play("soft") end
             G.state = "AIM"
         elseif button == "LeftButton" then
-            Print("这里放不下,换个位置。")
+            Print("Can't place it here, try another spot.")
         end
         return
     end
@@ -638,7 +638,7 @@ local function OnMouseDown(_, button)
 end
 
 -- ------------------------------------------------------------
--- 进战:暂停 + 放开键盘
+-- Combat: pause + release keyboard
 -- ------------------------------------------------------------
 local function OnCombat(inCombat)
     if not G.balls then return end
@@ -669,7 +669,7 @@ function G.OnWindowHidden()
     G.SetKeyboard(false)
 end
 
--- 返回开始界面:停掉瞄准/键盘,交给 Core 显示开始面板(盖在 HUD 之上)
+-- Return to the start screen: stop aiming/keyboard, hand off to Core to show the start panel (covering the HUD)
 function G.ReturnToMenu()
     G.lmbDown = false
     SetPowerBar(0)
@@ -681,7 +681,7 @@ function G.ReturnToMenu()
 end
 
 -- ------------------------------------------------------------
--- 公共:连线驱动/鼠标(只挂一次)
+-- Shared: wire the driver/mouse (only once)
 -- ------------------------------------------------------------
 local function WireInput()
     local pa = DP.playArea
@@ -704,7 +704,7 @@ local function ResetSessionState()
 end
 
 -- ------------------------------------------------------------
--- 开新局
+-- Start a new game
 -- ------------------------------------------------------------
 function G.New()
     EnsureBalls(); EnsureVisuals(); EnsureHUD()
@@ -739,12 +739,12 @@ function G.New()
 end
 
 -- ------------------------------------------------------------
--- 存 / 读档(1 档)
+-- Save / load (1 slot)
 -- ------------------------------------------------------------
 function G.HasSave() return (DodoPoolDB and DodoPoolDB.save) ~= nil end
 
 function G.Save()
-    if G.state ~= "AIM" then Print("等球停稳(可瞄准时)再保存。"); return end
+    if G.state ~= "AIM" then Print("Wait until the balls settle (when you can aim) before saving."); return end
     if not DodoPoolDB then return end
     local sv = { cue = { x = G.cue.x, y = G.cue.y }, balls = {}, strokes = G.strokes or 0 }
     for n = 1, 9 do
@@ -752,7 +752,7 @@ function G.Save()
         sv.balls[n] = { active = s.active, x = s.x, y = s.y }
     end
     DodoPoolDB.save = sv
-    Print("进度已保存。")
+    Print("Progress saved.")
 end
 
 function G.Load()
@@ -779,7 +779,7 @@ function G.Load()
     if G.placeHint then G.placeHint:Hide() end
     SyncVisuals(); UpdateHUD(); SetPowerBar(0); UpdateStrikeHUD()
     WireInput()
-    Print("已读取进度,杆数 " .. (G.strokes or 0) .. "。")
+    Print("Progress loaded, strokes " .. (G.strokes or 0) .. ".")
     return true
 end
 

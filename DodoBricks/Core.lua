@@ -1,6 +1,6 @@
 -- DodoBricks - Core
--- 初始化、小地图按钮、游戏主窗口(竖版)、开始界面。
--- 结构与 DodoPool/Core.lua 同款:开始界面 <-> 棋盘,ESC 关窗,窗口可拖动并记忆位置。
+-- Initialization, minimap button, main game window (portrait), start screen.
+-- Same structure as DodoPool/Core.lua: start screen <-> board, ESC closes the window, the window is draggable and remembers its position.
 
 local ADDON = ...
 local DBR = _G.DodoBricks or {}
@@ -10,11 +10,11 @@ local geo = DBR.geo
 local Render = DBR.Render
 
 local DEFAULTS = {
-    bestLevel    = nil,    -- 最高到达关数,nil = 暂无
-    sound        = true,   -- 音效开关
-    soundVolume  = 3,      -- 音量 1~10(同帧叠播次数)
-    minimapAngle = 235,    -- 小地图按钮角度(错开 DodoPool 的 205)
-    windowPoint  = nil,    -- 窗口位置(拖动后保存)
+    bestLevel    = nil,    -- highest level reached, nil = none yet
+    sound        = true,   -- sound on/off
+    soundVolume  = 3,      -- volume 1~10 (same-frame stacked plays)
+    minimapAngle = 235,    -- minimap button angle (offset from DodoPool's 205)
+    windowPoint  = nil,    -- window position (saved after dragging)
 }
 
 local db
@@ -35,7 +35,7 @@ local function CopyDefaults(dst, src)
 end
 
 -- ============================================================
--- 切换:开始界面 <-> 棋盘
+-- Switch: start screen <-> board
 -- ============================================================
 local function StartNew()
     startPanel:Hide()
@@ -53,13 +53,13 @@ end
 
 local function ShowStartScreen()
     if playArea then playArea:Hide() end
-    -- 盖在 HUD 之上(HUD 控件后建、层级更高,把开始面板抬上去完整遮住)
+    -- Cover the HUD (HUD controls are built later with a higher level; raise the start panel above them to fully cover them)
     if startPanel and mainFrame then
         startPanel:SetFrameLevel((mainFrame:GetFrameLevel() or 0) + 40)
     end
     if startPanel and startPanel.recordText then
         local best = db and db.bestLevel
-        startPanel.recordText:SetText("最高关卡: " .. (best and ("第 " .. best .. " 关") or "--"))
+        startPanel.recordText:SetText("Best level: " .. (best and ("Level " .. best) or "--"))
     end
     if startPanel and startPanel.continueBtn then
         if DBR.Game and DBR.Game.HasSave and DBR.Game.HasSave() then
@@ -73,7 +73,7 @@ end
 DBR.ShowStartScreen = ShowStartScreen
 
 -- ============================================================
--- 主窗口(竖版)
+-- Main window (portrait)
 -- ============================================================
 local function CreateMainFrame()
     local f = CreateFrame("Frame", "DodoBricksFrame", UIParent, "BasicFrameTemplateWithInset")
@@ -95,9 +95,9 @@ local function CreateMainFrame()
         if DBR.Game and DBR.Game.OnWindowHidden then DBR.Game.OnWindowHidden() end
     end)
 
-    if f.TitleText then f.TitleText:SetText("DodoBricks  打砖块") end
+    if f.TitleText then f.TitleText:SetText("DodoBricks  Bricks") end
 
-    -- 棋盘区:竖版,窗口下部居中,顶上留 HUD 条
+    -- Board area: portrait, centered in the lower part of the window, leaving the HUD bar at the top
     playArea = CreateFrame("Frame", "DodoBricksPlayArea", f)
     playArea:SetSize(geo.BOARD_W, geo.BOARD_H)
     playArea:SetPoint("BOTTOM", f, "BOTTOM", 0, 16)
@@ -108,7 +108,7 @@ local function CreateMainFrame()
     mainFrame = f
     DBR.frame = f
 
-    -- ESC 关闭
+    -- ESC closes
     tinsert(UISpecialFrames, "DodoBricksFrame")
 end
 
@@ -116,7 +116,7 @@ local function CreateStartPanel()
     local p = CreateFrame("Frame", nil, mainFrame)
     p:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 12, -26)
     p:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -12, 12)
-    p:EnableMouse(true)   -- 吃掉点击,挡住下层 HUD 按钮
+    p:EnableMouse(true)   -- eat clicks, blocking the HUD buttons underneath
 
     local bg = p:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -128,38 +128,38 @@ local function CreateStartPanel()
 
     local sub = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     sub:SetPoint("TOP", title, "BOTTOM", 0, -8)
-    sub:SetText("数字打砖块")
+    sub:SetText("Numbered Brick Breaker")
 
     local startBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     startBtn:SetSize(180, 34)
     startBtn:SetPoint("TOP", sub, "BOTTOM", 0, -44)
-    startBtn:SetText("开始新局")
+    startBtn:SetText("New Game")
     startBtn:SetScript("OnClick", StartNew)
 
     local continueBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     continueBtn:SetSize(180, 34)
     continueBtn:SetPoint("TOP", startBtn, "BOTTOM", 0, -12)
-    continueBtn:SetText("继续上次进度")
+    continueBtn:SetText("Continue")
     continueBtn:SetScript("OnClick", ContinueSave)
     p.continueBtn = continueBtn
 
     local recordText = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     recordText:SetPoint("TOP", continueBtn, "BOTTOM", 0, -30)
-    recordText:SetText("最高关卡: --")
+    recordText:SetText("Best level: --")
     p.recordText = recordText
 
     local hint = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOM", p, "BOTTOM", 0, 40)
-    hint:SetText("按住左键瞄准 · 松开发射 · 右键取消\n砖上数字 = 血量,每回合下压一行,压到底线就输了\n白环 +1 球 · 红环激光清行/列 · 橙环炸弹 3×3(整回合每颗球都触发)\n一回合全清有奖励 · 首球落点 = 下回合发射点 · 回合间自动存档")
+    hint:SetText("Hold left-click to aim - release to launch - right-click to cancel\nNumber on a brick = HP; bricks drop one row each round, reach the bottom line and you lose\nWhite ring +1 ball - red ring laser clears a row/column - orange ring bomb 3x3 (every ball triggers it all round)\nClear the whole board in one round for a bonus - first ball's landing spot = next launch point - autosaves between rounds")
     hint:SetJustifyH("CENTER")
 
-    -- 音效开关 + 音量滑条(左下角)
+    -- Sound toggle + volume slider (bottom-left)
     if DBR.Sound and DBR.Sound.CreateToggle then
         local cb = DBR.Sound.CreateToggle(p)
         cb:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 14, 10)
         if DBR.Sound.CreateVolumeSlider then
             local sl = DBR.Sound.CreateVolumeSlider(p)
-            sl:SetPoint("LEFT", cb, "RIGHT", 84, 0)   -- 让出"音效"字与"音量"标
+            sl:SetPoint("LEFT", cb, "RIGHT", 84, 0)   -- leave room for the "Sound" label and the "Volume" caption
         end
     end
 
@@ -168,7 +168,7 @@ local function CreateStartPanel()
 end
 
 -- ============================================================
--- 小地图按钮(同 DodoPool:Shift+左键拖动定位,左键开关游戏)
+-- Minimap button (same as DodoPool: Shift+left-drag to reposition, left-click to toggle the game)
 -- ============================================================
 local function NormalizeAngle(a)
     a = (tonumber(a) or 235) % 360
@@ -250,9 +250,9 @@ local function CreateMinimapButton()
     end)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("DodoBricks 打砖块", 1, 1, 1)
-        GameTooltip:AddLine("左键: 打开/关闭游戏", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Shift+左键拖动: 移动图标", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("DodoBricks Brick Breaker", 1, 1, 1)
+        GameTooltip:AddLine("Left-click: open/close the game", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Shift + left-drag: move the icon", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     b:SetScript("OnLeave", GameTooltip_Hide)
@@ -262,7 +262,7 @@ local function CreateMinimapButton()
 end
 
 -- ============================================================
--- 初始化
+-- Initialization
 -- ============================================================
 local function Initialize()
     DodoBricksDB = CopyDefaults(DodoBricksDB, DEFAULTS)
@@ -285,7 +285,7 @@ local function Initialize()
     SLASH_DODOBRICKS2 = "/bricks"
     SlashCmdList["DODOBRICKS"] = ToggleGame
 
-    Print("已就绪。小地图按钮或 /bricks 打开。")
+    Print("Ready. Open with the minimap button or /bricks.")
 end
 
 local ev = CreateFrame("Frame")

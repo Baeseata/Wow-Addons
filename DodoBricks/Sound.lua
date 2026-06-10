@@ -1,9 +1,9 @@
 -- DodoBricks - Sound
--- 音效:复用魔兽自带 SoundKit(无自定义音频文件)。套路同 DodoPool/Sound.lua:
--- 选音表 KITS + 同类最小间隔节流 GAP + 静音勾选框 + 音量滑条(同帧叠播 N 次加响度)。
--- 种类:launch 发球 / hit 球碰砖(高频轻响) / brk 砖碎 / item 吃 +1 球 / land 首球落地
---       / descend 砖下压一行 / over 游戏结束 / best 新纪录。
--- 注:撞墙故意不配音(每秒太多次,只会吵)。
+-- Sound effects: reuse WoW's built-in SoundKit (no custom audio files). Same approach as DodoPool/Sound.lua:
+-- sound table KITS + per-kind minimum-interval throttle GAP + mute checkbox + volume slider (same-frame stacking for loudness).
+-- Kinds: launch (fire a ball) / hit (ball hits a brick, high-frequency soft) / brk (brick breaks) / item (collect a +1 ball) / land (first ball lands)
+--       / descend (bricks drop one row) / over (game over) / best (new record).
+-- Note: wall hits are deliberately silent (too many per second, would only be noise).
 
 local DBR = _G.DodoBricks or {}
 _G.DodoBricks = DBR
@@ -11,28 +11,28 @@ _G.DodoBricks = DBR
 local S = {}
 DBR.Sound = S
 
--- 选音:经 SOUNDKIT 常量表取条目,名字不存在则数字兜底;两者都没有就静默跳过该音。
--- 砖块游戏的碰撞声每秒几十次,故 hit/launch 选"轻"的 UI click(台球那边嫌轻,这里轻正合适);
--- 低频事件(碎砖/道具/下压/结束)才用响的。选音不满意参考 DodoPool 的迭代路径换 KITS 即可。
+-- Sound choice: look entries up in the SOUNDKIT constant table; if the name is missing fall back to the number; if neither exists, silently skip that sound.
+-- A brick game's collision sound fires dozens of times per second, so hit/launch use a "light" UI click (the pool game found these too quiet, but light is just right here);
+-- only the low-frequency events (brick break / item / descend / over) use loud ones. If unhappy with a choice, swap KITS following DodoPool's iteration path.
 local SK = _G.SOUNDKIT or {}
 local KITS = {
-    launch  = SK.IG_MAINMENU_OPTION_CHECKBOX_ON or 856,   -- 发球:极轻嗒(高频,要轻)
-    hit     = SK.IG_MAINMENU_OPTION_CHECKBOX_OFF or 857,  -- 球碰砖:轻嗒(最高频,要轻)
-    brk     = SK.MAP_PING or 3175,                        -- 砖碎:小地图 ping 轻"咚"
-    item    = SK.LOOT_WINDOW_COIN_SOUND or 120,           -- 吃 +1 球:金币叮当(台球进袋同款,实测响度 OK)
-    land    = SK.IG_MAINMENU_OPTION_CHECKBOX_ON or 856,   -- 首球落地(标记下回合发射点):极轻
-    descend = SK.AUCTION_WINDOW_CLOSE or 5275,            -- 砖下压:木槌闷敲(每回合一次)
-    over    = SK.IG_QUEST_FAILED or 846,                  -- 游戏结束:失败短音
-    best    = SK.IG_QUEST_LIST_COMPLETE or 875,           -- 新纪录:任务完成钟声
-    laser   = SK.IG_ABILITY_ICON_DROP or 838,             -- 激光触发:闷击(DodoPool 出杆同款,选音待实机迭代)
-    boom    = SK.AUCTION_WINDOW_OPEN or 5274,             -- 炸弹:重木槌"砰"
-    clear   = SK.IG_QUEST_LIST_COMPLETE or 875,           -- 全清奖励:钟声(与 best 共音,不同场合)
+    launch  = SK.IG_MAINMENU_OPTION_CHECKBOX_ON or 856,   -- fire a ball: very light tick (high-frequency, must be light)
+    hit     = SK.IG_MAINMENU_OPTION_CHECKBOX_OFF or 857,  -- ball hits a brick: light tick (highest frequency, must be light)
+    brk     = SK.MAP_PING or 3175,                        -- brick breaks: minimap ping, a soft "tock"
+    item    = SK.LOOT_WINDOW_COIN_SOUND or 120,           -- collect a +1 ball: coin jingle (same as pocketing in pool, loudness tested OK)
+    land    = SK.IG_MAINMENU_OPTION_CHECKBOX_ON or 856,   -- first ball lands (marks the next launch point): very light
+    descend = SK.AUCTION_WINDOW_CLOSE or 5275,            -- bricks drop: muffled mallet knock (once per round)
+    over    = SK.IG_QUEST_FAILED or 846,                  -- game over: short failure tone
+    best    = SK.IG_QUEST_LIST_COMPLETE or 875,           -- new record: quest-complete chime
+    laser   = SK.IG_ABILITY_ICON_DROP or 838,             -- laser trigger: muffled knock (same as the pool cue strike, sound choice to be iterated in-game)
+    boom    = SK.AUCTION_WINDOW_OPEN or 5274,             -- bomb: heavy mallet "bang"
+    clear   = SK.IG_QUEST_LIST_COMPLETE or 875,           -- clear-all bonus: chime (shares the sound with best, different occasion)
 }
 
--- 同类最小间隔(秒)。GetTime 一帧内不变 => 同帧子步进里的连环碰撞天然只响一下
+-- Minimum interval per kind (seconds). GetTime is constant within a frame => chained collisions in the same sub-step naturally only sound once
 local GAP = { hit = 0.06, launch = 0.09, brk = 0.09, item = 0.12, land = 0.2,
               laser = 0.1, boom = 0.15, clear = 0.5 }
-local ALIAS = { land = "launch" }   -- 落地与发球同为极轻嗒,共用节流桶
+local ALIAS = { land = "launch" }   -- landing and firing are both very light ticks, share one throttle bucket
 local last = {}
 
 function S.Enabled()
@@ -40,7 +40,7 @@ function S.Enabled()
     return not (db and db.sound == false)
 end
 
--- 音量档 1~10 = 同帧叠播次数
+-- Volume level 1~10 = number of same-frame stacked plays
 function S.Volume()
     local db = DBR.db
     local v = (db and tonumber(db.soundVolume)) or 3
@@ -49,8 +49,8 @@ function S.Volume()
 end
 
 local function Emit(kit)
-    -- forceNoDuplicates 必须显式 false:一是上一声没播完会拒播吞掉连续碰撞声,
-    -- 二是"叠播加响度"全靠同帧重复播同一音效
+    -- forceNoDuplicates must be explicitly false: one, if the previous sound hasn't finished it would refuse to play and swallow consecutive collision sounds;
+    -- two, "stacking for loudness" relies entirely on replaying the same sound in the same frame
     for _ = 1, S.Volume() do
         PlaySound(kit, "Master", false)
     end
@@ -71,8 +71,8 @@ function S.Play(kind)
 end
 
 -- ------------------------------------------------------------
--- 静音勾选框(开始界面 + HUD 各一个,状态互相同步)
--- 贴图手搓,不依赖 UICheckButtonTemplate 之类可能变动的模板
+-- Mute checkbox (one on the start screen + one on the HUD, states sync with each other)
+-- Textures handcrafted, not relying on UICheckButtonTemplate or other templates that may change
 -- ------------------------------------------------------------
 local toggles = {}
 local volSliders = {}
@@ -93,19 +93,19 @@ function S.CreateToggle(parent, compact)
     if not compact then
         cb.label = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         cb.label:SetPoint("LEFT", cb, "RIGHT", 1, 0)
-        cb.label:SetText("音效")
+        cb.label:SetText("Sound")
     end
     cb:SetScript("OnShow", function(self) self:SetChecked(S.Enabled()) end)
     cb:SetScript("OnClick", function(self)
         local on = self:GetChecked() and true or false
         if DBR.db then DBR.db.sound = on end
         S.SyncToggles()
-        if on then Emit(KITS.brk) end   -- 开启给声反馈,关闭保持安静
+        if on then Emit(KITS.brk) end   -- audible feedback when turning on, stay silent when turning off
     end)
     cb:SetScript("OnEnter", function(self)
         if not compact then return end
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("音效开关", 1, 1, 1)
+        GameTooltip:AddLine("Sound toggle", 1, 1, 1)
         GameTooltip:Show()
     end)
     cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -114,7 +114,7 @@ function S.CreateToggle(parent, compact)
 end
 
 -- ------------------------------------------------------------
--- 音量滑条(1~10 档,开始界面用)。Slider 手搓贴图,不依赖模板
+-- Volume slider (levels 1~10, used on the start screen). Slider textures handcrafted, no template
 -- ------------------------------------------------------------
 function S.CreateVolumeSlider(parent)
     local sl = CreateFrame("Slider", nil, parent)
@@ -132,12 +132,12 @@ function S.CreateVolumeSlider(parent)
 
     sl.caption = sl:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sl.caption:SetPoint("RIGHT", sl, "LEFT", -8, 0)
-    sl.caption:SetText("音量")
+    sl.caption:SetText("Volume")
     sl.valText = sl:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sl.valText:SetPoint("LEFT", sl, "RIGHT", 8, 0)
     sl.valText:SetText("3")
 
-    -- 程序化刷新(进面板 / 别处改了开关时):同步值 + 可用态,不触发试听
+    -- Programmatic refresh (on entering the panel / when the toggle was changed elsewhere): sync value + enabled state, without triggering a preview
     function sl.Refresh(self)
         self._noPreview = true
         self:SetValue(S.Volume())
@@ -156,7 +156,7 @@ function S.CreateVolumeSlider(parent)
         self._lastVal = v
         if DBR.db then DBR.db.soundVolume = v end
         self.valText:SetText(tostring(v))
-        if not self._noPreview then Emit(KITS.brk) end   -- 拖动即试听新音量
+        if not self._noPreview then Emit(KITS.brk) end   -- dragging previews the new volume
     end)
 
     volSliders[#volSliders + 1] = sl

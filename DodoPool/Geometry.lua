@@ -1,6 +1,6 @@
 -- DodoPool - Geometry
--- 球桌几何 + 坐标常量。一切以"球桌felt局部像素坐标"为准:
--- 原点 = felt 左下角，+x 向右(长轴)，+y 向上。渲染/物理共用这套坐标。
+-- Table geometry + coordinate constants. Everything uses "felt local pixel coordinates":
+-- origin = bottom-left corner of the felt, +x to the right (long axis), +y up. Render and physics share this system.
 
 local DP = _G.DodoPool or {}
 _G.DodoPool = DP
@@ -9,52 +9,52 @@ local geo = {}
 DP.geo = geo
 
 -- ============================================================
--- 尺寸常量(像素)。九球桌长宽比 2:1。
+-- Size constants (pixels). A 9-ball table has a 2:1 aspect ratio.
 -- ============================================================
-geo.FELT_W   = 860      -- 台面长(长轴)
-geo.FELT_H   = 430      -- 台面宽
-geo.RAIL     = 32       -- 库边(木框)厚度
-geo.BALL_R   = 13       -- 球半径
-geo.POCKET_R = 22       -- 袋口半径(视觉 + 落袋判定)
+geo.FELT_W   = 860      -- felt length (long axis)
+geo.FELT_H   = 430      -- felt width
+geo.RAIL     = 32       -- rail (wooden frame) thickness
+geo.BALL_R   = 13       -- ball radius
+geo.POCKET_R = 22       -- pocket radius (visual + pocketing test)
 
--- 关键位置(felt 局部坐标)
+-- Key positions (felt local coordinates)
 geo.CENTER_Y = geo.FELT_H / 2
-geo.FOOT_X   = geo.FELT_W * 0.72   -- 摆球区顶点(1号球)x，靠右
-geo.HEAD_X   = geo.FELT_W * 0.22   -- 开球线(母球)x，靠左
+geo.FOOT_X   = geo.FELT_W * 0.72   -- rack apex (1-ball) x, toward the right
+geo.HEAD_X   = geo.FELT_W * 0.22   -- break line (cue ball) x, toward the left
 
 -- ============================================================
--- 6 个袋:4 角 + 2 长边中点
+-- 6 pockets: 4 corners + 2 long-side midpoints
 -- ============================================================
 function geo.Pockets()
     local W, H = geo.FELT_W, geo.FELT_H
     return {
-        { x = 0,     y = 0 },   -- 左下
-        { x = W / 2, y = 0 },   -- 下中
-        { x = W,     y = 0 },   -- 右下
-        { x = 0,     y = H },   -- 左上
-        { x = W / 2, y = H },   -- 上中
-        { x = W,     y = H },   -- 右上
+        { x = 0,     y = 0 },   -- bottom-left
+        { x = W / 2, y = 0 },   -- bottom-middle
+        { x = W,     y = 0 },   -- bottom-right
+        { x = 0,     y = H },   -- top-left
+        { x = W / 2, y = H },   -- top-middle
+        { x = W,     y = H },   -- top-right
     }
 end
 
 -- ============================================================
--- 九球钻石摆球:顶点(1号)朝左对着母球，9号在正中心。
--- 列数 1,2,3,2,1 共 9 个位置。返回 {x,y} 列表(felt 坐标)。
--- 约定:pos[1] = 顶点(放 1 号)，pos[5] = 钻石正中(放 9 号)。
+-- 9-ball diamond rack: the apex (1-ball) faces left toward the cue ball, the 9-ball sits dead center.
+-- Columns of 1,2,3,2,1 = 9 positions total. Returns a list of {x,y} (felt coordinates).
+-- Convention: pos[1] = apex (holds the 1-ball), pos[5] = diamond center (holds the 9-ball).
 -- ============================================================
 function geo.RackPositions()
     local r  = geo.BALL_R
-    local d  = 2 * r            -- 球紧贴时球心间距
-    local dx = d * 0.866        -- 三角紧排的列水平步长 (cos30)
+    local d  = 2 * r            -- center-to-center distance when balls touch
+    local dx = d * 0.866        -- horizontal column step for a tight triangle rack (cos30)
     local cx, cy = geo.FOOT_X, geo.CENTER_Y
 
-    -- 每列相对中线的 y 偏移(单位 = d)
+    -- per-column y offset relative to the center line (unit = d)
     local cols = {
-        { 0 },               -- col0 顶点
+        { 0 },               -- col0 apex
         { -0.5, 0.5 },       -- col1
-        { -1, 0, 1 },        -- col2 (中间那个 = 钻石正中)
+        { -1, 0, 1 },        -- col2 (the middle one = diamond center)
         { -0.5, 0.5 },       -- col3
-        { 0 },               -- col4 尾
+        { 0 },               -- col4 tail
     }
 
     local pos = {}
@@ -64,10 +64,10 @@ function geo.RackPositions()
             pos[#pos + 1] = { x = x, y = cy + yo * d }
         end
     end
-    return pos   -- pos[1]=顶点, pos[5]=正中(9号)
+    return pos   -- pos[1]=apex, pos[5]=center (9-ball)
 end
 
--- 数值夹取(优先用公共库的，没有就本地兜底)
+-- Numeric clamp (prefer the shared library's; fall back to local if absent)
 function geo.Clamp(x, lo, hi)
     if _G.Dodo and _G.Dodo.Clamp then return _G.Dodo.Clamp(x, lo, hi) end
     x = tonumber(x) or lo

@@ -1,9 +1,9 @@
 -- DodoBricks - Game
--- 状态机 + 回合循环 + 输入 + HUD + 存读档 + 进战暂停。
--- 状态:AIM 瞄准(按住左键拖,松开发射,右键取消)-> FLY 球群飞行(依次发射、落地回收、
---       首球落点 = 下回合发射点)-> DESCEND 砖整体下压一行 + 顶部刷新行(动画)-> 回 AIM。
---       砖被压到最底行再下压 = OVER 游戏结束。关数 = 已刷行数,新砖血量 = 当前关数(小概率双倍)。
--- 存档:回合制,每次回到 AIM 自动存(1 档);游戏结束清档;最高关卡记 DodoBricksDB.bestLevel。
+-- State machine + round loop + input + HUD + save/load + combat pause.
+-- States: AIM (aim by holding left-click and dragging, release to launch, right-click to cancel) -> FLY (the ball stream flies: launched in sequence, landing collected,
+--       first ball's landing spot = next launch point) -> DESCEND (bricks drop one row + a new top spawn row, animated) -> back to AIM.
+--       A brick pushed past the bottom row = OVER, game over. Level = rows spawned so far, new brick HP = current level (small chance of double).
+-- Save: round-based, autosaves on each return to AIM (1 slot); game over clears the save; the highest level is recorded in DodoBricksDB.bestLevel.
 
 local DBR = _G.DodoBricks or {}
 _G.DodoBricks = DBR
@@ -13,35 +13,35 @@ DBR.Game = G
 
 local geo, Physics, Render
 
--- 可调参数
-local LAUNCH_GAP   = 0.07   -- 发球间隔(秒)
-local MIN_AIM_DIST = 16     -- 鼠标离发射点近于此 = 无效瞄准(松开不发射)
-local MIN_ANGLE    = 8      -- 最低发射仰角(度,防贴地平射)
-local AIM_MAX_LEN  = 900    -- 瞄准首段最大长度(px)
-local STUB_LEN     = 70     -- 首段碰撞后的反弹提示短段长度
-local DOT_GAP      = 18     -- 瞄准虚线点间距
-local DOT_SPEED    = 60     -- 虚线行进速度(px/s)
-local DESCEND_T    = 0.28   -- 下压动画时长(秒)
-local SLIDE_SPEED  = 1500   -- 落地球滑向集合点的速度(px/s)
-local BRICK_CHANCE  = 0.45  -- 刷新行每格出砖概率(道具格除外;一块不出则保底 1 块)
-local TRI_CHANCE    = 0.20  -- 新砖为三角形概率
-local DOUBLE_CHANCE = 0.12  -- 新砖双倍血概率("硬砖")
+-- Tunable parameters
+local LAUNCH_GAP   = 0.07   -- ball launch interval (seconds)
+local MIN_AIM_DIST = 16     -- if the mouse is closer than this to the launch point = invalid aim (release won't launch)
+local MIN_ANGLE    = 8      -- minimum launch elevation (degrees, prevents grazing flat shots)
+local AIM_MAX_LEN  = 900    -- max length of the aim's first segment (px)
+local STUB_LEN     = 70     -- length of the bounce-hint stub after the first segment's collision
+local DOT_GAP      = 18     -- spacing between aim dots
+local DOT_SPEED    = 60     -- aim dot travel speed (px/s)
+local DESCEND_T    = 0.28   -- descend animation duration (seconds)
+local SLIDE_SPEED  = 1500   -- speed at which landed balls slide to the gather point (px/s)
+local BRICK_CHANCE  = 0.45  -- per-cell brick spawn chance in a new row (item cell excluded; if none spawn, guarantee 1)
+local TRI_CHANCE    = 0.20  -- chance a new brick is a triangle
+local DOUBLE_CHANCE = 0.12  -- chance a new brick has double HP ("hard brick")
 local ORIENTS = { "BL", "BR", "TL", "TR" }
-local SPREAD_DEG    = 3     -- 多球散布:第 2 颗起随机偏 ±SPREAD_DEG/2 度(首颗严格按瞄准线,虚线才诚实)
-local SPECIAL_CHANCE = 0.22 -- 刷新行出特殊道具(激光/炸弹)概率(放在空格里,+1 球照旧每行必有)
+local SPREAD_DEG    = 3     -- multi-ball spread: from the 2nd ball on, randomly offset +-SPREAD_DEG/2 degrees (the first follows the aim line strictly, so the dashes are honest)
+local SPECIAL_CHANCE = 0.22 -- chance a new row spawns a special item (laser/bomb) (placed in an empty cell; +1 ball still guaranteed every row)
 local SPECIAL_KINDS = { "laserH", "laserV", "bomb" }
-local CLEAR_BONUS   = 2     -- 全清奖励球数(一回合打空全场)
-local TRAIL_MAX     = 3     -- 彗星尾迹最长节数(每节 = 前一帧位置的余像)
-local TRAIL_BUDGET  = 240   -- 全场尾迹节数预算:球多自动缩短(≤80 球 3 节,≤120 球 2 节,再多 1 节)
+local CLEAR_BONUS   = 2     -- clear-all bonus balls (clearing the whole board in one round)
+local TRAIL_MAX     = 3     -- max comet-trail segments (each segment = an afterimage of a previous frame's position)
+local TRAIL_BUDGET  = 240   -- total trail-segment budget across the board: auto-shortens when there are many balls (<=80 balls 3 seg, <=120 balls 2 seg, more = 1 seg)
 
--- 球速渐变(0.2.2):基础球速随关数小幅上涨,单回合飞行拖久了再平滑快进,后期不耽误时间。
--- 实现是纯"时间快进"(统一缩放 FLY 的 dt):弹道、落点与 1 倍速完全一致,只是播放变快。
-local LV_SPEED_GAIN  = 0.02 -- 每关基础提速 +2%(第 1 关 ×1.0)
-local LV_SPEED_MAX   = 1.6  -- 关数提速上限(此默认约 31 关到顶)
-local RAMP_START     = 4    -- 回合飞行多少秒后开始快进(短回合基本无感)
-local RAMP_FULL      = 12   -- 快进到几秒拉满(其间 smoothstep 渐变)
-local RAMP_MAX       = 2.0  -- 回合内快进上限(乘在关数提速之上)
-local SPEED_MULT_CAP = 2.6  -- 总倍速封顶(LV_SPEED_GAIN=0 + RAMP_MAX=1 即整体关闭渐变)
+-- Ball speed ramp (0.2.2): the base ball speed climbs slightly with the level, and a long single round smoothly fast-forwards, so later rounds don't drag.
+-- The implementation is pure "time fast-forward" (uniformly scaling FLY's dt): trajectory and landing are identical to 1x speed, only the playback is faster.
+local LV_SPEED_GAIN  = 0.02 -- +2% base speed per level (level 1 = x1.0)
+local LV_SPEED_MAX   = 1.6  -- level speed-up cap (with this default, caps around level 31)
+local RAMP_START     = 4    -- how many seconds into a round's flight before fast-forward begins (short rounds feel nothing)
+local RAMP_FULL      = 12   -- how many seconds until fast-forward is maxed (smoothstep in between)
+local RAMP_MAX       = 2.0  -- in-round fast-forward cap (multiplied on top of the level speed-up)
+local SPEED_MULT_CAP = 2.6  -- total speed-multiplier cap (LV_SPEED_GAIN=0 + RAMP_MAX=1 disables the ramp entirely)
 
 local function Print(msg)
     if _G.Dodo and _G.Dodo.Print then _G.Dodo.Print("Bricks", msg) else print("|cff33ff99DodoBricks:|r " .. tostring(msg)) end
@@ -60,7 +60,7 @@ local function MouseBoard()
 end
 
 -- ------------------------------------------------------------
--- 构件(只建一次):砖/道具/球/虚线点各自带对象池
+-- Build pieces (once): bricks / items / balls / aim dots each get an object pool
 -- ------------------------------------------------------------
 local function EnsureSetup()
     if G.ready then return end
@@ -68,25 +68,25 @@ local function EnsureSetup()
     geo, Physics, Render = DBR.geo, DBR.Physics, DBR.Render
     local pa = DBR.playArea
 
-    -- 砖/道具挂在 gridLayer 上;下压动画只动这一层的锚点偏移
+    -- bricks/items hang on gridLayer; the descend animation only moves this layer's anchor offset
     local gl = CreateFrame("Frame", nil, pa)
     gl:SetSize(geo.BOARD_W, geo.BOARD_H)
     gl:SetPoint("BOTTOMLEFT", pa, "BOTTOMLEFT", 0, 0)
     gl:SetFrameLevel((pa:GetFrameLevel() or 0) + 2)
     G.gridLayer = gl
 
-    G.bricks = {}            -- set:brick -> true
+    G.bricks = {}            -- set: brick -> true
     G.grid = {}              -- grid[row][col] = brick
     for r = 1, geo.ROWS do G.grid[r] = {} end
-    G.items = {}             -- array:{ col, row, kind, frame }(kind: ball/laserH/laserV/bomb)
-    G.balls = {}             -- 球结构池(随 ballTotal 增长)
-    G.brickPool = {}         -- 回收池:key("sq"/"tri_BL"...) -> {frame...}
-    G.itemPool = {}          -- 道具回收池:kind -> {frame...}
+    G.items = {}             -- array: { col, row, kind, frame } (kind: ball/laserH/laserV/bomb)
+    G.balls = {}             -- ball struct pool (grows with ballTotal)
+    G.brickPool = {}         -- recycle pool: key("sq"/"tri_BL"...) -> {frame...}
+    G.itemPool = {}          -- item recycle pool: kind -> {frame...}
     G.dots = {}
-    G.effects = {}           -- 活动特效:{ key, frame, t, dur, grow }
-    G.effectPool = {}        -- 特效回收池:key -> {frame...}
+    G.effects = {}           -- active effects: { key, frame, t, dur, grow }
+    G.effectPool = {}        -- effect recycle pool: key -> {frame...}
 
-    -- 发射台:白球 + 余量文字 + 下回合落点虚影
+    -- launcher: white ball + remaining-count text + next-round landing ghost
     G.launcher = Render.NewBall(pa)
     G.countText = pa:CreateFontString(nil, "OVERLAY")
     G.countText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
@@ -95,15 +95,15 @@ local function EnsureSetup()
     G.marker:SetAlpha(0.35)
     G.marker:Hide()
 
-    -- 战斗暂停提示
+    -- combat pause prompt
     local pause = pa:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     pause:SetPoint("CENTER", pa, "CENTER", 0, 40)
     pause:SetTextColor(1, 0.4, 0.4)
-    pause:SetText("战斗中已暂停")
+    pause:SetText("Paused in combat")
     pause:Hide()
     G.pauseText = pause
 
-    -- "+1" 飘字池
+    -- "+1" floating-text pool
     G.floats = {}
     for i = 1, 4 do
         local fs = pa:CreateFontString(nil, "OVERLAY")
@@ -113,13 +113,13 @@ local function EnsureSetup()
         G.floats[i] = { fs = fs, t = nil, x = 0, y = 0 }
     end
 
-    -- 大字飘报(全清奖励等,板中央)
+    -- big floating announcement (clear-all bonus etc., board center)
     G.bigFs = pa:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     G.bigFs:SetTextColor(1, 0.85, 0.2)
     G.bigFs:Hide()
     G.bigT = nil
 
-    -- 物理上下文(表常驻,字段引用共享)
+    -- physics context (table is persistent, fields reference shared objects)
     G.ctx = {
         balls = G.balls,
         grid = G.grid,
@@ -132,7 +132,7 @@ local function EnsureSetup()
     G.EnsureHUD()
     G.EnsureOverPanel()
 
-    -- 输入 + 驱动
+    -- input + driver
     pa:EnableMouse(true)
     pa:SetScript("OnMouseDown", function(_, button)
         if G.state ~= "AIM" or G.paused then return end
@@ -147,7 +147,7 @@ local function EnsureSetup()
 end
 
 -- ------------------------------------------------------------
--- 砖 / 道具池
+-- Brick / item pools
 -- ------------------------------------------------------------
 local function BrickKey(shape, orient) return shape == "tri" and ("tri_" .. orient) or "sq" end
 
@@ -191,9 +191,9 @@ local function FreeItemFrame(it)
 end
 
 -- ------------------------------------------------------------
--- 特效池(碎砖闪光 / 激光束 / 爆炸圈):ADD 发光,放大+淡出后回收。
--- 结构 = 锚点占位帧(定位,不缩放)+ 视觉子帧(零偏移居中,缩放它):
--- WoW 的 SetScale 会连锚点偏移一起缩放,直接缩放带大偏移的帧会漂移。
+-- Effect pool (brick flash / laser beam / explosion ring): ADD glow, grown + faded out then recycled.
+-- Structure = anchor placeholder frame (positions, doesn't scale) + visual subframe (zero offset, centered, scaled):
+-- WoW's SetScale scales the anchor offset too, so directly scaling a frame with a large offset would drift.
 -- ------------------------------------------------------------
 local function SpawnEffect(key, build, x, y, dur, grow)
     local pool = G.effectPool[key]
@@ -283,7 +283,7 @@ local function ClearBoard()
     G.HideDots()
 end
 
--- 球结构池扩容到 n(hx/hy = 前几帧位置环,画尾迹用;ghosts 懒建)
+-- Grow the ball struct pool to n (hx/hy = ring of previous-frame positions, used to draw the trail; ghosts lazily built)
 local function EnsureBalls(n)
     for i = #G.balls + 1, n do
         G.balls[i] = { x = 0, y = 0, vx = 0, vy = 0, flying = false, sliding = false,
@@ -294,7 +294,7 @@ local function EnsureBalls(n)
 end
 
 -- ------------------------------------------------------------
--- HUD(主窗口顶条):关数 / 球数 / 音效 / 返回开始
+-- HUD (main window top bar): level / ball count / sound / back to start
 -- ------------------------------------------------------------
 function G.EnsureHUD()
     if G.hud then return end
@@ -304,14 +304,14 @@ function G.EnsureHUD()
 
     hud.level = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hud.level:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -30)
-    hud.level:SetText("第 1 关")
+    hud.level:SetText("Level 1")
 
     hud.balls = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hud.balls:SetPoint("LEFT", hud.level, "RIGHT", 18, 0)
     hud.balls:SetTextColor(0.95, 0.95, 0.95)
-    hud.balls:SetText("球 ×1")
+    hud.balls:SetText("Balls x1")
 
-    -- 当前球速倍率(球速渐变,×1.1 起显示)
+    -- current ball-speed multiplier (ball speed ramp, shown from x1.1 up)
     hud.speed = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hud.speed:SetPoint("LEFT", hud.balls, "RIGHT", 14, 0)
     hud.speed:SetTextColor(0.5, 0.85, 1)
@@ -320,22 +320,22 @@ function G.EnsureHUD()
     local menuBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     menuBtn:SetSize(76, 21)
     menuBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -10, -29)
-    menuBtn:SetText("返回开始")
+    menuBtn:SetText("Menu")
     menuBtn:SetScript("OnClick", function() G.ReturnToMenu() end)
 
     if DBR.Sound and DBR.Sound.CreateToggle then
-        local cb = DBR.Sound.CreateToggle(f, true)   -- 紧凑版:无文字,带 tooltip
+        local cb = DBR.Sound.CreateToggle(f, true)   -- compact version: no label, with tooltip
         cb:SetPoint("RIGHT", menuBtn, "LEFT", -4, 0)
     end
 end
 
 local function UpdateHUD()
     if not G.hud then return end
-    G.hud.level:SetText("第 " .. (G.round or 1) .. " 关")
-    G.hud.balls:SetText("球 ×" .. (G.ballTotal or 1))
+    G.hud.level:SetText("Level " .. (G.round or 1))
+    G.hud.balls:SetText("Balls x" .. (G.ballTotal or 1))
 end
 
--- 发射台与余量文字
+-- launcher and remaining-count text
 local function PlaceLauncher()
     Render.PlaceAt(DBR.playArea, G.launcher, G.launchX, geo.FLOOR)
     G.countText:ClearAllPoints()
@@ -344,7 +344,7 @@ end
 
 local function SetCountText(n)
     if n and n > 0 then
-        G.countText:SetText("×" .. n)
+        G.countText:SetText("x" .. n)
         G.countText:Show()
     else
         G.countText:Hide()
@@ -352,7 +352,7 @@ local function SetCountText(n)
 end
 
 -- ------------------------------------------------------------
--- 游戏结束面板
+-- Game over panel
 -- ------------------------------------------------------------
 function G.EnsureOverPanel()
     if G.overPanel then return end
@@ -360,7 +360,7 @@ function G.EnsureOverPanel()
     local p = CreateFrame("Frame", nil, pa)
     p:SetAllPoints(pa)
     p:SetFrameLevel((pa:GetFrameLevel() or 0) + 30)
-    p:EnableMouse(true)   -- 吃掉点击
+    p:EnableMouse(true)   -- eat clicks
     local bg = p:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0, 0, 0, 0.82)
@@ -368,7 +368,7 @@ function G.EnsureOverPanel()
     p.title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     p.title:SetPoint("CENTER", p, "CENTER", 0, 90)
     p.title:SetTextColor(1, 0.35, 0.3)
-    p.title:SetText("游戏结束")
+    p.title:SetText("Game Over")
 
     p.line1 = p:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     p.line1:SetPoint("TOP", p.title, "BOTTOM", 0, -16)
@@ -378,13 +378,13 @@ function G.EnsureOverPanel()
     local againBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     againBtn:SetSize(140, 30)
     againBtn:SetPoint("TOP", p.line2, "BOTTOM", 0, -28)
-    againBtn:SetText("再来一局")
+    againBtn:SetText("Play Again")
     againBtn:SetScript("OnClick", function() G.New() end)
 
     local menuBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     menuBtn:SetSize(140, 30)
     menuBtn:SetPoint("TOP", againBtn, "BOTTOM", 0, -10)
-    menuBtn:SetText("返回开始")
+    menuBtn:SetText("Menu")
     menuBtn:SetScript("OnClick", function() G.ReturnToMenu() end)
 
     p:Hide()
@@ -392,7 +392,7 @@ function G.EnsureOverPanel()
 end
 
 -- ------------------------------------------------------------
--- 瞄准虚线
+-- Aim dashes
 -- ------------------------------------------------------------
 local function GetDot(i)
     local d = G.dots[i]
@@ -407,7 +407,7 @@ function G.HideDots(from)
     for k = from or 1, #G.dots do G.dots[k]:Hide() end
 end
 
--- 沿 [发射点 -> 碰撞点](+ 反弹短段)铺行进虚线点
+-- lay travelling aim dots along [launch point -> collision point] (+ a bounce stub)
 local function DrawAimDots(sx, sy, ux, uy)
     local hx, hy, rdx, rdy = Physics.Raycast(G.ctx, sx, sy, ux, uy, AIM_MAX_LEN)
     local len1 = math.sqrt((hx - sx) ^ 2 + (hy - sy) ^ 2)
@@ -425,7 +425,7 @@ local function DrawAimDots(sx, sy, ux, uy)
         else
             local t2 = s - len1
             x, y = hx + rdx * t2, hy + rdy * t2
-            d:SetAlpha(0.45)   -- 反弹段淡一点
+            d:SetAlpha(0.45)   -- bounce segment a bit fainter
         end
         if s <= len1 then d:SetAlpha(0.9) end
         Render.PlaceAt(DBR.playArea, d, x, y)
@@ -436,7 +436,7 @@ local function DrawAimDots(sx, sy, ux, uy)
 end
 
 -- ------------------------------------------------------------
--- 瞄准 / 发射
+-- Aim / launch
 -- ------------------------------------------------------------
 local function Fire()
     EnsureBalls(G.ballTotal)
@@ -449,10 +449,10 @@ local function Fire()
     G.ballsInPlay = G.ballTotal
     G.toLaunch = G.ballTotal
     G.launchTimer = 0
-    G.flyT = 0               -- 本回合飞行计时(球速渐变用,真实秒)
+    G.flyT = 0               -- this round's flight timer (for the ball speed ramp, real seconds)
     G.nextX = nil
     G.turnHadBricks = next(G.bricks) ~= nil
-    -- 尾迹节数:按全场预算分摊,球多自动缩短保性能
+    -- trail segment count: shared from the board-wide budget, auto-shortens when there are many balls for performance
     G.trailN = math.min(TRAIL_MAX, math.floor(TRAIL_BUDGET / math.max(1, G.ballTotal)))
     G.marker:Hide()
     G.HideDots()
@@ -475,7 +475,7 @@ local function UpdateAim()
     local valid = dist >= MIN_AIM_DIST and dy > 0 and (dy / dist) >= minUp
 
     if not IsMouseButtonDown("LeftButton") then
-        -- 松开:有效就发射
+        -- release: launch if valid
         G.lmbDown = false
         if valid then
             G.aimDirX, G.aimDirY = dx / dist, dy / dist
@@ -496,10 +496,10 @@ local function UpdateAim()
 end
 
 -- ------------------------------------------------------------
--- 物理回调
+-- Physics callbacks
 -- ------------------------------------------------------------
 function G.HitBrick(brick)
-    if not G.bricks[brick] then return end   -- 已被同帧的激光/炸弹链碎掉
+    if not G.bricks[brick] then return end   -- already broken this frame by a laser/bomb chain
     brick.hp = brick.hp - 1
     if brick.hp <= 0 then
         BrickFlash(brick)
@@ -524,7 +524,7 @@ local function AddFloat(x, y, text)
     end
 end
 
--- 板中央大字飘报(全清奖励)
+-- board-center big float (clear-all bonus)
 local function BigFloat(text)
     G.bigFs:SetText(text)
     G.bigT = 0
@@ -533,7 +533,7 @@ end
 
 function G.HitItem(item, idx, ball)
     local kind = item.kind or "ball"
-    -- gridLayer 可能带着下压偏移,但道具只在 FLY(偏移 0)被触发,直接用格坐标
+    -- gridLayer may carry a descend offset, but items are only triggered in FLY (offset 0), so use cell coords directly
     if kind == "ball" then
         table.remove(G.items, idx)
         local x, y = geo.CellCenter(item.col, item.row)
@@ -545,7 +545,7 @@ function G.HitItem(item, idx, ball)
         return
     end
 
-    -- 激光/炸弹:整回合常驻,每颗球各触发一次,回合结束(被触发过)才消失
+    -- laser/bomb: persist the whole round, each ball triggers once, disappears at round end (after being triggered)
     if ball then
         ball.itemTouch = ball.itemTouch or {}
         if ball.itemTouch[item] then return end
@@ -594,7 +594,7 @@ function G.BallLanded(b)
 end
 
 -- ------------------------------------------------------------
--- 刷新行 / 下压 / 游戏结束
+-- Spawn row / descend / game over
 -- ------------------------------------------------------------
 local function AddBrick(col, shape, orient, hp)
     local brick = { col = col, row = geo.ROWS, hp = hp, shape = shape, orient = orient }
@@ -628,7 +628,7 @@ local function SpawnRow()
         end
     end
     if spawned == 0 then
-        -- 保底一块,不能空行
+        -- guarantee one brick, the row can't be empty
         local empties = {}
         for col = 0, geo.COLS - 1 do
             if not occupied[col] then empties[#empties + 1] = col end
@@ -642,7 +642,7 @@ local function SpawnRow()
 
     AddItem(itemCol, "ball")
 
-    -- 特殊道具(激光/炸弹):概率刷在剩余空格里
+    -- special item (laser/bomb): spawned with some chance in a remaining empty cell
     if math.random() < SPECIAL_CHANCE then
         local empties = {}
         for col = 0, geo.COLS - 1 do
@@ -659,16 +659,16 @@ local function GameOver()
     if DodoBricksDB then DodoBricksDB.save = nil end
     local newBest = (G.round or 1) > (G.startBest or 0)
     local p = G.overPanel
-    p.line1:SetText("到达 第 " .. (G.round or 1) .. " 关")
+    p.line1:SetText("Reached Level " .. (G.round or 1))
     if newBest then
-        p.line2:SetText("|cffffd200新纪录!|r")
+        p.line2:SetText("|cffffd200New record!|r")
         Snd("best")
     else
-        p.line2:SetText("最高纪录: 第 " .. (DodoBricksDB and DodoBricksDB.bestLevel or G.round or 1) .. " 关")
+        p.line2:SetText("Best: Level " .. (DodoBricksDB and DodoBricksDB.bestLevel or G.round or 1))
         Snd("over")
     end
     p:Show()
-    Print("游戏结束,到达第 " .. (G.round or 1) .. " 关。")
+    Print("Game over, reached level " .. (G.round or 1) .. ".")
 end
 
 local function AutoSave()
@@ -685,21 +685,21 @@ local function AutoSave()
 end
 
 local function StartDescend()
-    -- 发射台移到首球落点
+    -- move the launcher to the first ball's landing spot
     if G.nextX then G.launchX = G.nextX end
     G.marker:Hide()
     PlaceLauncher()
 
-    -- 全清奖励:这回合开打时有砖、现在一块不剩
+    -- clear-all bonus: this round started with bricks, now none remain
     if G.turnHadBricks and next(G.bricks) == nil then
         G.ballTotal = G.ballTotal + CLEAR_BONUS
-        BigFloat("全清!  +" .. CLEAR_BONUS .. " 球")
+        BigFloat("Clear!  +" .. CLEAR_BONUS .. " balls")
         Snd("clear")
     end
     G.turnHadBricks = false
     SetCountText(G.ballTotal)
 
-    -- 被触发过的激光/炸弹:回合结束消失
+    -- triggered lasers/bombs: disappear at round end
     for i = #G.items, 1, -1 do
         local it = G.items[i]
         if it.used then
@@ -708,12 +708,12 @@ local function StartDescend()
         end
     end
 
-    -- 最底行还有砖 => 再压就进发射条,游戏结束
+    -- still bricks in the bottom row => pushing again enters the launch strip, game over
     for brick in pairs(G.bricks) do
         if brick.row <= 1 then GameOver(); return end
     end
 
-    -- 最底行道具:+1 球压下去前自动吃掉,激光/炸弹直接消失
+    -- bottom-row items: +1 ball is auto-collected before being pushed down, laser/bomb just disappear
     for i = #G.items, 1, -1 do
         local it = G.items[i]
         if it.row <= 1 then
@@ -729,7 +729,7 @@ local function StartDescend()
         end
     end
 
-    -- 整体下移一行(逻辑先到位,动画用 gridLayer 偏移从 +CELL 滑到 0)
+    -- shift everything down one row (logic first, the animation slides the gridLayer offset from +CELL to 0)
     for brick in pairs(G.bricks) do
         brick.row = brick.row - 1
         Render.PlaceBrick(G.gridLayer, brick.frame, brick.col, brick.row)
@@ -741,7 +741,7 @@ local function StartDescend()
         PlaceItem(it)
     end
 
-    -- 新一关
+    -- new level
     G.round = (G.round or 0) + 1
     if DodoBricksDB and G.round > (DodoBricksDB.bestLevel or 0) then
         DodoBricksDB.bestLevel = G.round
@@ -770,7 +770,7 @@ local function UpdateDescend(dt)
 end
 
 -- ------------------------------------------------------------
--- 球速渐变:关数基础倍速 × 回合内快进(详见顶部参数注释)
+-- Ball speed ramp: level base multiplier x in-round fast-forward (see the parameter comments at the top)
 -- ------------------------------------------------------------
 local function LevelMult()
     local m = 1 + LV_SPEED_GAIN * ((G.round or 1) - 1)
@@ -782,20 +782,20 @@ local function SpeedMult()
     local t = G.flyT or 0
     if t > RAMP_START then
         local p = Clamp((t - RAMP_START) / (RAMP_FULL - RAMP_START), 0, 1)
-        p = p * p * (3 - 2 * p)   -- smoothstep,渐变不突跳
+        p = p * p * (3 - 2 * p)   -- smoothstep, smooth ramp with no jump
         m = m * (1 + (RAMP_MAX - 1) * p)
     end
     return m < SPEED_MULT_CAP and m or SPEED_MULT_CAP
 end
 
--- HUD 倍速指示:×1.1 起显示,值(取整到 0.1)没变就不动文字
+-- HUD multiplier indicator: shown from x1.1 up, don't touch the text if the value (rounded to 0.1) hasn't changed
 local function UpdateSpeedHUD(m)
     local shown = math.floor(m * 10 + 0.5) / 10
     if shown < 1.1 then shown = nil end
     if shown == G.speedShown then return end
     G.speedShown = shown
     if shown then
-        G.hud.speed:SetFormattedText("速 ×%.1f", shown)
+        G.hud.speed:SetFormattedText("Speed x%.1f", shown)
         G.hud.speed:Show()
     else
         G.hud.speed:Hide()
@@ -803,7 +803,7 @@ local function UpdateSpeedHUD(m)
 end
 
 -- ------------------------------------------------------------
--- 飞行驱动
+-- Flight driver
 -- ------------------------------------------------------------
 local function UpdateLaunch(dt)
     if G.toLaunch <= 0 then return end
@@ -812,7 +812,7 @@ local function UpdateLaunch(dt)
         local idx = G.ballsInPlay - G.toLaunch + 1
         local b = G.balls[idx]
         b.x, b.y = G.launchX, geo.FLOOR
-        -- 多球散布:首颗严格按瞄准线(虚线诚实),第 2 颗起随机偏 ±SPREAD_DEG/2 度
+        -- multi-ball spread: the first ball follows the aim line strictly (honest dashes), from the 2nd on randomly offset +-SPREAD_DEG/2 degrees
         local dx, dy = G.aimDirX, G.aimDirY
         if idx > 1 and SPREAD_DEG > 0 then
             local a = math.atan2(dy, dx) + (math.random() - 0.5) * math.rad(SPREAD_DEG)
@@ -823,7 +823,7 @@ local function UpdateLaunch(dt)
         b.vx, b.vy = dx * Physics.SPEED, dy * Physics.SPEED
         b.flying, b.sliding, b.flatT, b.kick = true, false, 0, false
         b.itemTouch = nil
-        for k = 1, TRAIL_MAX do b.hx[k], b.hy[k] = b.x, b.y end   -- 尾迹从出膛点收拢展开
+        for k = 1, TRAIL_MAX do b.hx[k], b.hy[k] = b.x, b.y end   -- trail unfurls from the muzzle point
         b.frame:Show()
         G.toLaunch = G.toLaunch - 1
         G.launchTimer = G.launchTimer + LAUNCH_GAP
@@ -867,7 +867,7 @@ local function SyncBalls()
         else
             b.frame:Hide()
         end
-        -- 彗星尾迹:画在前几帧位置(只给飞行中的球;落地滑行不带尾)
+        -- comet trail: drawn at the previous few frames' positions (only for balls in flight; landed sliding has no trail)
         local n = b.flying and trailN or 0
         if n > 0 then
             EnsureTrail(b, n)
@@ -878,7 +878,7 @@ local function SyncBalls()
                 g:Show()
             end
             for k = n + 1, #b.ghosts do b.ghosts[k]:Hide() end
-            -- 历史后移一格,记录本帧位置(下一帧的"上一帧")
+            -- shift history back one slot, record this frame's position (the next frame's "previous frame")
             for k = TRAIL_MAX, 2, -1 do hx[k], hy[k] = hx[k - 1], hy[k - 1] end
             hx[1], hy[1] = b.x, b.y
         elseif b.ghosts then
@@ -896,7 +896,7 @@ local function CheckTurnEnd()
     StartDescend()
 end
 
--- "+1" 飘字 + 板中央大字
+-- "+1" float + board-center big text
 local function UpdateFloats(dt)
     for _, fl in ipairs(G.floats) do
         if fl.t then
@@ -926,7 +926,7 @@ local function UpdateFloats(dt)
     end
 end
 
--- 道具呼吸脉冲
+-- item breathing pulse
 local function PulseItems()
     local a = 0.55 + 0.35 * (0.5 + 0.5 * math.sin(GetTime() * 4))
     for _, it in ipairs(G.items) do
@@ -944,7 +944,7 @@ function G.Driver(elapsed)
         UpdateAim()
     elseif G.state == "FLY" then
         PulseItems()
-        -- 球速渐变 = 统一快进:发射间隔/物理/落地滑行用同一个缩放 dt,弹道与 1 倍速一致
+        -- ball speed ramp = uniform fast-forward: launch interval / physics / landing slide use the same scaled dt, trajectory matches 1x
         G.flyT = (G.flyT or 0) + elapsed
         local m = SpeedMult()
         UpdateSpeedHUD(m)
@@ -961,7 +961,7 @@ function G.Driver(elapsed)
 end
 
 -- ------------------------------------------------------------
--- 进战暂停 / 窗口隐藏 / 返回菜单
+-- Combat pause / window hidden / back to menu
 -- ------------------------------------------------------------
 local function OnCombat(inCombat)
     if not G.ready then return end
@@ -1007,7 +1007,7 @@ function G.ReturnToMenu()
 end
 
 -- ------------------------------------------------------------
--- 开新局 / 存读档
+-- New game / save-load
 -- ------------------------------------------------------------
 function G.New()
     EnsureSetup()
@@ -1027,7 +1027,7 @@ function G.New()
     G.launcher:Show()
     SetCountText(G.ballTotal)
     UpdateHUD()
-    StartDescend()   -- 第一行滑入,round 变 1
+    StartDescend()   -- the first row slides in, round becomes 1
 end
 
 function G.HasSave() return (DodoBricksDB and DodoBricksDB.save) ~= nil end
@@ -1077,6 +1077,6 @@ function G.Load()
     SetCountText(G.ballTotal)
     UpdateHUD()
     G.state = "AIM"
-    Print("已读取进度:第 " .. G.round .. " 关,球 ×" .. G.ballTotal .. "。")
+    Print("Progress loaded: level " .. G.round .. ", balls x" .. G.ballTotal .. ".")
     return true
 end
