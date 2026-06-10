@@ -37,9 +37,10 @@ There's no win condition - you play for the highest level you can reach.
 ## Installation
 
 1. Copy the `DodoBricks` folder into `World of Warcraft\_retail_\Interface\AddOns\`.
-2. This addon **requires the `Dodo` package** (shared library and icon) from the same repository -
-   install `Dodo` alongside it.
-3. Restart the game (a brand-new addon folder is only picked up on a full restart).
+2. Restart the game (a brand-new addon folder is only picked up on a full restart).
+
+DodoBricks runs standalone. The `Dodo` package from the same repository is optional - it only
+groups the Dodo-series addons together in the addon list.
 
 ## License
 
