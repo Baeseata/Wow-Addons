@@ -2,10 +2,10 @@
 -- 关卡生成 + 数值平衡(设计讨论定稿,2026-06-11):
 --   基准曲线 P(i) = "每关都选最优门"的人数,所有数值锚定它(敌人锚基准而非玩家实际,
 --   这样失误才会累积成劣势)。
---   压力系数 α(i):敌墙人数 = α × 过门后基准,从 0.50 爬到 0.86;
+--   压力系数 α(i):敌墙人数 = α × 过门后基准,从 0.38 爬到 0.86;
 --   目标净增长 ρ(i):从 1.28 缓降到 0.90,后期 ρ < 1 + 乘法门封顶 => 必死,记最高关数。
---   每关结构:门(二选一) -> [散兵(可绕开,占基准 12~22%)] -> 敌墙(必打)。
---   每 5 关一个 Boss 墙(α×1.28),Boss 后一关送 ×3/×2 奖励门。
+--   每关结构:门(二选一) -> [散兵(可绕开,占基准 10~18%)] -> 敌墙(必打)。
+--   每 5 关一个 Boss 墙(α×1.18),Boss 后一关送 ×3/×2 奖励门。
 --   门设计在加/乘交叉点附近("人少 +N 香,人多 ×k 香"),后期混入陷阱与"两害相权"。
 
 local DR = _G.DodoRush or {}
@@ -15,24 +15,29 @@ local Track = {}
 DR.Track = Track
 
 -- 可调参数(数值平衡看这里)
+-- 0.1.1 调参记录(2026-06-11,实测死第 6 关 vs 目标熟练 20~30 关):
+--   旧曲线 ALPHA0=0.50/GAIN=0.016 => 开局容错就只剩一半,第 5 关 Boss 实际 α=0.72
+--   (门只按普通 α 补偿)基准都净损 21%,第 6 关又叠 BOTHBAD 解锁 => 死 6 关是必然。
+--   且 need 第 11 关破 3.3 后门全变乘法,落后玩家失去加法门追赶机制 => 数学必死。
+--   新曲线把死亡区从 5~8 关推到 ~28+ 关:加法门活到 ~28 关,Boss 关基准约打平。
 local START_PAR    = 10     -- 开局人数(基准曲线起点,Game 的起始人数与此一致)
-local ALPHA0       = 0.50   -- 第 1 关压力系数
-local ALPHA_GAIN   = 0.016  -- 每关 +
-local ALPHA_CAP    = 0.86   -- 压力封顶
+local ALPHA0       = 0.38   -- 第 1 关压力系数(旧 0.50)
+local ALPHA_GAIN   = 0.012  -- 每关 + (旧 0.016;第 21 关 0.62,第 31 关 0.74)
+local ALPHA_CAP    = 0.86   -- 压力封顶(α=0.86 时 need=6.4 > MULT_CAP => 强制衰减,双保险)
 local RHO0         = 1.28   -- 第 1 关目标净增长
 local RHO_DECAY    = 0.012  -- 每关 -
 local RHO_MIN      = 0.90   -- 净增长下限(<1 = 后期必然走下坡)
 local MULT_CAP     = 6      -- 乘法门封顶(后期 g 需求超过它 => 自然衰减)
-local TRAP_CHANCE     = 0.18   -- 次门是陷阱(÷2 / -N)的概率
-local BOTHBAD_CHANCE  = 0.12   -- 两个门都是负的("两害相权")概率
+local TRAP_CHANCE     = 0.15   -- 次门是陷阱(÷2 / -N)的概率(旧 0.18)
+local BOTHBAD_CHANCE  = 0.10   -- 两个门都是负的("两害相权")概率(旧 0.12)
 local SKIRM_CHANCE    = 0.60   -- 出散兵概率
-local TRAP_MIN_STAGE    = 3    -- 第几关起允许陷阱
-local BOTHBAD_MIN_STAGE = 6    -- 第几关起允许两害相权
+local TRAP_MIN_STAGE    = 4    -- 第几关起允许陷阱(旧 3)
+local BOTHBAD_MIN_STAGE = 8    -- 第几关起允许两害相权(旧 6 — 跟 Boss 残局撞在一起)
 local SKIRM_MIN_STAGE   = 2    -- 第几关起出散兵
-local SKIRM_FRAC_LO, SKIRM_FRAC_HI = 0.12, 0.22   -- 散兵 = 基准的 12~22%
+local SKIRM_FRAC_LO, SKIRM_FRAC_HI = 0.10, 0.18   -- 散兵 = 基准的 10~18%(旧 12~22)
 local BOSS_EVERY      = 5
-local BOSS_ALPHA_MULT = 1.28
-local BOSS_ALPHA_CAP  = 0.92
+local BOSS_ALPHA_MULT = 1.18   -- (旧 1.28 — 门只补普通 α,1.28 时基准过 Boss 净损 21%)
+local BOSS_ALPHA_CAP  = 0.90
 
 -- 元素间距(px,gapAfter = 此元素与下一元素的滚动距离)
 local GAP_GATE_SKIRM = 210   -- 门 -> 散兵

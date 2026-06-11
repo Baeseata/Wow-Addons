@@ -4,7 +4,7 @@
 ## Title: DodoRush
 ## Notes: 人海快跑小游戏 -- A/D 横移选门壮大队伍,撞穿一波波红色敌军,看你能跑多远。
 ## Author: Doodo
-## Version: 0.1.0
+## Version: 0.1.1
 ## SavedVariables: DodoRushDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
