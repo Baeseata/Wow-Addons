@@ -59,7 +59,10 @@ local function ShowStartScreen()
     end
     if startPanel and startPanel.recordText then
         local best = db and db.bestLevel
-        startPanel.recordText:SetText("Best level: " .. (best and ("Level " .. best) or "--"))
+        local bs = db and db.bestScore
+        local txt = "Best level: " .. (best and ("Level " .. best) or "--")
+        if bs then txt = txt .. "    Best score: " .. bs end
+        startPanel.recordText:SetText(txt)
     end
     if startPanel and startPanel.continueBtn then
         if DBR.Game and DBR.Game.HasSave and DBR.Game.HasSave() then
@@ -77,7 +80,7 @@ DBR.ShowStartScreen = ShowStartScreen
 -- ============================================================
 local function CreateMainFrame()
     local f = CreateFrame("Frame", "DodoBricksFrame", UIParent, "BasicFrameTemplateWithInset")
-    f:SetSize(436, 624)
+    f:SetSize(geo.BOARD_W + 44, geo.BOARD_H + 90)   -- board + side padding / title bar + HUD strip (8x12 board => ~492x792)
     f:SetPoint("CENTER")
     f:SetFrameStrata("HIGH")
     f:SetClampedToScreen(true)

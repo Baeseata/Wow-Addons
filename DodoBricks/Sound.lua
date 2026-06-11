@@ -27,11 +27,23 @@ local KITS = {
     laser   = SK.IG_ABILITY_ICON_DROP or 838,             -- laser trigger: muffled knock (same as the pool cue strike, sound choice to be iterated in-game)
     boom    = SK.AUCTION_WINDOW_OPEN or 5274,             -- bomb: heavy mallet "bang"
     clear   = SK.IG_QUEST_LIST_COMPLETE or 875,           -- clear-all bonus: chime (shares the sound with best, different occasion)
+    split   = SK.IG_BACKPACK_OPEN or 862,                 -- split-ball trigger: backpack "whoosh" (sound choice to be iterated)
+    heal    = SK.IG_QUEST_LOG_OPEN or 844,                -- healer brick pulse: soft page-turn (sound choice to be iterated)
+}
+
+-- In-groove combo ladder (one ball rapidly hitting bricks back-to-back): tiers 1..5, pitch/feel should escalate.
+-- WoW's PlaySound has no pitch control, so the "ladder" is a hand-picked kit sequence - PURE GUESSWORK until heard in game, iterate freely.
+local COMBO_KITS = {
+    SK.IG_MAINMENU_OPTION_CHECKBOX_OFF or 857,  -- tier 1: light tick
+    SK.IG_MAINMENU_OPTION_CHECKBOX_ON or 856,   -- tier 2: slightly brighter tick
+    SK.MAP_PING or 3175,                        -- tier 3: ping
+    SK.READY_CHECK or 8960,                     -- tier 4: ready-check pop
+    SK.IG_QUEST_LIST_COMPLETE or 875,           -- tier 5: chime (peak)
 }
 
 -- Minimum interval per kind (seconds). GetTime is constant within a frame => chained collisions in the same sub-step naturally only sound once
 local GAP = { hit = 0.06, launch = 0.09, brk = 0.09, item = 0.12, land = 0.2,
-              laser = 0.1, boom = 0.15, clear = 0.5 }
+              laser = 0.1, boom = 0.15, clear = 0.5, split = 0.12, heal = 0.3, combo = 0.05 }
 local ALIAS = { land = "launch" }   -- landing and firing are both very light ticks, share one throttle bucket
 local last = {}
 
@@ -68,6 +80,16 @@ function S.Play(kind)
         last[bucket] = now
     end
     Emit(kit)
+end
+
+-- In-groove combo hit: tier 1..5 (caller clamps), shares one throttle bucket so a 100-ball frame doesn't machine-gun
+function S.PlayCombo(tier)
+    if not S.Enabled() then return end
+    if tier < 1 then tier = 1 elseif tier > #COMBO_KITS then tier = #COMBO_KITS end
+    local now = GetTime()
+    if last.combo and (now - last.combo) < GAP.combo then return end
+    last.combo = now
+    Emit(COMBO_KITS[tier])
 end
 
 -- ------------------------------------------------------------

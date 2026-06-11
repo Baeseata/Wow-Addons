@@ -57,8 +57,13 @@ local function InsideTri(px, py, x0, y0, x1, y1, orient)
 end
 
 -- Closest point from the ball center to a brick. Returns cpx, cpy, inside
+-- Multi-cell bricks (boss, w/h > 1): the AABB spans from the bottom-left cell to the top-right cell.
 local function ClosestOnBrick(brick, px, py)
     local x0, y0, x1, y1 = geo.CellRect(brick.col, brick.row)
+    if brick.w and brick.w > 1 then
+        local _, _, xx, yy = geo.CellRect(brick.col + brick.w - 1, brick.row + (brick.h or 1) - 1)
+        x1, y1 = xx, yy
+    end
     if brick.shape ~= "tri" then
         local cx = px < x0 and x0 or (px > x1 and x1 or px)
         local cy = py < y0 and y0 or (py > y1 and y1 or py)
@@ -142,7 +147,7 @@ local function StepBall(ctx, b, h)
             b.vx = b.vx - 2 * dot * nx
             b.vy = b.vy - 2 * dot * ny
         end
-        if ctx.OnBrickHit then ctx.OnBrickHit(best) end
+        if ctx.OnBrickHit then ctx.OnBrickHit(best, b) end
     end
 
     -- items (triggered on pass-through, no bounce; +1 ball is consumed and removed, laser/bomb persist the whole round, deduped by Game)

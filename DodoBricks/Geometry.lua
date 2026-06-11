@@ -9,8 +9,8 @@ _G.DodoBricks = DBR
 local geo = {}
 DBR.geo = geo
 
-geo.COLS  = 7      -- number of columns (classic Ballz layout)
-geo.ROWS  = 9      -- visible brick rows; a brick pushed to row 0 (into the launch strip) = game over
+geo.COLS  = 8      -- number of columns (0.3.0: was 7; wider board = more supply per row)
+geo.ROWS  = 12     -- visible brick rows (0.3.0: was 9; deeper buffer, room for double-descend events); a brick pushed to row 0 (into the launch strip) = game over
 geo.CELL  = 56     -- cell side length (px)
 geo.FLOOR = 30     -- launch strip height; the ball flight region's lower bound y = FLOOR
 

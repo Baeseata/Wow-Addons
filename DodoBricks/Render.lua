@@ -38,13 +38,24 @@ local TIER_FALLBACK = {
     [9] = { 0.25, 0.78, 0.92 },
 }
 
+-- Palette rotation (0.3.0): Game sets colorShift = floor((level-1)/10), so every 10 levels the
+-- hp->color mapping rotates one slot = a visible "new season" as you push deeper. Existing bricks
+-- recolor lazily on their next hit (SetHP), which blends the transition naturally.
+Render.colorShift = 0
+
 function Render.TierColor(hp)
-    local i = ((math.max(1, hp) - 1) % 9) + 1
+    local i = ((math.max(1, hp) - 1 + (Render.colorShift or 0)) % 9) + 1
     local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[TIER_CLASS[i]]
     if c then return c.r, c.g, c.b end
     local f = TIER_FALLBACK[i]
     return f[1], f[2], f[3]
 end
+
+-- Fixed colors for special bricks (not part of the hp color cycle)
+local KIND_COLOR = {
+    healer = { 0.16, 0.72, 0.32 },   -- green: "the medic" - kill it first or it heals its neighbors
+    chest  = { 0.95, 0.76, 0.20 },   -- gold: treasure, breaking it drops an item ring
+}
 
 -- Apply a circle mask to a texture (same as DodoPool; the texture must be SetPoint or it won't render)
 local function ApplyCircleMask(host, tex)
@@ -96,11 +107,11 @@ local NUMOFF = { BL = { -1, -1 }, BR = { 1, -1 }, TL = { -1, 1 }, TR = { 1, 1 } 
 -- ------------------------------------------------------------
 local hasGrad = (CreateColor ~= nil)
 
-function Render.NewBrick(parent, shape, orient)
+function Render.NewBrick(parent, shape, orient, kind)
     local S = geo.CELL - 2 * geo.BRICK_PAD
     local b = CreateFrame("Frame", nil, parent)
     b:SetSize(S, S)
-    b.shape, b.orient = shape, orient
+    b.shape, b.orient, b.kind = shape, orient, kind
 
     -- outer = border color (dark), inner = main color gradient (dark at bottom, bright at top)
     local outer = b:CreateTexture(nil, "BORDER")
@@ -132,8 +143,22 @@ function Render.NewBrick(parent, shape, orient)
     fs:SetTextColor(1, 1, 1, 1)
     b.num = fs
 
+    -- healer: a small white cross glyph in the top-left corner ("the medic"), hp number stays centered
+    if kind == "healer" then
+        local cv = b:CreateTexture(nil, "OVERLAY")
+        cv:SetSize(3, 11)
+        cv:SetPoint("TOPLEFT", b, "TOPLEFT", 9, -5)
+        cv:SetColorTexture(1, 1, 1, 0.95)
+        local ch = b:CreateTexture(nil, "OVERLAY")
+        ch:SetSize(11, 3)
+        ch:SetPoint("CENTER", cv, "CENTER", 0, 0)
+        ch:SetColorTexture(1, 1, 1, 0.95)
+    end
+
     function b.SetHP(self, hp)
-        local r, g, bl = Render.TierColor(hp)
+        local fc = KIND_COLOR[self.kind]
+        local r, g, bl
+        if fc then r, g, bl = fc[1], fc[2], fc[3] else r, g, bl = Render.TierColor(hp) end
         self.outer:SetColorTexture(r * 0.35, g * 0.35, bl * 0.35, 1)
         if hasGrad and self.inner.SetGradient then
             self.inner:SetColorTexture(1, 1, 1, 1)
@@ -143,6 +168,52 @@ function Render.NewBrick(parent, shape, orient)
         else
             self.inner:SetColorTexture(r, g, bl, 1)
         end
+        -- chest shows "?" instead of an hp number (mystery loot reads better than "2")
+        if self.kind == "chest" then
+            self.num:SetText("?")
+        else
+            self.num:SetText(tostring(hp))
+        end
+    end
+
+    return b
+end
+
+-- ------------------------------------------------------------
+-- Boss brick (0.3.0): a 3x3-cell mega brick, fixed dark red, big centered hp number.
+-- Same .SetHP interface as a normal brick; collision is the full 3x3 AABB (Physics reads brick.w/h).
+-- ------------------------------------------------------------
+function Render.NewBossBrick(parent)
+    local S = 3 * geo.CELL - 2 * geo.BRICK_PAD
+    local b = CreateFrame("Frame", nil, parent)
+    b:SetSize(S, S)
+    b.shape, b.kind = "sq", "boss"
+
+    local outer = b:CreateTexture(nil, "BORDER")
+    outer:SetAllPoints()
+    outer:SetColorTexture(0.16, 0.03, 0.05, 1)
+    local inner = b:CreateTexture(nil, "ARTWORK")
+    inner:SetPoint("TOPLEFT", 3, -3)
+    inner:SetPoint("BOTTOMRIGHT", -3, 3)
+    b.outer, b.inner = outer, inner
+
+    local r, g, bl = 0.72, 0.10, 0.18
+    if hasGrad and inner.SetGradient then
+        inner:SetColorTexture(1, 1, 1, 1)
+        inner:SetGradient("VERTICAL",
+            CreateColor(r * 0.55, g * 0.55, bl * 0.55, 1),
+            CreateColor(math.min(1, r * 1.25), math.min(1, g * 1.25), math.min(1, bl * 1.25), 1))
+    else
+        inner:SetColorTexture(r, g, bl, 1)
+    end
+
+    local fs = b:CreateFontString(nil, "OVERLAY")
+    fs:SetFont(STANDARD_TEXT_FONT, 26, "OUTLINE")
+    fs:SetPoint("CENTER")
+    fs:SetTextColor(1, 0.92, 0.85, 1)
+    b.num = fs
+
+    function b.SetHP(self, hp)
         self.num:SetText(tostring(hp))
     end
 
@@ -202,15 +273,22 @@ function Render.NewGhost(parent, k)
 end
 
 -- ------------------------------------------------------------
--- Item: outer ring (color by kind) + center shape. Returns a frame (with .ring for the pulse).
--- kind: "ball" +1 ball (white ring + small ball) / "laserH" horizontal laser (red ring + horizontal bar) / "laserV" vertical laser (red ring + vertical bar)
---       / "bomb" bomb (orange ring + solid circle)
+-- Item: outer ring (color by kind) + a glyph that is a MINIATURE PREVIEW of the effect (0.3.0 design:
+-- no text anywhere - the glyph hints the effect, the trigger VFX teaches it for real on first contact).
+-- kinds: ball "+1 ball" (white ring + dot) / laserH / laserV (red ring + bar poking past the ring = "pierces the whole line")
+--        / laserD1 "/" diagonal / laserD2 "\" diagonal (the glyph slant = the actual sweep direction, honest preview)
+--        / laserX cross laser (gold ring + plus, rare) / bomb (orange ring + core with x-shaped spikes)
+--        / split (violet ring + two side-by-side dots = "each ball doubles")
 -- ------------------------------------------------------------
 local ITEM_RING = {
-    ball   = { 0.95, 0.95, 0.95 },
-    laserH = { 1.00, 0.38, 0.32 },
-    laserV = { 1.00, 0.38, 0.32 },
-    bomb   = { 1.00, 0.62, 0.15 },
+    ball    = { 0.95, 0.95, 0.95 },
+    laserH  = { 1.00, 0.38, 0.32 },
+    laserV  = { 1.00, 0.38, 0.32 },
+    laserD1 = { 1.00, 0.38, 0.32 },
+    laserD2 = { 1.00, 0.38, 0.32 },
+    laserX  = { 1.00, 0.82, 0.20 },
+    bomb    = { 1.00, 0.62, 0.15 },
+    split   = { 0.72, 0.52, 0.95 },
 }
 
 function Render.NewItem(parent, kind)
@@ -222,13 +300,39 @@ function Render.NewItem(parent, kind)
     local rc = ITEM_RING[kind] or ITEM_RING.ball
     local ring = MakeCircle(f, 2 * R, "ARTWORK", rc[1], rc[2], rc[3], 0.9)
     local hole = MakeCircle(f, 2 * R - 6, "ARTWORK", 0.045, 0.045, 0.085, 1)  -- same as the board background, punches out the ring
-    if kind == "laserH" or kind == "laserV" then
-        local bar = f:CreateTexture(nil, "OVERLAY")
-        if kind == "laserH" then bar:SetSize(2 * R - 8, 3) else bar:SetSize(3, 2 * R - 8) end
-        bar:SetPoint("CENTER")
-        bar:SetColorTexture(1, 0.5, 0.45, 1)
+
+    local function glyphLine(x1, y1, x2, y2, w, r, g, b)
+        local L = f:CreateLine(nil, "OVERLAY")
+        L:SetStartPoint("CENTER", f, x1, y1)
+        L:SetEndPoint("CENTER", f, x2, y2)
+        L:SetThickness(w or 3)
+        L:SetColorTexture(r or 1, g or 0.5, b or 0.45, 1)
+        return L
+    end
+
+    if kind == "laserH" then
+        glyphLine(-(R + 2), 0, R + 2, 0)                 -- pokes 2px past the ring: "goes through"
+    elseif kind == "laserV" then
+        glyphLine(0, -(R + 2), 0, R + 2)
+    elseif kind == "laserD1" then                        -- "/" = sweeps the up-right diagonal
+        local d = (R + 2) * 0.71
+        glyphLine(-d, -d, d, d)
+    elseif kind == "laserD2" then                        -- "\" = sweeps the down-right diagonal
+        local d = (R + 2) * 0.71
+        glyphLine(-d, d, d, -d)
+    elseif kind == "laserX" then
+        glyphLine(-(R - 1), 0, R - 1, 0, 3, 1, 0.85, 0.35)
+        glyphLine(0, -(R - 1), 0, R - 1, 3, 1, 0.85, 0.35)
     elseif kind == "bomb" then
-        MakeCircle(f, 9, "OVERLAY", 1, 0.62, 0.15, 1)
+        MakeCircle(f, 8, "OVERLAY", 1, 0.62, 0.15, 1)
+        local d1, d2 = 4, R - 1                          -- four diagonal spikes (x-shape, distinct from laserX's +)
+        glyphLine(d1, d1, d2, d2, 2, 1, 0.62, 0.15)
+        glyphLine(-d1, d1, -d2, d2, 2, 1, 0.62, 0.15)
+        glyphLine(d1, -d1, d2, -d2, 2, 1, 0.62, 0.15)
+        glyphLine(-d1, -d1, -d2, -d2, 2, 1, 0.62, 0.15)
+    elseif kind == "split" then
+        MakeCircle(f, 7, "OVERLAY", 0.95, 0.92, 1, 1):SetPoint("CENTER", f, "CENTER", -5, 0)
+        MakeCircle(f, 7, "OVERLAY", 0.95, 0.92, 1, 1):SetPoint("CENTER", f, "CENTER", 5, 0)
     else
         MakeCircle(f, 8, "OVERLAY", 0.96, 0.96, 0.94, 1)
     end
@@ -292,6 +396,57 @@ function Render.NewBoom(parent)
     core:SetColorTexture(1, 0.9, 0.6, 0.9)
     core:SetBlendMode("ADD")
     ApplyCircleMask(f, core)
+    return f
+end
+
+-- Diagonal laser beam (0.3.0): a long glowing line at 45 degrees through the trigger point.
+-- ne=true is the "/" direction (up-right), false is "\". Long enough to cross the whole board; playArea clips the overhang.
+function Render.NewBeamD(parent, ne)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(2, 2)
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 7)
+    local L = (geo.BOARD_W + geo.BOARD_H) * 0.75
+    local s = ne and 1 or -1
+    local t = f:CreateLine(nil, "OVERLAY")
+    t:SetStartPoint("CENTER", f, -L, -s * L)
+    t:SetEndPoint("CENTER", f, L, s * L)
+    t:SetThickness(10)
+    t:SetColorTexture(1, 0.45, 0.4, 1)
+    t:SetBlendMode("ADD")
+    local core = f:CreateLine(nil, "OVERLAY", nil, 1)
+    core:SetStartPoint("CENTER", f, -L, -s * L)
+    core:SetEndPoint("CENTER", f, L, s * L)
+    core:SetThickness(3)
+    core:SetColorTexture(1, 0.9, 0.85, 1)
+    core:SetBlendMode("ADD")
+    return f
+end
+
+-- Colored pulse ring (0.3.0): small ADD circle, used by the healer pulse (green) and the split pop (violet)
+function Render.NewPop(parent, r, g, b)
+    local f = CreateFrame("Frame", nil, parent)
+    local D = geo.CELL * 1.25
+    f:SetSize(D, D)
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 7)
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetSize(D, D)
+    t:SetPoint("CENTER")
+    t:SetColorTexture(r, g, b, 0.85)
+    t:SetBlendMode("ADD")
+    ApplyCircleMask(f, t)
+    return f
+end
+
+-- Boss hit/death flash: a 3x3-cell white ADD block
+function Render.NewBossFlash(parent)
+    local S = 3 * geo.CELL - 2 * geo.BRICK_PAD
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(S, S)
+    f:SetFrameLevel((parent:GetFrameLevel() or 0) + 7)
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetAllPoints()
+    t:SetColorTexture(1, 1, 1, 1)
+    t:SetBlendMode("ADD")
     return f
 end
 
