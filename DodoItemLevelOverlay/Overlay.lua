@@ -1,9 +1,10 @@
 -- DodoItemLevelOverlay - Overlay.lua
 -- FontString management on item buttons. Each button gets up to
--- three overlay texts, created lazily and reused across refreshes:
---   top-left:     item level (gradient colored)
---   bottom-left:  tag (BOE or equipment set name)
---   top-right:    slot label
+-- four overlay texts, created lazily and reused across refreshes:
+--   top-left:      item level (gradient colored)
+--   center:        slot label
+--   bottom-left:   tag (BOE or equipment set name)
+--   bottom-right:  item type tag (junk / quest / consumable)
 
 local _, ns = ...
 
@@ -23,12 +24,28 @@ local function EnsureText(button, key, justifyH)
 end
 
 local function ApplyText(fs, text, size, flags, r, g, b, a, point, x, y)
-    fs:SetFont(STANDARD_TEXT_FONT, size, flags)
+    -- per-language font override (e.g. a CJK font for Chinese), with
+    -- a fallback to the client default when the override fails
+    local font = (ns.L and ns.L.font) or STANDARD_TEXT_FONT
+    if not fs:SetFont(font, size, flags) then
+        fs:SetFont(STANDARD_TEXT_FONT, size, flags)
+    end
     fs:ClearAllPoints()
     fs:SetPoint(point, fs:GetParent(), point, x, y)
     fs:SetTextColor(r, g, b, a)
     fs:SetText(text)
     fs:Show()
+end
+
+-- Constrain a font string to the button width so long texts clip on
+-- a single line instead of spilling over the neighbor buttons.
+local function ClampToButtonWidth(fs, button)
+    local w = (button.GetWidth and button:GetWidth()) or 0
+    if type(w) == "number" and w > 4 then
+        fs:SetWidth(w - 2)
+    end
+    if fs.SetWordWrap then fs:SetWordWrap(false) end
+    if fs.SetMaxLines then fs:SetMaxLines(1) end
 end
 
 -- Item level text, colored by the gradient. Pass nil to hide.
@@ -46,6 +63,21 @@ function ns.SetItemLevelText(button, ilvl)
         r, g, b, a, cfg.ILVL_POINT, cfg.ILVL_X, cfg.ILVL_Y)
 end
 
+-- Centered slot label. Pass nil to hide.
+function ns.SetSlotText(button, text)
+    if not button then return end
+    if type(text) ~= "string" or text == "" then
+        if button.DodoSlotText then button.DodoSlotText:Hide() end
+        return
+    end
+
+    local cfg = ns.Config
+    local fs = EnsureText(button, "DodoSlotText", "CENTER")
+    local c = cfg.SLOT_COLOR
+    ApplyText(fs, text, cfg.SLOT_FONT_SIZE, cfg.SLOT_FONT_FLAGS,
+        c[1], c[2], c[3], c[4], cfg.SLOT_POINT, cfg.SLOT_X, cfg.SLOT_Y)
+end
+
 -- Bottom-left tag. kind is "boe" or "set" (text required for "set").
 -- Pass nil kind to hide.
 function ns.SetTagText(button, kind, text)
@@ -57,14 +89,7 @@ function ns.SetTagText(button, kind, text)
 
     local cfg = ns.Config
     local fs = EnsureText(button, "DodoTagText", "LEFT")
-
-    -- keep long set names on a single clipped line
-    local w = (button.GetWidth and button:GetWidth()) or 0
-    if type(w) == "number" and w > 4 then
-        fs:SetWidth(w - 2)
-    end
-    if fs.SetWordWrap then fs:SetWordWrap(false) end
-    if fs.SetMaxLines then fs:SetMaxLines(1) end
+    ClampToButtonWidth(fs, button)
 
     if kind == "boe" then
         local c = cfg.BOE_COLOR
@@ -77,25 +102,37 @@ function ns.SetTagText(button, kind, text)
     end
 end
 
--- Slot label text. Pass nil to hide.
-function ns.SetSlotText(button, text)
+-- Bottom-right localized item type tag. Pass nil to hide.
+function ns.SetTypeText(button, tagKey)
     if not button then return end
+    local text = tagKey and ns.L and ns.L.tags[tagKey]
     if type(text) ~= "string" or text == "" then
-        if button.DodoSlotText then button.DodoSlotText:Hide() end
+        if button.DodoTypeText then button.DodoTypeText:Hide() end
         return
     end
 
     local cfg = ns.Config
-    local fs = EnsureText(button, "DodoSlotText", "RIGHT")
-    local c = cfg.SLOT_COLOR
-    ApplyText(fs, text, cfg.SLOT_FONT_SIZE, cfg.SLOT_FONT_FLAGS,
-        c[1], c[2], c[3], c[4], cfg.SLOT_POINT, cfg.SLOT_X, cfg.SLOT_Y)
+    local fs = EnsureText(button, "DodoTypeText", "RIGHT")
+    ClampToButtonWidth(fs, button)
+    local c = cfg.TYPE_COLORS[tagKey] or cfg.TYPE_COLORS.use
+    ApplyText(fs, text, cfg.TYPE_FONT_SIZE, cfg.TYPE_FONT_FLAGS,
+        c[1], c[2], c[3], c[4], cfg.TYPE_POINT, cfg.TYPE_X, cfg.TYPE_Y)
 end
 
--- Hide all three overlays at once.
+-- Hide every overlay this addon owns on a button.
 function ns.ClearAllOverlays(button)
     if not button then return end
     if button.DodoIlvlText then button.DodoIlvlText:Hide() end
-    if button.DodoTagText then button.DodoTagText:Hide() end
     if button.DodoSlotText then button.DodoSlotText:Hide() end
+    if button.DodoTagText then button.DodoTagText:Hide() end
+    if button.DodoTypeText then button.DodoTypeText:Hide() end
+end
+
+-- Hide just the gear overlays (item level, slot label, BOE/set tag),
+-- leaving the type tag alone.
+function ns.ClearGearOverlays(button)
+    if not button then return end
+    if button.DodoIlvlText then button.DodoIlvlText:Hide() end
+    if button.DodoSlotText then button.DodoSlotText:Hide() end
+    if button.DodoTagText then button.DodoTagText:Hide() end
 end

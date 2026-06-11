@@ -1,5 +1,7 @@
 -- DodoItemLevelOverlay - Config.lua
--- All user-tweakable settings live here. Edit, save, then /reload in game.
+-- All user-tweakable settings live here. Edit, save, then /reload in
+-- game. The language is not set here: use the dropdown under
+-- Esc > Options > AddOns > DodoItemLevelOverlay, or /dilo <en|cn|fr|es>.
 
 local _, ns = ...
 
@@ -20,8 +22,9 @@ ns.Config = {
     -- Junk filter
     ------------------------------------------------------------------
     -- When true, equippable items of Poor (gray) or Common (white)
-    -- quality get no overlays at all: no item level, no BOE tag, no
-    -- slot label. A bare icon reads as "safe to vendor".
+    -- quality lose their gear overlays (item level, BOE, slot label)
+    -- and get the junk tag in the bottom-right corner instead.
+    -- Poor quality items are always tagged as junk regardless.
     HIDE_JUNK_QUALITY = true,
 
     ------------------------------------------------------------------
@@ -34,10 +37,22 @@ ns.Config = {
     ILVL_Y          = -1,
 
     ------------------------------------------------------------------
+    -- Slot label (dead center of the icon; bags only)
+    ------------------------------------------------------------------
+    SLOT_FONT_SIZE  = 11,
+    SLOT_FONT_FLAGS = "OUTLINE",
+    SLOT_COLOR      = { 0.20, 1.00, 0.20, 1 },
+    SLOT_POINT      = "CENTER",
+    SLOT_X          = 0,
+    SLOT_Y          = 0,
+
+    ------------------------------------------------------------------
     -- BOE tag (bottom-left corner; bags only)
     ------------------------------------------------------------------
+    -- Same font size as the slot label so the center and bottom
+    -- rows split the space below the item level without overlap.
     BOE_TEXT       = "BOE",
-    BOE_FONT_SIZE  = 14,
+    BOE_FONT_SIZE  = 11,
     BOE_FONT_FLAGS = "OUTLINE",
     BOE_COLOR      = { 0.30, 1.00, 0.30, 1 },
     BOE_POINT      = "BOTTOMLEFT",
@@ -47,7 +62,7 @@ ns.Config = {
     ------------------------------------------------------------------
     -- Equipment set name tag (bottom-left corner; bags only)
     ------------------------------------------------------------------
-    SET_FONT_SIZE  = 14,
+    SET_FONT_SIZE  = 11,
     SET_FONT_FLAGS = "OUTLINE",
     SET_COLOR      = { 1.00, 0.82, 0.00, 1 },
     SET_POINT      = "BOTTOMLEFT",
@@ -55,12 +70,23 @@ ns.Config = {
     SET_Y          = 1,
 
     ------------------------------------------------------------------
-    -- Slot label (top-right corner; bags only)
+    -- Item type tag (bottom-right corner; bags only)
     ------------------------------------------------------------------
-    SLOT_FONT_SIZE  = 14,
-    SLOT_FONT_FLAGS = "OUTLINE",
-    SLOT_COLOR      = { 0.20, 1.00, 0.20, 1 },
-    SLOT_POINT      = "TOPRIGHT",
-    SLOT_X          = -1,
-    SLOT_Y          = -1,
+    -- Localized tag for vendor junk, quest items and consumables
+    -- (food, flask, potion, generic use). Lifted a little above the
+    -- corner so it does not sit on top of the stack count number.
+    TYPE_FONT_SIZE  = 11,
+    TYPE_FONT_FLAGS = "OUTLINE",
+    TYPE_POINT      = "BOTTOMRIGHT",
+    TYPE_X          = -1,
+    TYPE_Y          = 12,
+
+    TYPE_COLORS = {
+        junk   = { 0.62, 0.62, 0.62, 1 },
+        quest  = { 1.00, 0.82, 0.00, 1 },
+        food   = { 0.40, 0.80, 1.00, 1 },
+        flask  = { 0.40, 0.80, 1.00, 1 },
+        potion = { 0.40, 0.80, 1.00, 1 },
+        use    = { 0.40, 0.80, 1.00, 1 },
+    },
 }

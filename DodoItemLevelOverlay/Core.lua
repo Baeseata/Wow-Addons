@@ -1,7 +1,7 @@
 -- DodoItemLevelOverlay - Core.lua
--- Event wiring and refresh entry points.
+-- SavedVariables, event wiring and refresh entry points.
 
-local _, ns = ...
+local ADDON_NAME, ns = ...
 
 function ns.UpdateAllVisible()
     if CharacterFrame and CharacterFrame:IsShown() then
@@ -20,6 +20,13 @@ function ns.UpdateAllVisible()
             end
         end
     end
+end
+
+local function OnAddonLoaded()
+    -- SavedVariables are available from this point on
+    DodoItemLevelOverlayDB = DodoItemLevelOverlayDB or {}
+    ns.SetLocale(DodoItemLevelOverlayDB.locale or ns.DEFAULT_LOCALE)
+    ns.RegisterOptions()
 end
 
 local function OnLogin()
@@ -54,13 +61,21 @@ local function OnLogin()
 end
 
 local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("EQUIPMENT_SETS_CHANGED")
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED") -- uncached item info arriving
 
-frame:SetScript("OnEvent", function(_, event)
+frame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 == ADDON_NAME then
+            OnAddonLoaded()
+            frame:UnregisterEvent("ADDON_LOADED")
+        end
+        return
+    end
     if event == "PLAYER_LOGIN" then
         OnLogin()
         return

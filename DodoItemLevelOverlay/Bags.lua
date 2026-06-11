@@ -18,24 +18,29 @@ local function UpdateItemButton(itemButton, frame)
         itemLink = C_Container.GetContainerItemLink(bagID, slot)
     end
 
-    -- empty slot or non-equippable item: nothing to show
-    if not itemLink or not IsEquippableItem(itemLink) then
+    if not itemLink then
         ns.ClearAllOverlays(itemButton)
         return
     end
 
-    -- junk filter: gray and white quality gear gets no overlays at
-    -- all, so a bare icon reads as "safe to vendor"
-    if ns.Config.HIDE_JUNK_QUALITY then
-        local info = C_Container.GetContainerItemInfo(bagID, slot)
-        if ns.IsJunkQuality(info and info.quality) then
-            ns.ClearAllOverlays(itemButton)
-            return
-        end
+    local info = C_Container.GetContainerItemInfo(bagID, slot)
+    local quality = info and info.quality
+    local isEquippable = IsEquippableItem(itemLink) and true or false
+
+    -- bottom-right type tag: junk / quest / food / flask / potion / use
+    ns.SetTypeText(itemButton, ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable))
+
+    -- gear overlays only on equippable items that are not junk
+    local junkGear = ns.Config.HIDE_JUNK_QUALITY and ns.IsJunkQuality(quality)
+    if not isEquippable or junkGear then
+        ns.ClearGearOverlays(itemButton)
+        return
     end
 
     local itemLoc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
     ns.SetItemLevelText(itemButton, ns.GetItemLevel(itemLoc))
+
+    ns.SetSlotText(itemButton, ns.GetSlotLabel(itemLink))
 
     -- bottom-left tag: unbound BOE wins over equipment set name
     if ns.IsUnboundBOE(bagID, slot, itemLink) then
@@ -48,8 +53,6 @@ local function UpdateItemButton(itemButton, frame)
             ns.SetTagText(itemButton, nil)
         end
     end
-
-    ns.SetSlotText(itemButton, ns.GetSlotLabel(itemLink))
 end
 
 function ns.UpdateBagFrame(frame)

@@ -3,36 +3,15 @@
 
 local _, ns = ...
 
+local QUALITY_POOR   = (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0
 local QUALITY_COMMON = (Enum and Enum.ItemQuality and Enum.ItemQuality.Common) or 1
 
--- Short English slot labels keyed by inventory type token.
-local SLOT_LABELS = {
-    INVTYPE_HEAD           = "HD",
-    INVTYPE_NECK           = "NK",
-    INVTYPE_SHOULDER       = "SH",
-    INVTYPE_CLOAK          = "CL",
-    INVTYPE_CHEST          = "CH",
-    INVTYPE_ROBE           = "CH",
-    INVTYPE_BODY           = "ST", -- shirt
-    INVTYPE_WRIST          = "WR",
-    INVTYPE_HAND           = "GL", -- gloves
-    INVTYPE_WAIST          = "BT", -- belt
-    INVTYPE_LEGS           = "LG",
-    INVTYPE_FEET           = "FT",
-    INVTYPE_FINGER         = "RG", -- ring
-    INVTYPE_TRINKET        = "TR",
-    INVTYPE_WEAPON         = "1H",
-    INVTYPE_2HWEAPON       = "2H",
-    INVTYPE_WEAPONMAINHAND = "MH",
-    INVTYPE_WEAPONOFFHAND  = "OH",
-    INVTYPE_SHIELD         = "SD",
-    INVTYPE_HOLDABLE       = "OH",
-    INVTYPE_RANGED         = "RN",
-    INVTYPE_RANGEDRIGHT    = "RN",
-    INVTYPE_THROWN         = "TH",
-    INVTYPE_RELIC          = "RL",
-    INVTYPE_TABARD         = "TB",
-}
+-- Item class and consumable subclass IDs (stable since vanilla).
+local CLASS_CONSUMABLE = 0
+local CLASS_QUESTITEM  = 12
+local SUBCLASS_POTION  = 1
+local SUBCLASS_FLASK   = 3 -- flasks and phials
+local SUBCLASS_FOOD    = 5 -- food and drink
 
 local function RoundInt(x)
     if type(x) ~= "number" or x <= 0 then return nil end
@@ -123,10 +102,53 @@ function ns.GetEquipmentSetName(bagID, slot)
     return setList
 end
 
--- Short slot label for an item link, or nil.
+-- Localized short slot label for an item link, or nil.
 function ns.GetSlotLabel(itemLink)
     if not itemLink then return nil end
     local _, _, _, equipLoc = GetItemInfoInstant(itemLink)
     if not equipLoc or equipLoc == "" then return nil end
-    return SLOT_LABELS[equipLoc]
+    return ns.L and ns.L.slots[equipLoc] or nil
+end
+
+local function IsQuestItem(bagID, slot, classID)
+    if classID == CLASS_QUESTITEM then return true end
+    -- also covers quest-starting items that are not class 12
+    if C_Container and type(C_Container.GetContainerItemQuestInfo) == "function" then
+        local questInfo = C_Container.GetContainerItemQuestInfo(bagID, slot)
+        if type(questInfo) == "table" and questInfo.isQuestItem then
+            return true
+        end
+    end
+    return false
+end
+
+-- Item type tag key for the bottom-right corner, or nil.
+-- Priority: junk beats quest beats consumable.
+--   "junk":   Poor quality anything; Common quality gear while the
+--             junk filter is on. White non-gear (trade goods) is
+--             NOT junk.
+--   "quest":  quest items
+--   "food" / "flask" / "potion" / "use": consumables
+function ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable)
+    if not itemLink then return nil end
+
+    if type(quality) == "number" then
+        if quality == QUALITY_POOR then return "junk" end
+        if ns.Config.HIDE_JUNK_QUALITY and isEquippable and quality == QUALITY_COMMON then
+            return "junk"
+        end
+    end
+
+    local _, _, _, _, _, classID, subclassID = GetItemInfoInstant(itemLink)
+
+    if IsQuestItem(bagID, slot, classID) then return "quest" end
+
+    if classID == CLASS_CONSUMABLE then
+        if subclassID == SUBCLASS_FOOD then return "food" end
+        if subclassID == SUBCLASS_FLASK then return "flask" end
+        if subclassID == SUBCLASS_POTION then return "potion" end
+        return "use"
+    end
+
+    return nil
 end
