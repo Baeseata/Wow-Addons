@@ -42,9 +42,13 @@ One row per equipment slot:
 - A fixed four-column secondary stat grid: versatility (blue), haste
   (yellow), mastery (green), critical strike (red). A column lights up
   when the item has that stat, so stat combos line up vertically across
-  the whole gear list.
+  the whole gear list. The dominant stat (strictly higher than the
+  other one) is underlined; equal values mean no underline.
 - Item level (gradient colored) and the item name in your client
-  language, quality colored.
+  language, quality colored. Mouse over the name for the full item
+  tooltip, and over a gem icon for the gem tooltip.
+- The empty off-hand row is hidden; the panel width adapts to the
+  widest row.
 - Enchant state: a green tag when the item is enchanted (Death Knight
   runeforges count), a red tag when an enchantable slot is missing its
   enchant. Slots that take no enchant this season show nothing. Mouse
