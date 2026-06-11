@@ -122,13 +122,14 @@ local function IsQuestItem(bagID, slot, classID)
     return false
 end
 
--- Item type tag key for the bottom-right corner, or nil.
+-- Item type tag key for the top-left corner, or nil.
 -- Priority: junk beats quest beats consumable.
 --   "junk":   Poor quality anything; Common quality gear while the
 --             junk filter is on. White non-gear (trade goods) is
 --             NOT junk.
 --   "quest":  quest items
---   "food" / "flask" / "potion" / "use": consumables
+--   "food" / "flask" / "potion" / "cons": consumables, with the
+--             generic "cons" covering everything but those three
 function ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable)
     if not itemLink then return nil end
 
@@ -147,7 +148,7 @@ function ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable)
         if subclassID == SUBCLASS_FOOD then return "food" end
         if subclassID == SUBCLASS_FLASK then return "flask" end
         if subclassID == SUBCLASS_POTION then return "potion" end
-        return "use"
+        return "cons"
     end
 
     return nil

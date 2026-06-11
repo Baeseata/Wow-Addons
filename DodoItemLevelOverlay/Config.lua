@@ -70,23 +70,25 @@ ns.Config = {
     SET_Y          = 1,
 
     ------------------------------------------------------------------
-    -- Item type tag (bottom-right corner; bags only)
+    -- Item type tag (top-left corner; bags only)
     ------------------------------------------------------------------
     -- Localized tag for vendor junk, quest items and consumables
-    -- (food, flask, potion, generic use). Lifted a little above the
-    -- corner so it does not sit on top of the stack count number.
+    -- (food, flask, potion, generic consumable). It reuses the spot
+    -- the item level occupies on real gear: an item shows either an
+    -- item level or a type tag, never both, so the corner stays
+    -- clean and far away from the stack count number.
     TYPE_FONT_SIZE  = 11,
     TYPE_FONT_FLAGS = "OUTLINE",
-    TYPE_POINT      = "BOTTOMRIGHT",
-    TYPE_X          = -1,
-    TYPE_Y          = 12,
+    TYPE_POINT      = "TOPLEFT",
+    TYPE_X          = 1,
+    TYPE_Y          = -1,
 
     TYPE_COLORS = {
-        junk   = { 0.62, 0.62, 0.62, 1 },
-        quest  = { 1.00, 0.82, 0.00, 1 },
-        food   = { 0.40, 0.80, 1.00, 1 },
-        flask  = { 0.40, 0.80, 1.00, 1 },
-        potion = { 0.40, 0.80, 1.00, 1 },
-        use    = { 0.40, 0.80, 1.00, 1 },
+        junk   = { 0.62, 0.62, 0.62, 1 }, -- gray
+        quest  = { 1.00, 0.82, 0.00, 1 }, -- gold
+        food   = { 1.00, 0.65, 0.25, 1 }, -- warm orange (cooking)
+        flask  = { 0.30, 0.90, 0.90, 1 }, -- teal (phials)
+        potion = { 1.00, 0.40, 0.40, 1 }, -- red (potion bottle)
+        cons   = { 0.60, 0.80, 1.00, 1 }, -- light blue (misc)
     },
 }

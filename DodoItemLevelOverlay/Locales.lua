@@ -2,8 +2,10 @@
 -- Translations for slot labels and item type tags.
 --
 -- This is the only file in the addon that contains non-ASCII
--- characters: the translated strings themselves. Everything else
--- (code, comments, docs) stays pure ASCII English.
+-- characters: the Chinese strings themselves (French and Spanish
+-- labels are deliberately accent-free so they render in any client
+-- font). Everything else (code, comments, docs) stays pure ASCII.
+-- Tags are kept to 5 characters or fewer so they fit a bag icon.
 --
 -- "font" is an optional font override for languages the default
 -- client font cannot render (Chinese glyphs are missing from the
@@ -48,11 +50,11 @@ ns.Locales = {
         },
         tags = {
             junk   = "JUNK",
-            quest  = "QUEST",
+            quest  = "QST",
             food   = "FOOD",
             flask  = "FLASK",
-            potion = "POTION",
-            use    = "USE",
+            potion = "POT",
+            cons   = "CONS",
         },
     },
 
@@ -92,7 +94,7 @@ ns.Locales = {
             food   = "食物",
             flask  = "合剂",
             potion = "药水",
-            use    = "消耗",
+            cons   = "消耗",
         },
     },
 
@@ -127,12 +129,12 @@ ns.Locales = {
             INVTYPE_TABARD         = "TB", -- tabard
         },
         tags = {
-            junk   = "REBUT",
-            quest  = "QUÊTE",
-            food   = "REPAS",
-            flask  = "FLACON",
-            potion = "POTION",
-            use    = "CONSO",
+            junk   = "NUL",   -- worthless
+            quest  = "QTE",   -- quete
+            food   = "BOUF",  -- bouffe
+            flask  = "FIOLE", -- phial
+            potion = "POT",
+            cons   = "CONSO", -- consommable
         },
     },
 
@@ -167,12 +169,12 @@ ns.Locales = {
             INVTYPE_TABARD         = "TB", -- tabardo
         },
         tags = {
-            junk   = "BASURA",
-            quest  = "MISIÓN",
-            food   = "COMIDA",
-            flask  = "FRASCO",
-            potion = "POCIÓN",
-            use    = "USO",
+            junk   = "MALO",  -- worthless
+            quest  = "MIS",   -- mision
+            food   = "COMI",  -- comida
+            flask  = "VIAL",  -- phial
+            potion = "POCI",  -- pocion
+            cons   = "CONS",  -- consumible
         },
     },
 }

@@ -19,26 +19,32 @@ that is worth wearing:
 - **Bottom-left: BOE tag**, shown only while that specific item is still
   unbound, or the equipment set name when the item belongs to a set.
 
-**Bottom-right on any bag item: type tag**, localized:
+**Top-left on everything that is not wearable gear: type tag**,
+localized and color coded:
 
-- **Junk**: Poor (gray) quality items, plus Common (white) quality gear.
-  Junk items get no other overlays: a gray junk tag means sell it.
+- **Junk** (gray): Poor quality items, plus Common (white) quality gear.
+  Junk items get no other overlays: a bare gray tag means sell it.
   White quality non-gear (trade goods, reagents) is not junk.
-- **Quest**: quest items.
-- **Consumables**: food, flask and potion each have their own tag;
-  every other consumable gets a generic use tag.
+- **Quest** (gold): quest items.
+- **Consumables**: food (orange), flask (teal) and potion (red) each
+  have their own tag and color; every other consumable gets a generic
+  tag in light blue.
 
-The tag sits slightly above the corner so it does not cover the stack
-count number.
+An item shows either an item level or a type tag in that corner, never
+both, so the text stays short and clear of the stack count number.
 
 **Character frame**: item level on every equipment slot, same gradient.
 
 ## Languages
 
 The slot labels and type tags ship in four languages: **English**
-(default), **Chinese**, **French** and **Spanish**. Pick one in the
-options panel: **Esc > Options > AddOns > DodoItemLevelOverlay**, or use
-the slash command:
+(default), **Chinese**, **French** and **Spanish**. Tags are kept to
+five characters or fewer so they fit a bag icon (JUNK / NUL / MALO,
+QST / QTE / MIS, FOOD / BOUF / COMI, and so on); French and Spanish
+labels are deliberately accent-free so they render in any client font.
+Pick a language in the options panel:
+**Esc > Options > AddOns > DodoItemLevelOverlay**, or use the slash
+command:
 
 ```
 /dilo en

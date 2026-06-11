@@ -1,16 +1,19 @@
 -- DodoItemLevelOverlay - Overlay.lua
 -- FontString management on item buttons. Each button gets up to
 -- four overlay texts, created lazily and reused across refreshes:
---   top-left:      item level (gradient colored)
---   center:        slot label
---   bottom-left:   tag (BOE or equipment set name)
---   bottom-right:  item type tag (junk / quest / consumable)
+--   top-left:     item level on gear, OR the item type tag
+--                 (junk / quest / consumable) on everything else
+--   center:       slot label
+--   bottom-left:  tag (BOE or equipment set name)
 
 local _, ns = ...
 
 local function EnsureText(button, key, justifyH)
     local fs = button[key]
-    if fs then return fs end
+    if fs then
+        fs:SetJustifyH(justifyH)
+        return fs
+    end
 
     fs = button:CreateFontString(nil, "OVERLAY")
     fs:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
@@ -102,7 +105,9 @@ function ns.SetTagText(button, kind, text)
     end
 end
 
--- Bottom-right localized item type tag. Pass nil to hide.
+-- Localized item type tag, top-left aligned (it takes the spot the
+-- item level uses on real gear; the two never show together).
+-- Pass nil to hide.
 function ns.SetTypeText(button, tagKey)
     if not button then return end
     local text = tagKey and ns.L and ns.L.tags[tagKey]
@@ -112,9 +117,9 @@ function ns.SetTypeText(button, tagKey)
     end
 
     local cfg = ns.Config
-    local fs = EnsureText(button, "DodoTypeText", "RIGHT")
+    local fs = EnsureText(button, "DodoTypeText", "LEFT")
     ClampToButtonWidth(fs, button)
-    local c = cfg.TYPE_COLORS[tagKey] or cfg.TYPE_COLORS.use
+    local c = cfg.TYPE_COLORS[tagKey] or cfg.TYPE_COLORS.cons
     ApplyText(fs, text, cfg.TYPE_FONT_SIZE, cfg.TYPE_FONT_FLAGS,
         c[1], c[2], c[3], c[4], cfg.TYPE_POINT, cfg.TYPE_X, cfg.TYPE_Y)
 end

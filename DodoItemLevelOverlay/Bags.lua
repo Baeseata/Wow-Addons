@@ -27,15 +27,16 @@ local function UpdateItemButton(itemButton, frame)
     local quality = info and info.quality
     local isEquippable = IsEquippableItem(itemLink) and true or false
 
-    -- bottom-right type tag: junk / quest / food / flask / potion / use
-    ns.SetTypeText(itemButton, ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable))
-
-    -- gear overlays only on equippable items that are not junk
+    -- the top-left corner shows exactly one thing: the item level on
+    -- gear worth wearing, or the type tag on everything else
     local junkGear = ns.Config.HIDE_JUNK_QUALITY and ns.IsJunkQuality(quality)
     if not isEquippable or junkGear then
         ns.ClearGearOverlays(itemButton)
+        ns.SetTypeText(itemButton, ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable))
         return
     end
+
+    ns.SetTypeText(itemButton, nil)
 
     local itemLoc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
     ns.SetItemLevelText(itemButton, ns.GetItemLevel(itemLoc))
