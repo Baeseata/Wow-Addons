@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Equipment.lua
+-- DodoInspect - Equipment.lua
 -- Item level overlays on the character frame equipment slots.
 -- Only the item level is shown here; tags and slot labels are a
 -- bag-only concept.

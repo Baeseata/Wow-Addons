@@ -1,10 +1,10 @@
--- DodoInspect.lua (Retail 12.0+)
+-- DodoTarget.lua (Retail 12.0+)
 -- Show target player's: ilvl (rounded) + race + class + spec + hero talents (localized/Chinese on CN client)
 -- IMPORTANT: Do NOT show partial frame (no "0 ilvl" flicker). Show only when ilvl+spec are ready.
 
 local ADDON_NAME = ...
 
-DodoInspectDB = DodoInspectDB or {
+DodoTargetDB = DodoTargetDB or {
   enabled = true,
   fontSize = 20,
   offsetX = 0,
@@ -24,7 +24,7 @@ end
 -- =========================
 -- Display Frame
 -- =========================
-local UI = CreateFrame("Frame", "DodoInspectDisplay", UIParent)
+local UI = CreateFrame("Frame", "DodoTargetDisplay", UIParent)
 UI:SetFrameStrata("HIGH")
 UI:SetFrameLevel(9999)
 UI:SetSize(620, 44)
@@ -39,7 +39,7 @@ UI.t2:SetPoint("TOP", UI.t1, "BOTTOM", 0, -2)
 UI.t2:SetJustifyH("CENTER")
 
 local function ApplyFont()
-  local fs = tonumber(DodoInspectDB.fontSize) or 16
+  local fs = tonumber(DodoTargetDB.fontSize) or 16
   UI.t1:SetFont(STANDARD_TEXT_FONT, fs, "OUTLINE")
   UI.t2:SetFont(STANDARD_TEXT_FONT, math.max(11, fs - 3), "OUTLINE")
 end
@@ -47,7 +47,7 @@ end
 local function Anchor()
   UI:ClearAllPoints()
   if TargetFrame then
-    UI:SetPoint("BOTTOM", TargetFrame, "TOP", DodoInspectDB.offsetX or 0, DodoInspectDB.offsetY or 16)
+    UI:SetPoint("BOTTOM", TargetFrame, "TOP", DodoTargetDB.offsetX or 0, DodoTargetDB.offsetY or 16)
   else
     UI:SetPoint("TOP", UIParent, "TOP", 0, -140)
   end
@@ -145,7 +145,7 @@ end
 -- Compose & Show (NO partial)
 -- =========================
 local function ComposeAndShow()
-  if not DodoInspectDB.enabled then
+  if not DodoTargetDB.enabled then
     HideUI()
     return
   end
@@ -172,7 +172,7 @@ local function ComposeAndShow()
   local parts = { tostring(ilvl), race, class, spec }
   if hero then table.insert(parts, hero) end
 
-  if DodoInspectDB.twoLines then
+  if DodoTargetDB.twoLines then
     UI.t1:SetText(table.concat({ tostring(ilvl), race, class }, "  "))
     local p2 = { spec }
     if hero then table.insert(p2, hero) end
@@ -249,50 +249,50 @@ end)
 -- =========================
 -- Slash commands
 -- =========================
-SLASH_DODOINSPECT1 = "/dodoi"
-SLASH_DODOINSPECT2 = "/dodoinspect"
+SLASH_DODOTARGET1 = "/dodot"
+SLASH_DODOTARGET2 = "/dodotarget"
 
-SlashCmdList["DODOINSPECT"] = function(msg)
+SlashCmdList["DODOTARGET"] = function(msg)
   msg = (msg or ""):lower()
 
   if msg == "on" then
-    DodoInspectDB.enabled = true
+    DodoTargetDB.enabled = true
     ComposeAndShow()
-    print("|cffffd200DodoInspect|r 已启用")
+    print("|cffffd200DodoTarget|r 已启用")
     return
   end
 
   if msg == "off" then
-    DodoInspectDB.enabled = false
+    DodoTargetDB.enabled = false
     HideUI()
-    print("|cffffd200DodoInspect|r 已关闭")
+    print("|cffffd200DodoTarget|r 已关闭")
     return
   end
 
   if msg:match("^size") then
     local n = tonumber(msg:match("size%s+(%d+)"))
     if n and n >= 10 and n <= 64 then
-      DodoInspectDB.fontSize = n
+      DodoTargetDB.fontSize = n
       ApplyFont()
       ComposeAndShow()
-      print("|cffffd200DodoInspect|r 字体大小 = " .. n)
+      print("|cffffd200DodoTarget|r 字体大小 = " .. n)
     else
-      print("|cffffd200DodoInspect|r 用法：/dodoi size 16（10~64）")
+      print("|cffffd200DodoTarget|r 用法：/dodoi size 16（10~64）")
     end
     return
   end
 
   if msg == "twolines on" then
-    DodoInspectDB.twoLines = true
+    DodoTargetDB.twoLines = true
     ComposeAndShow()
-    print("|cffffd200DodoInspect|r 两行显示：开")
+    print("|cffffd200DodoTarget|r 两行显示：开")
     return
   end
 
   if msg == "twolines off" then
-    DodoInspectDB.twoLines = false
+    DodoTargetDB.twoLines = false
     ComposeAndShow()
-    print("|cffffd200DodoInspect|r 两行显示：关")
+    print("|cffffd200DodoTarget|r 两行显示：关")
     return
   end
 
@@ -300,18 +300,18 @@ SlashCmdList["DODOINSPECT"] = function(msg)
     local x, y = msg:match("offset%s+([%-%.%d]+)%s+([%-%.%d]+)")
     x, y = tonumber(x), tonumber(y)
     if x and y then
-      DodoInspectDB.offsetX = x
-      DodoInspectDB.offsetY = y
+      DodoTargetDB.offsetX = x
+      DodoTargetDB.offsetY = y
       Anchor()
       ComposeAndShow()
-      print("|cffffd200DodoInspect|r 偏移 = " .. x .. ", " .. y)
+      print("|cffffd200DodoTarget|r 偏移 = " .. x .. ", " .. y)
     else
-      print("|cffffd200DodoInspect|r 用法：/dodoi offset 0 16")
+      print("|cffffd200DodoTarget|r 用法：/dodoi offset 0 16")
     end
     return
   end
 
-  print("|cffffd200DodoInspect|r 指令：")
+  print("|cffffd200DodoTarget|r 指令：")
   print("  /dodoi on|off")
   print("  /dodoi size 16")
   print("  /dodoi twolines on|off")

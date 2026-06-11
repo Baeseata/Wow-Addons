@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - SidePanel.lua
+-- DodoInspect - SidePanel.lua
 -- Gear summary panel docked to the right side of the character
 -- frame. One row per equipment slot, in fixed columns:
 --   [slot] [stat grid] [ilvl] [item name] [enchant] [sockets]
@@ -460,7 +460,7 @@ function ns.SetupSidePanel()
 
     ComputeGeometry()
 
-    panel = CreateFrame("Frame", "DodoItemLevelOverlaySidePanel",
+    panel = CreateFrame("Frame", "DodoInspectSidePanel",
         CharacterFrame, "BackdropTemplate")
     panel:SetWidth(PANEL_W)
     -- match the character frame height exactly

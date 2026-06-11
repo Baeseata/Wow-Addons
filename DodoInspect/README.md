@@ -1,4 +1,4 @@
-# DodoItemLevelOverlay
+# DodoInspect
 
 Lightweight item overlays for the default Blizzard bags and character
 frame. No minimap button, no dependencies. One glance tells you what is
@@ -72,14 +72,14 @@ five characters or fewer so they fit a bag icon (JUNK / NUL / MALO,
 QST / QTE / MIS, FOOD / BOUF / COMI, and so on); French and Spanish
 labels are deliberately accent-free so they render in any client font.
 Pick a language in the options panel:
-**Esc > Options > AddOns > DodoItemLevelOverlay**, or use the slash
+**Esc > Options > AddOns > DodoInspect**, or use the slash
 command:
 
 ```
-/dilo en
-/dilo cn
-/dilo fr
-/dilo es
+/dins en
+/dins cn
+/dins fr
+/dins es
 ```
 
 The choice is saved per account. Item levels, BOE and set names are
@@ -107,7 +107,7 @@ Edit, save, then `/reload` in game.
 
 ## Install
 
-Copy the `DodoItemLevelOverlay` folder into
+Copy the `DodoInspect` folder into
 `World of Warcraft/_retail_/Interface/AddOns/` and restart the client, or
 `/reload` if it was already installed.
 

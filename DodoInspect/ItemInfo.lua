@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - ItemInfo.lua
+-- DodoInspect - ItemInfo.lua
 -- Read-only helpers that extract display data from items.
 
 local _, ns = ...

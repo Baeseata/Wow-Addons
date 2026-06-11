@@ -1,7 +1,7 @@
--- DodoItemLevelOverlay - Config.lua
+-- DodoInspect - Config.lua
 -- All user-tweakable settings live here. Edit, save, then /reload in
 -- game. The language is not set here: use the dropdown under
--- Esc > Options > AddOns > DodoItemLevelOverlay, or /dilo <en|cn|fr|es>.
+-- Esc > Options > AddOns > DodoInspect, or /dins <en|cn|fr|es>.
 
 local _, ns = ...
 

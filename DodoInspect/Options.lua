@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Options.lua
+-- DodoInspect - Options.lua
 -- Settings panel under Esc > Options > AddOns, plus a slash command
 -- fallback. The only option for now is the overlay language.
 
@@ -29,7 +29,7 @@ function ns.RegisterOptions()
 
         local setting = Settings.RegisterProxySetting(
             category,
-            "DODO_ILO_LANGUAGE",
+            "DODO_INSPECT_LANGUAGE",
             Settings.VarType.String,
             "Language",
             ns.DEFAULT_LOCALE,
@@ -46,14 +46,14 @@ function ns.RegisterOptions()
     ns.OptionsRegistered = ok or nil
 end
 
--- Slash command fallback: /dilo en | cn | fr | es
-SLASH_DODOITEMLEVELOVERLAY1 = "/dilo"
-SlashCmdList["DODOITEMLEVELOVERLAY"] = function(msg)
+-- Slash command fallback: /dins en | cn | fr | es
+SLASH_DODOINSPECT1 = "/dins"
+SlashCmdList["DODOINSPECT"] = function(msg)
     msg = (msg or ""):lower():gsub("%s+", "")
     if ns.Locales[msg] then
         ApplyLocale(msg)
-        print("DodoItemLevelOverlay: language set to " .. ns.L.name)
+        print("DodoInspect: language set to " .. ns.L.name)
     else
-        print("DodoItemLevelOverlay: usage /dilo en | cn | fr | es (current: " .. ns.ActiveLocaleKey .. ")")
+        print("DodoInspect: usage /dins en | cn | fr | es (current: " .. ns.ActiveLocaleKey .. ")")
     end
 end

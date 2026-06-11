@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Gradient.lua
+-- DodoInspect - Gradient.lua
 -- Raider.IO style color ramp applied to item levels.
 --
 -- The anchors below are sampled from the Raider.IO Mythic+ score

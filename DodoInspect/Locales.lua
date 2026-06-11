@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Locales.lua
+-- DodoInspect - Locales.lua
 -- Translations for slot labels and item type tags.
 --
 -- This is the only file in the addon that contains non-ASCII
@@ -218,8 +218,8 @@ function ns.SetLocale(key)
     if not ns.Locales[key] then key = ns.DEFAULT_LOCALE end
     ns.ActiveLocaleKey = key
     ns.L = ns.Locales[key]
-    if DodoItemLevelOverlayDB then
-        DodoItemLevelOverlayDB.locale = key
+    if DodoInspectDB then
+        DodoInspectDB.locale = key
     end
 end
 

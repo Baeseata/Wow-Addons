@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Core.lua
+-- DodoInspect - Core.lua
 -- SavedVariables, event wiring and refresh entry points.
 
 local ADDON_NAME, ns = ...
@@ -31,8 +31,8 @@ end
 
 local function OnAddonLoaded()
     -- SavedVariables are available from this point on
-    DodoItemLevelOverlayDB = DodoItemLevelOverlayDB or {}
-    ns.SetLocale(DodoItemLevelOverlayDB.locale or ns.DEFAULT_LOCALE)
+    DodoInspectDB = DodoInspectDB or {}
+    ns.SetLocale(DodoInspectDB.locale or ns.DEFAULT_LOCALE)
     ns.RegisterOptions()
 end
 

@@ -1,0 +1,11 @@
+## Interface: 120005
+## Group: Dodo
+## OptionalDeps: Dodo
+## Title: DodoTarget
+## Notes: doodo的姓名版显示小助手
+## Author: Doodo
+## Version: 1.0.0
+## SavedVariables: DodoTargetDB
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+
+DodoTarget.lua

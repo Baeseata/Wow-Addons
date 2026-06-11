@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Bags.lua
+-- DodoInspect - Bags.lua
 -- Overlays on the default Blizzard bags (combined and separated).
 
 local _, ns = ...

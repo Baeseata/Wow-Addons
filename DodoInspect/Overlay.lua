@@ -1,4 +1,4 @@
--- DodoItemLevelOverlay - Overlay.lua
+-- DodoInspect - Overlay.lua
 -- FontString management on item buttons. Each button gets up to
 -- four overlay texts, created lazily and reused across refreshes:
 --   top-left:     item level on gear, OR the item type tag

@@ -1,10 +1,18 @@
 ## Interface: 120005
-## Group: Dodo
-## OptionalDeps: Dodo
 ## Title: DodoInspect
-## Notes: doodo的姓名版显示小助手
+## Notes: Item overlays for bags plus a character gear panel, with a Raider.IO style item level gradient.
 ## Author: Doodo
-## Version: 1.0.0
-## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## Version: 2.4.1
+## SavedVariables: DodoInspectDB
+## X-Category: Bags and Inventory
 
-DodoInspect.lua
+Config.lua
+Locales.lua
+Gradient.lua
+ItemInfo.lua
+Overlay.lua
+Equipment.lua
+Bags.lua
+SidePanel.lua
+Options.lua
+Core.lua
