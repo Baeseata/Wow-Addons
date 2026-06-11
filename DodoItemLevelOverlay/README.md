@@ -47,8 +47,10 @@ One row per equipment slot:
 - Item level (gradient colored) and the item name in your client
   language, quality colored. Mouse over the name for the full item
   tooltip, and over a gem icon for the gem tooltip.
-- The empty off-hand row is hidden; the panel width adapts to the
-  widest row.
+- The empty off-hand row is hidden. Enchant tags and gems sit in
+  fixed columns so they align vertically across rows; the item name
+  column has a fixed width and long names clip (the tooltip always
+  carries the full name).
 - Enchant state: a green tag when the item is enchanted (Death Knight
   runeforges count), a red tag when an enchantable slot is missing its
   enchant. Slots that take no enchant this season show nothing. Mouse
