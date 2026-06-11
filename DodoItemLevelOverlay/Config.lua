@@ -97,11 +97,14 @@ ns.Config = {
     ------------------------------------------------------------------
     -- The panel height always matches the character frame. Rows are
     -- packed tight (row height follows the font size) and centered
-    -- vertically; the width adapts to the widest row, up to the max
-    -- below. Column widths scale with the font size automatically.
-    PANEL_ENABLED   = true,
-    PANEL_MAX_WIDTH = 430,
-    PANEL_FONT_SIZE = 18,
+    -- vertically. All columns are fixed so enchant tags and gems
+    -- align across rows; column widths scale with the font size,
+    -- and the panel width derives from the column layout.
+    PANEL_ENABLED    = true,
+    PANEL_FONT_SIZE  = 18,
+    -- Width of the item name column; names longer than this clip
+    -- (the mouseover tooltip always has the full name).
+    PANEL_NAME_WIDTH = 150,
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)

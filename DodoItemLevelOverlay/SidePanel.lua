@@ -1,7 +1,7 @@
 -- DodoItemLevelOverlay - SidePanel.lua
 -- Gear summary panel docked to the right side of the character
--- frame. One row per equipment slot:
---   [slot] [stat grid] [ilvl] [item name][enchant][sockets]
+-- frame. One row per equipment slot, in fixed columns:
+--   [slot] [stat grid] [ilvl] [item name] [enchant] [sockets]
 --
 -- - slot:      localized slot abbreviation (same words as the bags)
 -- - stat grid: fixed four-column grid (vers / haste / mastery /
@@ -9,20 +9,20 @@
 --              secondary stat, and the dominant stat (strictly
 --              higher than the others) gets an underline
 -- - ilvl:      gradient colored, same ramp as everywhere else
--- - name:      localized by the game client, quality colored;
---              mouse over for the full item tooltip
--- - enchant:   flows right after the item name; green when enchanted
---              (Death Knight runeforges count), red when an
---              enchantable slot is empty, hidden on slots that take
---              no enchant this season. Mouse over a green tag to see
---              the actual enchant line.
--- - sockets:   flow after the enchant tag, exactly as many icons as
---              the item actually has sockets; mouse over a gem for
---              its tooltip
+-- - name:      localized by the game client, quality colored, fixed
+--              width with clipping; mouse over for the full tooltip
+-- - enchant:   fixed column so the tags align vertically; green when
+--              enchanted (Death Knight runeforges count), red when
+--              an enchantable slot is empty, hidden on slots that
+--              take no enchant this season. Mouse over a green tag
+--              to see the actual enchant line.
+-- - sockets:   fixed column after the enchant tag, exactly as many
+--              icons as the item actually has sockets; mouse over a
+--              gem for its tooltip
 --
 -- Rows are packed tight (row height follows the font size) and the
--- block is vertically centered; the panel height still matches the
--- character frame and the width adapts to the widest row.
+-- block is vertically centered; the panel height matches the
+-- character frame and the width derives from the column layout.
 -- The empty off-hand row is hidden entirely.
 
 local _, ns = ...
@@ -56,27 +56,36 @@ local STAT_KEYS = {
     crit        = "ITEM_MOD_CRIT_RATING_SHORT",
 }
 
+-- Sockets the layout reserves room for; rare items with more will
+-- overflow to the right.
+local SOCKET_COLUMNS = 2
+local MAX_SOCKETS = 4 -- render cap, matches the gem fields in a link
+local EMPTY_SOCKET_TEXTURE = "Interface\\ItemSocketingFrame\\UI-EmptySocket-Prismatic"
+
 -- Row geometry derived from the font size so the whole layout
 -- scales when PANEL_FONT_SIZE changes.
-local FS          = 14 -- replaced from Config at load time below
+local FS
 local SLOT_W, STAT_X, STAT_STEP, ILVL_X, ILVL_W, NAME_X
-local SOCKET_SIZE, SOCKET_STEP, ROW_H
+local NAME_W, ENCH_X, ENCH_W, SOCKET_X
+local SOCKET_SIZE, SOCKET_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
     FS          = ns.Config.PANEL_FONT_SIZE
     SLOT_W      = math.floor(FS * 2.0)
     STAT_X      = SLOT_W + math.floor(FS * 0.7)
-    STAT_STEP   = math.floor(FS * 1.35)
-    ILVL_X      = STAT_X + STAT_STEP * 3 + math.floor(FS * 0.8)
+    STAT_STEP   = math.floor(FS * 1.6)
+    ILVL_X      = STAT_X + STAT_STEP * 3 + math.floor(FS * 0.9)
     ILVL_W      = math.floor(FS * 2.2)
     NAME_X      = ILVL_X + ILVL_W + math.floor(FS * 0.5)
+    NAME_W      = ns.Config.PANEL_NAME_WIDTH
+    ENCH_X      = NAME_X + NAME_W + math.floor(FS * 0.45)
+    ENCH_W      = math.floor(FS * 1.5)
     SOCKET_SIZE = FS - 1
     SOCKET_STEP = SOCKET_SIZE + 2
+    SOCKET_X    = ENCH_X + ENCH_W + 4
     ROW_H       = FS + 8
+    PANEL_W     = SOCKET_X + SOCKET_COLUMNS * SOCKET_STEP + 12
 end
-
-local MAX_SOCKETS = 4 -- matches the gem fields in an item link
-local EMPTY_SOCKET_TEXTURE = "Interface\\ItemSocketingFrame\\UI-EmptySocket-Prismatic"
 
 local panel, rows
 
@@ -203,11 +212,11 @@ local function CreateRow(parent, slotInfo)
     local row = CreateFrame("Frame", nil, parent)
     row.slotID = slotInfo.id
     row.slotKey = slotInfo.key
-    row:SetSize(cfg.PANEL_MAX_WIDTH - 12, ROW_H)
+    row:SetSize(PANEL_W - 12, ROW_H)
 
     local function NewText(justify)
         local fs = row:CreateFontString(nil, "OVERLAY")
-        fs:SetFont(STANDARD_TEXT_FONT, cfg.PANEL_FONT_SIZE, "OUTLINE")
+        fs:SetFont(STANDARD_TEXT_FONT, FS, "OUTLINE")
         fs:SetJustifyH(justify)
         fs:SetShadowOffset(1, -1)
         fs:SetShadowColor(0, 0, 0, 1)
@@ -252,31 +261,30 @@ local function CreateRow(parent, slotInfo)
     row.ilvl:SetPoint("LEFT", row, "LEFT", ILVL_X, 0)
     row.ilvl:SetWidth(ILVL_W)
 
-    -- item name; width set per refresh so the enchant tag and the
-    -- socket icons flow right after the visible text
+    -- item name, fixed width, clipped to a single line
     row.name = NewText("LEFT")
     row.name:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
-    row.name:SetWidth(100)
+    row.name:SetWidth(NAME_W)
     if row.name.SetWordWrap then row.name:SetWordWrap(false) end
     if row.name.SetMaxLines then row.name:SetMaxLines(1) end
 
     row.nameHit = NewHit(OnNameEnter)
     row.nameHit:SetAllPoints(row.name)
 
-    -- enchant tag, re-anchored after the name text on every refresh
+    -- enchant tag, fixed column
     row.ench = NewText("LEFT")
-    row.ench:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
+    row.ench:SetPoint("LEFT", row, "LEFT", ENCH_X, 0)
 
     row.enchHit = NewHit(OnEnchantEnter)
     row.enchHit:SetAllPoints(row.ench)
 
-    -- socket icons, positioned per refresh, each with a hover frame
+    -- socket icons, fixed column, each with a hover frame
     row.sockets = {}
     row.socketHits = {}
     for i = 1, MAX_SOCKETS do
         local tex = row:CreateTexture(nil, "OVERLAY")
         tex:SetSize(SOCKET_SIZE, SOCKET_SIZE)
-        tex:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
+        tex:SetPoint("LEFT", row, "LEFT", SOCKET_X + (i - 1) * SOCKET_STEP, 0)
         row.sockets[i] = tex
 
         local hit = NewHit(OnSocketEnter)
@@ -316,8 +324,6 @@ end
 -- Row refresh
 ------------------------------------------------------------------
 
--- Returns the pixel width of the row's content (for the adaptive
--- panel width).
 local function UpdateRow(row)
     local cfg = ns.Config
     local slotID = row.slotID
@@ -342,7 +348,7 @@ local function UpdateRow(row)
     if not itemLink then
         row.ilvl:SetText("")
         row.name:SetText("")
-        return 0
+        return
     end
 
     -- item level, gradient colored
@@ -391,38 +397,7 @@ local function UpdateRow(row)
         end
     end
 
-    -- socket icons to show: filled gems first, then the genuinely
-    -- empty sockets (EMPTY_SOCKET_* stats report the item's total
-    -- socket count, so subtract the filled gems)
-    local enchantID, gems = ParseItemLink(itemLink)
-    local emptyCount = math.max(0, CountTemplateSockets(stats) - #gems)
-
-    local socketIcons = {}
-    for _, gemID in ipairs(gems) do
-        if #socketIcons >= MAX_SOCKETS then break end
-        local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(gemID)
-        socketIcons[#socketIcons + 1] = { icon or EMPTY_SOCKET_TEXTURE, gemID }
-    end
-    for _ = 1, emptyCount do
-        if #socketIcons >= MAX_SOCKETS then break end
-        socketIcons[#socketIcons + 1] = { EMPTY_SOCKET_TEXTURE, nil }
-    end
-
-    -- enchant tag text first; its width feeds the flow layout
-    local enchantable = IsEnchantableSlot(slotID, itemLink)
-    local enchWidth = 0
-    if enchantable then
-        local enchanted = enchantID and enchantID ~= "" and enchantID ~= "0"
-        local c = enchanted and cfg.ENCHANT_OK_COLOR or cfg.ENCHANT_MISSING_COLOR
-        ns.SetOverlayFont(row.ench, FS, "OUTLINE")
-        row.ench:SetText((ns.L and ns.L.enchant) or "EN")
-        row.ench:SetTextColor(c[1], c[2], c[3], c[4])
-        row.enchHit:EnableMouse(enchanted and true or false)
-        enchWidth = (row.ench:GetStringWidth() or 12) + 7
-    end
-
-    -- item name in the client language, quality colored, clipped so
-    -- the tag and sockets always fit within the panel's max width
+    -- item name in the client language, quality colored
     local name, _, quality = C_Item.GetItemInfo(itemLink)
     ns.SetOverlayFont(row.name, FS, "OUTLINE")
     if name then
@@ -437,37 +412,42 @@ local function UpdateRow(row)
         row.name:SetTextColor(0.6, 0.6, 0.6, 1)
         row.name:SetText("...")
     end
-
-    local budget = (cfg.PANEL_MAX_WIDTH - 12) - NAME_X
-    local maxName = budget - enchWidth - #socketIcons * SOCKET_STEP - 4
-    if maxName < 40 then maxName = 40 end
-    local nameWidth = math.min(row.name:GetStringWidth() or 0, maxName)
-    row.name:SetWidth(nameWidth + 2)
     row.nameHit:EnableMouse(true)
 
-    -- flow: name, then enchant tag, then sockets, all packed tight
-    local cursor = nameWidth + 7
-    if enchantable then
-        row.ench:ClearAllPoints()
-        row.ench:SetPoint("LEFT", row.name, "LEFT", cursor, 0)
+    -- enchant tag in its fixed column
+    local enchantID, gems = ParseItemLink(itemLink)
+    if IsEnchantableSlot(slotID, itemLink) then
+        local enchanted = enchantID and enchantID ~= "" and enchantID ~= "0"
+        local c = enchanted and cfg.ENCHANT_OK_COLOR or cfg.ENCHANT_MISSING_COLOR
+        ns.SetOverlayFont(row.ench, FS, "OUTLINE")
+        row.ench:SetText((ns.L and ns.L.enchant) or "EN")
+        row.ench:SetTextColor(c[1], c[2], c[3], c[4])
         row.ench:Show()
-        cursor = cursor + enchWidth
-    end
-    for i = 1, #socketIcons do
-        local tex = row.sockets[i]
-        tex:SetTexture(socketIcons[i][1])
-        tex:ClearAllPoints()
-        tex:SetPoint("LEFT", row.name, "LEFT", cursor, 0)
-        tex:Show()
-        local gemID = socketIcons[i][2]
-        if gemID then
-            row.socketHits[i].gemID = gemID
-            row.socketHits[i]:EnableMouse(true)
-        end
-        cursor = cursor + SOCKET_STEP
+        row.enchHit:EnableMouse(enchanted and true or false)
     end
 
-    return NAME_X + cursor
+    -- sockets in their fixed column: filled gems first, then the
+    -- genuinely empty sockets (EMPTY_SOCKET_* stats report the
+    -- item's total socket count, so subtract the filled gems)
+    local emptyCount = math.max(0, CountTemplateSockets(stats) - #gems)
+    local shown = 0
+    for _, gemID in ipairs(gems) do
+        if shown >= MAX_SOCKETS then break end
+        shown = shown + 1
+        local tex = row.sockets[shown]
+        local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(gemID)
+        tex:SetTexture(icon or EMPTY_SOCKET_TEXTURE)
+        tex:Show()
+        row.socketHits[shown].gemID = gemID
+        row.socketHits[shown]:EnableMouse(true)
+    end
+    for _ = 1, emptyCount do
+        if shown >= MAX_SOCKETS then break end
+        shown = shown + 1
+        local tex = row.sockets[shown]
+        tex:SetTexture(EMPTY_SOCKET_TEXTURE)
+        tex:Show()
+    end
 end
 
 ------------------------------------------------------------------
@@ -479,11 +459,10 @@ function ns.SetupSidePanel()
     if not CharacterFrame then return end
 
     ComputeGeometry()
-    local cfg = ns.Config
 
     panel = CreateFrame("Frame", "DodoItemLevelOverlaySidePanel",
         CharacterFrame, "BackdropTemplate")
-    panel:SetWidth(cfg.PANEL_MAX_WIDTH)
+    panel:SetWidth(PANEL_W)
     -- match the character frame height exactly
     panel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 2, 0)
     panel:SetPoint("BOTTOMLEFT", CharacterFrame, "BOTTOMRIGHT", 2, 0)
@@ -513,7 +492,6 @@ end
 function ns.UpdateSidePanel()
     if not panel or not panel:IsShown() then return end
 
-    local maxContent = 0
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped
         local visible = true
@@ -523,21 +501,9 @@ function ns.UpdateSidePanel()
         row.shown = visible
         if visible then
             row:Show()
-            local width = UpdateRow(row)
-            if width > maxContent then maxContent = width end
+            UpdateRow(row)
         else
             row:Hide()
-        end
-    end
-
-    -- adapt the panel width to the widest row
-    local minWidth = NAME_X + 70
-    local target = math.max(minWidth,
-        math.min(maxContent + 18, ns.Config.PANEL_MAX_WIDTH))
-    if math.abs(panel:GetWidth() - target) > 1 then
-        panel:SetWidth(target)
-        for _, row in ipairs(rows) do
-            row:SetWidth(target - 12)
         end
     end
 
