@@ -1,6 +1,7 @@
-# Claude-assist development notes (kept local, not published).
-# These hold Chinese working notes and are intentionally not part of the shipped addons.
-CLAUDE.md
+# Claude-assist development notes.
+# Per-addon CLAUDE.md handoff docs ARE tracked since 2026-06-11 (cross-machine dev needs them).
+# NOTE for publishing: exclude CLAUDE.md from CurseForge zips - it's dev notes, not addon content.
+# Top-level working notes below stay local, not published.
 DODO_ADDONS.md
 PUBLISHING.md
 
