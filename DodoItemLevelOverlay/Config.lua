@@ -91,4 +91,59 @@ ns.Config = {
         potion = { 1.00, 0.40, 0.40, 1 }, -- red (potion bottle)
         cons   = { 0.60, 0.80, 1.00, 1 }, -- light blue (misc)
     },
+
+    ------------------------------------------------------------------
+    -- Character side panel (gear list right of the character frame)
+    ------------------------------------------------------------------
+    PANEL_ENABLED    = true,
+    PANEL_WIDTH      = 365,
+    PANEL_ROW_HEIGHT = 19,
+    PANEL_FONT_SIZE  = 11,
+
+    -- secondary stat grid colors (fixed column order: vers, haste,
+    -- mastery, crit)
+    STAT_COLORS = {
+        versatility = { 0.35, 0.65, 1.00, 1 }, -- blue
+        haste       = { 1.00, 0.85, 0.25, 1 }, -- yellow
+        mastery     = { 0.35, 0.95, 0.45, 1 }, -- green
+        crit        = { 1.00, 0.45, 0.35, 1 }, -- red-ish
+    },
+
+    ENCHANT_OK_COLOR      = { 0.30, 1.00, 0.30, 1 }, -- enchant present
+    ENCHANT_MISSING_COLOR = { 1.00, 0.25, 0.25, 1 }, -- enchantable but empty
+
+    ------------------------------------------------------------------
+    -- Season data: which slots take enchants and sockets
+    ------------------------------------------------------------------
+    -- Midnight (12.0) season 1, verified 2026-06-11:
+    --   enchants on helm, shoulder, chest, boots, both rings and
+    --   weapons (cloak and bracer enchants were removed this
+    --   expansion); legs keep their spellthread / armor kit, which
+    --   occupies the same enhancement slot, so they count too.
+    --   Death Knight runeforges fill the weapon enchant slot and are
+    --   detected the same way.
+    -- Update these tables when a new season or expansion changes the
+    -- rules. Inventory slot IDs: 1 head, 3 shoulder, 5 chest,
+    -- 6 waist, 7 legs, 8 feet, 9 wrist, 11/12 rings, 16/17 weapons.
+    ENCHANTABLE_SLOTS = {
+        [1]  = true, -- head
+        [3]  = true, -- shoulder
+        [5]  = true, -- chest
+        [7]  = true, -- legs (spellthread / armor kit)
+        [8]  = true, -- feet
+        [11] = true, -- ring 1
+        [12] = true, -- ring 2
+        [16] = true, -- main hand
+        -- off hand (17) is handled in code: weapons yes,
+        -- shields and held-in-off-hand items no
+    },
+
+    -- Slots that can receive a socket from a Radiant Jewelbinder in
+    -- Midnight: helm, bracers, belt. Items without a socket on these
+    -- slots show a dim socket outline as a reminder.
+    SOCKETABLE_SLOTS = {
+        [1] = true, -- head
+        [9] = true, -- wrist
+        [6] = true, -- waist
+    },
 }

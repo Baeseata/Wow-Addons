@@ -5,7 +5,8 @@
 -- characters: the Chinese strings themselves (French and Spanish
 -- labels are deliberately accent-free so they render in any client
 -- font). Everything else (code, comments, docs) stays pure ASCII.
--- Tags are kept to 5 characters or fewer so they fit a bag icon.
+-- HARD RULE: tags are 4 characters max (2 CJK chars max) -- that is
+-- all a bag icon row fits at font size 11.
 --
 -- "font" is an optional font override for languages the default
 -- client font cannot render (Chinese glyphs are missing from the
@@ -52,10 +53,18 @@ ns.Locales = {
             junk   = "JUNK",
             quest  = "QST",
             food   = "FOOD",
-            flask  = "FLASK",
+            flask  = "FLSK",
             potion = "POT",
             cons   = "CONS",
         },
+        -- secondary stats, 2 letters max (1 CJK char)
+        stats = {
+            versatility = "VS",
+            haste       = "HA",
+            mastery     = "MA",
+            crit        = "CR",
+        },
+        enchant = "EN",
     },
 
     cn = {
@@ -96,6 +105,13 @@ ns.Locales = {
             potion = "药水",
             cons   = "消耗",
         },
+        stats = {
+            versatility = "全",
+            haste       = "急",
+            mastery     = "精",
+            crit        = "爆",
+        },
+        enchant = "附",
     },
 
     fr = {
@@ -132,10 +148,17 @@ ns.Locales = {
             junk   = "NUL",   -- worthless
             quest  = "QTE",   -- quete
             food   = "BOUF",  -- bouffe
-            flask  = "FIOLE", -- phial
+            flask  = "FIOL",  -- fiole (phial)
             potion = "POT",
-            cons   = "CONSO", -- consommable
+            cons   = "CONS",  -- consommable
         },
+        stats = {
+            versatility = "PO", -- polyvalence
+            haste       = "HA", -- hate
+            mastery     = "MA", -- maitrise
+            crit        = "CR", -- critique
+        },
+        enchant = "EN", -- enchantement
     },
 
     es = {
@@ -176,6 +199,13 @@ ns.Locales = {
             potion = "POCI",  -- pocion
             cons   = "CONS",  -- consumible
         },
+        stats = {
+            versatility = "VE", -- versatilidad
+            haste       = "CE", -- celeridad
+            mastery     = "MA", -- maestria
+            crit        = "CR", -- critico
+        },
+        enchant = "EN", -- encantamiento
     },
 }
 

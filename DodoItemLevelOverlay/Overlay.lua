@@ -26,13 +26,18 @@ local function EnsureText(button, key, justifyH)
     return fs
 end
 
-local function ApplyText(fs, text, size, flags, r, g, b, a, point, x, y)
-    -- per-language font override (e.g. a CJK font for Chinese), with
-    -- a fallback to the client default when the override fails
+-- Apply the active locale font (e.g. a CJK font for Chinese) with a
+-- fallback to the client default when the override fails to load.
+-- Shared with the character side panel.
+function ns.SetOverlayFont(fs, size, flags)
     local font = (ns.L and ns.L.font) or STANDARD_TEXT_FONT
     if not fs:SetFont(font, size, flags) then
         fs:SetFont(STANDARD_TEXT_FONT, size, flags)
     end
+end
+
+local function ApplyText(fs, text, size, flags, r, g, b, a, point, x, y)
+    ns.SetOverlayFont(fs, size, flags)
     fs:ClearAllPoints()
     fs:SetPoint(point, fs:GetParent(), point, x, y)
     fs:SetTextColor(r, g, b, a)

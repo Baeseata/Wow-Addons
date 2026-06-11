@@ -35,6 +35,29 @@ both, so the text stays short and clear of the stack count number.
 
 **Character frame**: item level on every equipment slot, same gradient.
 
+**Gear summary side panel**, docked to the right of the character frame.
+One row per equipment slot:
+
+- Localized slot abbreviation (same words as the bag labels).
+- A fixed four-column secondary stat grid: versatility (blue), haste
+  (yellow), mastery (green), critical strike (red). A column lights up
+  when the item has that stat, so stat combos line up vertically across
+  the whole gear list.
+- Item level (gradient colored) and the item name in your client
+  language, quality colored.
+- Enchant state: a green tag when the item is enchanted (Death Knight
+  runeforges count), a red tag when an enchantable slot is missing its
+  enchant. Slots that take no enchant this season show nothing.
+- Sockets: gem icons for filled sockets, a bright empty socket icon for
+  unfilled ones, and a dim outline on slots that could receive a socket
+  (via jewelbinder) but have none yet.
+
+The enchantable and socketable slot lists are season data
+(Midnight 12.0: enchants on helm, shoulder, chest, legs via
+spellthread/armor kit, boots, rings and weapons; sockets on helm,
+bracers and belt). They live in `Config.lua` and are easy to update
+when a new season changes the rules.
+
 ## Languages
 
 The slot labels and type tags ship in four languages: **English**

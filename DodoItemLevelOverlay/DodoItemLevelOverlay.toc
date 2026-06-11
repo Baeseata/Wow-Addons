@@ -2,7 +2,7 @@
 ## Title: DodoItemLevelOverlay
 ## Notes: Item level overlays for bags and the character frame, colored with a Raider.IO style gradient.
 ## Author: Doodo
-## Version: 2.2.0
+## Version: 2.3.0
 ## SavedVariables: DodoItemLevelOverlayDB
 ## X-Category: Bags and Inventory
 
@@ -13,5 +13,6 @@ ItemInfo.lua
 Overlay.lua
 Equipment.lua
 Bags.lua
+SidePanel.lua
 Options.lua
 Core.lua

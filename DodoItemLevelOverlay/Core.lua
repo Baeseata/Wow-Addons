@@ -3,9 +3,16 @@
 
 local ADDON_NAME, ns = ...
 
+-- Everything anchored to the character frame: the equipment slot
+-- overlays and the gear summary side panel.
+function ns.UpdateCharacterViews()
+    ns.UpdateEquipment()
+    ns.UpdateSidePanel()
+end
+
 function ns.UpdateAllVisible()
     if CharacterFrame and CharacterFrame:IsShown() then
-        ns.UpdateEquipment()
+        ns.UpdateCharacterViews()
     end
 
     if _G.ContainerFrameCombinedBags and _G.ContainerFrameCombinedBags:IsShown() then
@@ -31,16 +38,17 @@ end
 
 local function OnLogin()
     ns.HookBagFrames()
+    ns.SetupSidePanel()
 
-    -- refresh equipment overlays when the character frame opens
+    -- refresh the character views when the character frame opens
     if CharacterFrame and CharacterFrame.HookScript then
         CharacterFrame:HookScript("OnShow", function()
-            C_Timer.After(0, ns.UpdateEquipment)
+            C_Timer.After(0, ns.UpdateCharacterViews)
         end)
     end
     if PaperDollFrame and PaperDollFrame.HookScript then
         PaperDollFrame:HookScript("OnShow", function()
-            C_Timer.After(0, ns.UpdateEquipment)
+            C_Timer.After(0, ns.UpdateCharacterViews)
         end)
     end
 
@@ -67,6 +75,7 @@ frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("EQUIPMENT_SETS_CHANGED")
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED") -- uncached item info arriving
+frame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player") -- enchant / gem changes
 
 frame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
