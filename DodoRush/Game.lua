@@ -1,10 +1,12 @@
 -- DodoRush - Game
--- 主循环 + 输入 + 对撞结算 + HUD + 进战暂停。
--- 状态:RUN 跑动中 -> OVER 全军覆没。菜单 = playArea 隐藏(Core 管)。
--- 世界向下滚动,人群固定在 CROWD_Y:门滑过人群线按左右半路结算;
--- 敌军接战 = 二元全额对账(双方各扣 min(我,敌)),磨的过程摊在 0.5~2 秒里按帧扣,
--- 接战的敌人被"钉住"(只随推进缓慢后退),全程不停下,只轻微减速 —— 边跑边磨。
--- 不做局中存档(单局 3~5 分钟,死了重开);只记最高关数/距离。
+-- Main loop + input + clash settlement + HUD + combat pause.
+-- States: RUN running -> OVER crowd wiped. Menu = playArea hidden (managed by Core).
+-- The world scrolls downward while the crowd stays at CROWD_Y: gates settle by road half
+-- as they slide past the crowd line; engaging an enemy = binary full settlement (both
+-- sides lose min(mine, theirs)), the grind is spread over 0.5~2 s and drained per frame.
+-- Engaged enemies are "pinned" (only pushed back slowly); the run never stops, it only
+-- slows down a bit -- grind while you run.
+-- No mid-run save (a run lasts 3~5 minutes; die and restart); only best stage/distance persist.
 
 local DR = _G.DodoRush or {}
 _G.DodoRush = DR
@@ -14,21 +16,21 @@ DR.Game = G
 
 local geo, Render, Track
 
--- 可调参数(手感/平衡看这里;数值生成在 Track.lua 顶部)
-local SCROLL            = 240    -- 基础滚动速度(px/s)
-local SCROLL_STAGE_GAIN = 0.015  -- 每关提速 +1.5%
-local SCROLL_STAGE_MAX  = 1.35   -- 提速封顶
-local GRIND_SLOW        = 0.55   -- 接战时滚动减速系数(边跑边磨,不停下)
-local PUSH_FRAC         = 0.12   -- 接战敌人被"推着走"的速度比例
-local STRAFE            = 320    -- 横移速度(px/s)
-local CROWD_VIS         = 48     -- 我方可见小人上限(数字是真,人堆是代表)
-local KILL_PER_DUR      = 55     -- 对撞节奏:时长 = clamp(总消耗/此值, MIN, MAX)
+-- Tunables (feel/balance; numeric generation lives at the top of Track.lua)
+local SCROLL            = 240    -- base scroll speed (px/s)
+local SCROLL_STAGE_GAIN = 0.015  -- +1.5% speed per stage
+local SCROLL_STAGE_MAX  = 1.35   -- speed-up cap
+local GRIND_SLOW        = 0.55   -- scroll multiplier while engaged (grind on the move, never stop)
+local PUSH_FRAC         = 0.12   -- fraction of scroll speed an engaged enemy is pushed back at
+local STRAFE            = 320    -- strafe speed (px/s)
+local CROWD_VIS         = 48     -- max visible friendly units (the number is real, the pile is representative)
+local KILL_PER_DUR      = 55     -- clash pacing: duration = clamp(total kills / this, MIN, MAX)
 local KILL_DUR_MIN      = 0.5
 local KILL_DUR_MAX      = 2.0
-local GRACE_T           = 0.8    -- 开跑/脱战恢复的缓起秒数(滚动 smoothstep 从 0 拉满)
-local INITIAL_RUNWAY    = 430    -- 开局跑道留白(px,第一道门出现前)
-local DIST_PER_M        = 40     -- 多少 px 算 1 米
-local DASH_N, DASH_GAP  = 8, 80  -- 中线虚线节数与间距
+local GRACE_T           = 0.8    -- ramp-in seconds on run start / combat recovery (scroll smoothsteps from 0)
+local INITIAL_RUNWAY    = 430    -- empty runway before the first gate (px)
+local DIST_PER_M        = 40     -- px per meter
+local DASH_N, DASH_GAP  = 8, 80  -- dashed-center-line segment count and spacing
 local DASH_SPAN         = DASH_N * DASH_GAP
 
 local function Print(msg)
@@ -40,8 +42,9 @@ local function Clamp(x, lo, hi) if x < lo then return lo elseif x > hi then retu
 local function Snd(kind) if DR.Sound then DR.Sound.Play(kind) end end
 
 -- ------------------------------------------------------------
--- 特效池(过门闪光 / 阵亡 poof):ADD 发光,放大+淡出后回收。
--- 结构 = 锚点占位帧 + 缩放视觉子帧(SetScale 会连锚点偏移一起缩放,直接缩放会漂移)。
+-- Effect pool (gate flash / death poof): ADD glow, grow + fade, then recycle.
+-- Structure = anchor placeholder frame + scaled visual child (SetScale also scales
+-- anchor offsets, so scaling the anchored frame directly would drift).
 -- ------------------------------------------------------------
 local function SpawnEffect(key, build, x, y, dur, grow)
     local pool = G.effectPool[key]
@@ -81,7 +84,7 @@ local function UpdateEffects(dt)
     end
 end
 
--- 小 poof 受预算节流(混战时每秒最多十来个),大 poof(破阵)不限
+-- Small poofs are budget-throttled (a dozen or so per second in a brawl), big poofs (wall break) are not
 local function Poof(x, y, big)
     if not big then
         if G.poofBudget < 1 then return end
@@ -106,7 +109,7 @@ local function DeathBurst(el)
 end
 
 -- ------------------------------------------------------------
--- 飘字
+-- Floating text
 -- ------------------------------------------------------------
 local function AddFloat(x, y, text, r, g, b)
     for _, fl in ipairs(G.floats) do
@@ -138,8 +141,9 @@ local function UpdateFloats(dt)
 end
 
 -- ------------------------------------------------------------
--- 我方人群:数字是真,可见小人 = min(count, CROWD_VIS)。
--- 向日葵螺旋排阵;每个小人滞后追自己的阵位(横移拖尾的"活物感")+ 上下小颠。
+-- Friendly crowd: the number is real, visible units = min(count, CROWD_VIS).
+-- Sunflower-spiral formation; each unit lags toward its slot (trailing "alive" feel
+-- when strafing) + a small vertical bob.
 -- ------------------------------------------------------------
 local function EnsureCrowdUnits(n)
     for i = #G.units + 1, n do
@@ -172,7 +176,7 @@ local function SyncCrowdVis(lossPoof)
         EnsureCrowdUnits(newVis)
         for i = G.vis + 1, newVis do
             local u = G.units[i]
-            u.x, u.y = G.cx, geo.CROWD_Y   -- 新人从队伍中心冒出,流向阵位
+            u.x, u.y = G.cx, geo.CROWD_Y   -- newcomers pop out of the crowd center and flow to their slot
             u.f:Show()
         end
     else
@@ -208,8 +212,9 @@ local function UpdateCrowd(dt)
 end
 
 -- ------------------------------------------------------------
--- 敌阵容器:wall/boss = 横排方阵(占满路宽,必打),blob = 圆阵散兵(可绕)。
--- 容器整体移动 + 整体小颠;掉人 = 从前排/外圈隐藏小人 + poof。按 kind 池化复用。
+-- Enemy pack containers: wall/boss = full-width rank formation (must fight),
+-- blob = circular skirmish (dodgeable). The container moves and bobs as one;
+-- losses hide units from the front rank / outer ring + poof. Pooled per kind.
 -- ------------------------------------------------------------
 local ENEMY_CAP = { wall = 36, boss = 30, blob = 24 }
 
@@ -219,7 +224,7 @@ local function EnsureEnemyUnits(c, n)
     end
 end
 
--- 排阵;返回 bandH(墙)/rE(散兵)
+-- Lay out the formation; returns bandH (wall) / rE (blob)
 local function LayoutEnemy(c, count)
     local kind = c.kind
     local vis = math.min(count, ENEMY_CAP[kind])
@@ -242,7 +247,8 @@ local function LayoutEnemy(c, count)
         local sp   = (kind == "boss") and 34 or 30
         local rh   = (kind == "boss") and 30 or 26
         local rows = math.ceil(vis / cols)
-        -- 行序从上到下 => 序号大的在底排(贴近我方),掉人先掉前排
+        -- Rows fill top to bottom => the highest indices sit in the bottom rank
+        -- (closest to the crowd), so losses strip the front rank first
         for i = 1, vis do
             local r0 = math.floor((i - 1) / cols)
             local rowCount = math.min(cols, vis - r0 * cols)
@@ -290,7 +296,7 @@ local function FreeEnemy(el)
     el.c = nil
 end
 
--- 战斗掉人:隐藏超出可见数的小人(前排/外圈先掉)+ poof
+-- Combat losses: hide units beyond the visible count (front rank / outer ring first) + poof
 local function SyncEnemyVis(el)
     local c = el.c
     local newVis = math.min(el.count, ENEMY_CAP[el.kind])
@@ -304,7 +310,7 @@ local function SyncEnemyVis(el)
 end
 
 -- ------------------------------------------------------------
--- 门板池
+-- Gate panel pool
 -- ------------------------------------------------------------
 local function GetGatePanel()
     local f = table.remove(G.gatePool)
@@ -320,7 +326,7 @@ local function FreeGate(el)
 end
 
 -- ------------------------------------------------------------
--- 生成:按滚动距离从 Track 队列里取下一个元素放到跑道顶上
+-- Spawning: pop the next Track-queue element onto the top of the road by scroll distance
 -- ------------------------------------------------------------
 local function SpawnNext()
     local el = Track.Next()
@@ -343,7 +349,7 @@ local function SpawnNext()
 end
 
 -- ------------------------------------------------------------
--- 过门 / 接敌 / 对撞
+-- Gates / engaging / clash
 -- ------------------------------------------------------------
 local function GameOver(reason)
     if G.state ~= "RUN" then return end
@@ -360,17 +366,17 @@ local function GameOver(reason)
     end
     local p = G.overPanel
     p.reason:SetText(reason or "")
-    p.line1:SetText("到达 第 " .. stage .. " 关 · " .. meters .. " 米")
-    p.line2:SetText("本局峰值 " .. (G.peak or 0) .. " 人")
+    p.line1:SetText("Reached stage " .. stage .. " - " .. meters .. " m")
+    p.line2:SetText("Peak crowd: " .. (G.peak or 0))
     if newBest then
-        p.line3:SetText("|cffffd200新纪录!|r")
+        p.line3:SetText("|cffffd200New record!|r")
         Snd("best")
     else
-        p.line3:SetText("最高纪录: 第 " .. prevBest .. " 关")
+        p.line3:SetText("Best: stage " .. prevBest)
         Snd("over")
     end
     p:Show()
-    Print("全军覆没,到达第 " .. stage .. " 关(" .. meters .. " 米)。")
+    Print("Wiped out at stage " .. stage .. " (" .. meters .. " m).")
 end
 
 local function ApplyGate(el)
@@ -394,13 +400,13 @@ local function ApplyGate(el)
     SetCrowdCount(not good)
     G.UpdateHUD()
     if G.count <= 0 then
-        GameOver("被 " .. txt .. " 的门减到了 0 人……")
+        GameOver("A " .. txt .. " gate cut the crowd to zero...")
     end
 end
 
 local function Engage(el)
     el.engaged = true
-    el.kills = math.min(G.count, el.count)   -- 二元全额对账:碰上就打满
+    el.kills = math.min(G.count, el.count)   -- binary full settlement: contact commits the full trade
     local dur = Clamp(el.kills / KILL_PER_DUR, KILL_DUR_MIN, KILL_DUR_MAX)
     el.rate = el.kills / dur
     el.acc = 0
@@ -438,12 +444,12 @@ local function DrainFight(el, dt)
         AddFloat(G.cx, geo.CROWD_Y + G.crowdR + 34, "-" .. el.kills, 1, 0.5, 0.45)
     end
     if G.count <= 0 then
-        GameOver("队伍在敌阵里拼光了……")
+        GameOver("The crowd was ground down in the fight...")
     end
 end
 
 -- ------------------------------------------------------------
--- 世界更新
+-- World update
 -- ------------------------------------------------------------
 local function UpdateDashes(scrollD)
     local pa = DR.playArea
@@ -473,7 +479,7 @@ local function UpdateElements(dt, scroll)
             end
         else
             if el.engaged and not el.dead then
-                el.y = el.y - scroll * dt * PUSH_FRAC   -- 被钉住,只被推着缓退
+                el.y = el.y - scroll * dt * PUSH_FRAC   -- pinned: only pushed back slowly
                 DrainFight(el, dt)
                 if not el.dead then anyEng = true end
             elseif not el.dead then
@@ -484,7 +490,7 @@ local function UpdateElements(dt, scroll)
                 elseif el.kind == "blob" and (not el.dodged)
                     and el.y < geo.CROWD_Y - (el.rE + G.crowdR) - 6 then
                     el.dodged = true
-                    AddFloat(G.cx, geo.CROWD_Y + G.crowdR + 34, "躲开 " .. el.count .. " 人", 0.7, 0.92, 0.7)
+                    AddFloat(G.cx, geo.CROWD_Y + G.crowdR + 34, "Dodged " .. el.count, 0.7, 0.92, 0.7)
                     Snd("dodge")
                 end
             end
@@ -506,7 +512,7 @@ local function UpdateElements(dt, scroll)
 end
 
 -- ------------------------------------------------------------
--- HUD / 结算面板
+-- HUD / game-over panel
 -- ------------------------------------------------------------
 function G.EnsureHUD()
     if G.hud then return end
@@ -516,17 +522,17 @@ function G.EnsureHUD()
 
     hud.stage = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hud.stage:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -30)
-    hud.stage:SetText("第 1 关")
+    hud.stage:SetText("Stage 1")
 
     hud.dist = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hud.dist:SetPoint("LEFT", hud.stage, "RIGHT", 18, 0)
     hud.dist:SetTextColor(0.95, 0.95, 0.95)
-    hud.dist:SetText("0 米")
+    hud.dist:SetText("0 m")
 
     local menuBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     menuBtn:SetSize(76, 21)
     menuBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -10, -29)
-    menuBtn:SetText("返回开始")
+    menuBtn:SetText("Menu")
     menuBtn:SetScript("OnClick", function() G.ReturnToMenu() end)
 
     if DR.Sound and DR.Sound.CreateToggle then
@@ -537,8 +543,8 @@ end
 
 function G.UpdateHUD()
     if not G.hud then return end
-    G.hud.stage:SetText("第 " .. (G.stage or 1) .. " 关")
-    G.hud.dist:SetText(math.floor((G.dist or 0) / DIST_PER_M) .. " 米")
+    G.hud.stage:SetText("Stage " .. (G.stage or 1))
+    G.hud.dist:SetText(math.floor((G.dist or 0) / DIST_PER_M) .. " m")
 end
 
 function G.EnsureOverPanel()
@@ -555,7 +561,7 @@ function G.EnsureOverPanel()
     p.title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     p.title:SetPoint("CENTER", p, "CENTER", 0, 110)
     p.title:SetTextColor(1, 0.35, 0.3)
-    p.title:SetText("全军覆没")
+    p.title:SetText("Wiped Out")
 
     p.reason = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     p.reason:SetPoint("TOP", p.title, "BOTTOM", 0, -10)
@@ -571,13 +577,13 @@ function G.EnsureOverPanel()
     local againBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     againBtn:SetSize(140, 30)
     againBtn:SetPoint("TOP", p.line3, "BOTTOM", 0, -24)
-    againBtn:SetText("再来一局")
+    againBtn:SetText("Play Again")
     againBtn:SetScript("OnClick", function() G.New() end)
 
     local menuBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     menuBtn:SetSize(140, 30)
     menuBtn:SetPoint("TOP", againBtn, "BOTTOM", 0, -10)
-    menuBtn:SetText("返回开始")
+    menuBtn:SetText("Back to Menu")
     menuBtn:SetScript("OnClick", function() G.ReturnToMenu() end)
 
     p:Hide()
@@ -585,8 +591,9 @@ function G.EnsureOverPanel()
 end
 
 -- ------------------------------------------------------------
--- 键盘(DodoPool 验证过的套路):吞掉按键,ESC 放行关窗;
--- 进战必须整个 EnableKeyboard(false)(战斗中插件不能调 SetPropagateKeyboardInput)。
+-- Keyboard (the DodoPool-proven approach): swallow keys, let ESC through to close;
+-- combat REQUIRES a full EnableKeyboard(false) (addons may not call
+-- SetPropagateKeyboardInput during combat).
 -- ------------------------------------------------------------
 local function OnKeyDown(self, key)
     if key == "ESCAPE" then self:SetPropagateKeyboardInput(true); return end
@@ -614,7 +621,7 @@ function G.SetKeyboard(on)
 end
 
 -- ------------------------------------------------------------
--- 驱动
+-- Driver
 -- ------------------------------------------------------------
 function G.Driver(elapsed)
     if G.paused then return end
@@ -622,7 +629,7 @@ function G.Driver(elapsed)
     if dt > 0.05 then dt = 0.05 end
 
     if G.state == "RUN" then
-        -- 缓起(开跑 / 脱战恢复都从 0 平滑拉满,不突然糊脸)
+        -- Ramp-in (run start / combat recovery both pull smoothly from 0, nothing slams into your face)
         G.grace = G.grace + dt
         local gm = 1
         if G.grace < GRACE_T then
@@ -630,7 +637,7 @@ function G.Driver(elapsed)
             gm = p * p * (3 - 2 * p)
         end
 
-        -- 横移
+        -- Strafing
         local dir = 0
         if G.held.A or G.held.LEFT then dir = dir - 1 end
         if G.held.D or G.held.RIGHT then dir = dir + 1 end
@@ -638,7 +645,7 @@ function G.Driver(elapsed)
             G.cx = Clamp(G.cx + dir * STRAFE * dt, geo.EDGE, geo.ROAD_W - geo.EDGE)
         end
 
-        -- 滚动速度:基础 × 关数小提速 × 缓起 × 接战减速
+        -- Scroll speed: base x stage speed-up x ramp-in x grind slowdown
         local lvl = 1 + SCROLL_STAGE_GAIN * ((G.stage or 1) - 1)
         if lvl > SCROLL_STAGE_MAX then lvl = SCROLL_STAGE_MAX end
         local scroll = SCROLL * lvl * gm
@@ -670,7 +677,7 @@ function G.Driver(elapsed)
 end
 
 -- ------------------------------------------------------------
--- 构件(只建一次)
+-- One-time construction
 -- ------------------------------------------------------------
 local function EnsureSetup()
     if G.ready then return end
@@ -681,22 +688,22 @@ local function EnsureSetup()
     Render.BuildRoad(pa)
     local lv = pa:GetFrameLevel() or 0
 
-    local le = CreateFrame("Frame", nil, pa)   -- 实体层:门/敌阵
+    local le = CreateFrame("Frame", nil, pa)   -- entity layer: gates / enemy packs
     le:SetAllPoints()
     le:SetFrameLevel(lv + 2)
     G.layerE = le
 
-    local lc = CreateFrame("Frame", nil, pa)   -- 人群层(盖在门板上,人从门里穿过)
+    local lc = CreateFrame("Frame", nil, pa)   -- crowd layer (above gate panels, so the crowd passes "through" gates)
     lc:SetAllPoints()
     lc:SetFrameLevel(lv + 6)
     G.layerC = lc
 
-    local lf = CreateFrame("Frame", nil, pa)   -- 飘字/数字牌/暂停提示层
+    local lf = CreateFrame("Frame", nil, pa)   -- floating text / count pill / pause notice layer
     lf:SetAllPoints()
     lf:SetFrameLevel(lv + 12)
     G.layerF = lf
 
-    -- 中线虚线(左右半路的分界,选门看它)
+    -- Dashed center line (the left/right boundary; gate picking reads off it)
     G.dashes = {}
     for i = 1, DASH_N do
         local f = Render.NewDash(pa)
@@ -727,11 +734,11 @@ local function EnsureSetup()
     G.pauseText = lf:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     G.pauseText:SetPoint("CENTER", pa, "CENTER", 0, 60)
     G.pauseText:SetTextColor(1, 0.4, 0.4)
-    G.pauseText:SetText("战斗中已暂停")
+    G.pauseText:SetText("Paused: in combat")
     G.pauseText:Hide()
     G.pauseSub = lf:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     G.pauseSub:SetPoint("TOP", G.pauseText, "BOTTOM", 0, -8)
-    G.pauseSub:SetText("脱战后自动继续")
+    G.pauseSub:SetText("Resumes after combat ends")
     G.pauseSub:Hide()
 
     G.held = {}
@@ -763,7 +770,7 @@ local function ClearAll()
 end
 
 -- ------------------------------------------------------------
--- 进战暂停 / 窗口隐藏 / 返回菜单
+-- Combat pause / window hidden / back to menu
 -- ------------------------------------------------------------
 local function SetPauseShown(shown)
     if not G.ready then return end
@@ -783,7 +790,7 @@ local function OnCombat(inCombat)
         if DR.frame and DR.frame:IsShown() and DR.playArea and DR.playArea:IsShown()
             and G.state == "RUN" and G.paused then
             G.paused = false
-            G.grace = 0   -- 缓起,不突然糊脸
+            G.grace = 0   -- ramp back in, nothing slams into your face
             G.SetKeyboard(true)
             SetPauseShown(false)
         end
@@ -813,7 +820,7 @@ function G.ReturnToMenu()
 end
 
 -- ------------------------------------------------------------
--- 开新局 / 继续(本局在内存里,无落盘存档)
+-- New run / resume (the run lives in memory only, no save file)
 -- ------------------------------------------------------------
 function G.CanResume()
     return G.state == "RUN"

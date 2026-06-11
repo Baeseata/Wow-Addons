@@ -1,7 +1,9 @@
 -- DodoRush - Render
--- 路面/小人/数字牌/门板/特效构件。所有元素相对宿主帧左下角定位(跑道坐标直接当像素偏移)。
--- 小人 = 圆形遮罩纯色圆(身体)+ 小高光,蓝我方红敌方;
--- 二期"换脸"预留:在小人 body 之上叠一张圆形遮罩的头像贴图(职业图标/怪物头像),不动逻辑。
+-- Road / units / count pills / gate panels / effect parts. Everything is positioned
+-- relative to the host frame's bottom-left corner (track coordinates map straight to pixel offsets).
+-- A unit = circle-masked solid disc (body) + small glint; blue = friendly, red = enemy.
+-- Phase-2 "face swap" hook: stack a circle-masked portrait texture (class icon / monster
+-- head) on top of the body without touching any logic.
 
 local DR = _G.DodoRush or {}
 _G.DodoRush = DR
@@ -13,7 +15,8 @@ local geo = DR.geo
 
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
--- 给一个 texture 套圆形遮罩(DodoPool 同款;贴图必须 SetPoint 否则不渲染)
+-- Apply a circular mask to a texture (same as DodoPool; the texture MUST be
+-- SetPoint-anchored or it will not render)
 local function ApplyCircleMask(host, tex)
     local m = host:CreateMaskTexture()
     m:SetAllPoints(tex)
@@ -37,20 +40,23 @@ function Render.PlaceAt(parent, fr, x, y)
     fr:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
 end
 
--- 热路径移动(小人/敌阵/虚线每帧上百次):同名 CENTER 锚点直接替换,省 ClearAllPoints。
--- 只能用在"从来只用 CENTER 锚"的帧上。
+-- Hot-path move (units / enemy packs / dashes, hundreds of calls per frame):
+-- re-setting the same CENTER anchor replaces it in place, skipping ClearAllPoints.
+-- Only safe on frames that have never used any anchor other than CENTER.
 function Render.MoveAt(parent, fr, x, y)
     fr:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
 end
 
 -- ------------------------------------------------------------
--- 路面:深色沥青 + 左右路肩。中线虚线随路滚动,由 Game 管(NewDash)。
+-- Road: dark asphalt + curbs. The dashed center line scrolls with the road
+-- and is managed by Game (NewDash).
 -- ------------------------------------------------------------
 function Render.BuildRoad(parent)
     if parent._built then return end
     parent._built = true
 
-    -- 越界裁剪:东西从顶上生成滑入,不能画出跑道外
+    -- Clip out-of-bounds: elements spawn above the top edge and slide in,
+    -- they must not draw outside the road
     parent:SetClipsChildren(true)
 
     local W, H, CURB = geo.ROAD_W, geo.ROAD_H, geo.CURB
@@ -73,7 +79,7 @@ function Render.BuildRoad(parent)
     curb(W - CURB, W)
 end
 
--- 中线虚线节(随世界滚动,Game 循环复位)
+-- One dashed-center-line segment (scrolls with the world, recycled by Game)
 function Render.NewDash(parent)
     local f = CreateFrame("Frame", nil, parent)
     f:SetSize(5, 26)
@@ -84,7 +90,7 @@ function Render.NewDash(parent)
 end
 
 -- ------------------------------------------------------------
--- 小人:kind = "friend" | "foe" | "boss"
+-- Units: kind = "friend" | "foe" | "boss"
 -- ------------------------------------------------------------
 local UNIT_STYLE = {
     friend = { size = 13, body = { 0.25, 0.58, 1.00 }, glint = { 1, 1, 1, 0.55 } },
@@ -103,12 +109,13 @@ function Render.NewUnit(parent, kind)
     gl:SetPoint("CENTER", f, "CENTER", -s * 0.18, s * 0.2)
     gl:SetColorTexture(st.glint[1], st.glint[2], st.glint[3], st.glint[4])
     ApplyCircleMask(f, gl)
-    -- 二期换脸:f.face = 圆形遮罩的头像贴图盖在 body 上(职业图标/怪物头像),见 CLAUDE.md
+    -- Phase-2 face swap: f.face = circle-masked portrait texture over the body
+    -- (class icons / monster heads), see CLAUDE.md
     return f
 end
 
 -- ------------------------------------------------------------
--- 数字牌(人群头顶):foe=true 红底白字,否则白底黑字
+-- Count pill (above a crowd): foe=true red bg white text, otherwise white bg dark text
 -- ------------------------------------------------------------
 function Render.NewPill(parent, foe)
     local f = CreateFrame("Frame", nil, parent)
@@ -137,7 +144,7 @@ function Render.NewPill(parent, foe)
 end
 
 -- ------------------------------------------------------------
--- 门板:半透明色板 + 边框 + 大字。SetGate 配置增益绿 / 减益红。
+-- Gate panel: translucent fill + border + big label. SetGate styles buff green / debuff red.
 -- ------------------------------------------------------------
 function Render.NewGatePanel(parent)
     local W, H = geo.GATE_W, geo.GATE_H
@@ -193,10 +200,10 @@ function Render.NewGatePanel(parent)
 end
 
 -- ------------------------------------------------------------
--- 特效构件(Game 的特效池用,ADD 发光)
+-- Effect parts (used by Game's effect pool, ADD glow)
 -- ------------------------------------------------------------
 
--- 小烟雾/阵亡 poof:暖白发光圆
+-- Small smoke / death poof: warm-white glowing disc
 function Render.NewPoof(parent, big)
     local D = big and 34 or 16
     local f = CreateFrame("Frame", nil, parent)
@@ -206,7 +213,7 @@ function Render.NewPoof(parent, big)
     return f
 end
 
--- 过门闪光:与门板同尺寸的白色 ADD 矩形
+-- Gate flash: white ADD rectangle, same size as a gate panel
 function Render.NewGateFlash(parent)
     local f = CreateFrame("Frame", nil, parent)
     f:SetSize(geo.GATE_W, geo.GATE_H)

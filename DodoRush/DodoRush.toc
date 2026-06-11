@@ -2,7 +2,7 @@
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoRush
-## Notes: 人海快跑小游戏 -- A/D 横移选门壮大队伍,撞穿一波波红色敌军,看你能跑多远。
+## Notes: A crowd-runner minigame -- strafe with A/D to pick gates, grow your crowd, and smash through waves of red enemies. How far can you run?
 ## Author: Doodo
 ## Version: 0.1.1
 ## SavedVariables: DodoRushDB

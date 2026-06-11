@@ -1,12 +1,15 @@
 -- DodoRush - Track
--- 关卡生成 + 数值平衡(设计讨论定稿,2026-06-11):
---   基准曲线 P(i) = "每关都选最优门"的人数,所有数值锚定它(敌人锚基准而非玩家实际,
---   这样失误才会累积成劣势)。
---   压力系数 α(i):敌墙人数 = α × 过门后基准,从 0.38 爬到 0.86;
---   目标净增长 ρ(i):从 1.28 缓降到 0.90,后期 ρ < 1 + 乘法门封顶 => 必死,记最高关数。
---   每关结构:门(二选一) -> [散兵(可绕开,占基准 10~18%)] -> 敌墙(必打)。
---   每 5 关一个 Boss 墙(α×1.18),Boss 后一关送 ×3/×2 奖励门。
---   门设计在加/乘交叉点附近("人少 +N 香,人多 ×k 香"),后期混入陷阱与"两害相权"。
+-- Stage generation + numeric balance (design locked with the user, 2026-06-11):
+--   Par curve P(i) = crowd size of a player who picks the best gate every stage; everything
+--   anchors to it (enemies anchor to PAR, not the player's actual count, so mistakes
+--   compound into a lasting disadvantage).
+--   Pressure alpha(i): wall size = alpha x post-gate par, climbing 0.38 -> 0.86;
+--   target net growth rho(i): 1.28 easing down to 0.90; late-game rho < 1 plus the
+--   multiplier-gate cap = guaranteed eventual death, record the furthest stage.
+--   Stage structure: gates (pick one of two) -> [skirmish blob (dodgeable, 10~18% of par)] -> wall (must fight).
+--   Boss wall every 5 stages (alpha x1.18); the stage right after a boss grants a x3 / x2 bonus gate pair.
+--   Gate pairs are designed near the add/multiply crossover ("+N is better when small,
+--   xK is better when big"); traps and lose-lose pairs mix in later.
 
 local DR = _G.DodoRush or {}
 _G.DodoRush = DR
@@ -14,36 +17,40 @@ _G.DodoRush = DR
 local Track = {}
 DR.Track = Track
 
--- 可调参数(数值平衡看这里)
--- 0.1.1 调参记录(2026-06-11,实测死第 6 关 vs 目标熟练 20~30 关):
---   旧曲线 ALPHA0=0.50/GAIN=0.016 => 开局容错就只剩一半,第 5 关 Boss 实际 α=0.72
---   (门只按普通 α 补偿)基准都净损 21%,第 6 关又叠 BOTHBAD 解锁 => 死 6 关是必然。
---   且 need 第 11 关破 3.3 后门全变乘法,落后玩家失去加法门追赶机制 => 数学必死。
---   新曲线把死亡区从 5~8 关推到 ~28+ 关:加法门活到 ~28 关,Boss 关基准约打平。
-local START_PAR    = 10     -- 开局人数(基准曲线起点,Game 的起始人数与此一致)
-local ALPHA0       = 0.38   -- 第 1 关压力系数(旧 0.50)
-local ALPHA_GAIN   = 0.012  -- 每关 + (旧 0.016;第 21 关 0.62,第 31 关 0.74)
-local ALPHA_CAP    = 0.86   -- 压力封顶(α=0.86 时 need=6.4 > MULT_CAP => 强制衰减,双保险)
-local RHO0         = 1.28   -- 第 1 关目标净增长
-local RHO_DECAY    = 0.012  -- 每关 -
-local RHO_MIN      = 0.90   -- 净增长下限(<1 = 后期必然走下坡)
-local MULT_CAP     = 6      -- 乘法门封顶(后期 g 需求超过它 => 自然衰减)
-local TRAP_CHANCE     = 0.15   -- 次门是陷阱(÷2 / -N)的概率(旧 0.18)
-local BOTHBAD_CHANCE  = 0.10   -- 两个门都是负的("两害相权")概率(旧 0.12)
-local SKIRM_CHANCE    = 0.60   -- 出散兵概率
-local TRAP_MIN_STAGE    = 4    -- 第几关起允许陷阱(旧 3)
-local BOTHBAD_MIN_STAGE = 8    -- 第几关起允许两害相权(旧 6 — 跟 Boss 残局撞在一起)
-local SKIRM_MIN_STAGE   = 2    -- 第几关起出散兵
-local SKIRM_FRAC_LO, SKIRM_FRAC_HI = 0.10, 0.18   -- 散兵 = 基准的 10~18%(旧 12~22)
+-- Tunables (numeric balance lives here)
+-- 0.1.1 tuning notes (2026-06-11; playtest died at stage 6 vs the stage 20~30 target):
+--   The old curve ALPHA0=0.50/GAIN=0.016 left only half headroom from stage 1; the stage-5
+--   boss fought at an effective alpha of 0.72 (gates only compensate the plain alpha), so
+--   even par lost 21% crossing it, and BOTHBAD gates unlocked right after at stage 6 --
+--   dying at stage 6 was structural. Worse, need broke 3.3 at stage 11, turning every gate
+--   multiplicative and removing the additive-gate catch-up path: any player 40% behind was
+--   mathematically dead from stage 8 on.
+--   The new curve pushes the death zone from stages 5~8 to ~28+: additive gates survive
+--   to ~stage 28 and a boss stage is roughly par-neutral.
+local START_PAR    = 10     -- starting crowd (par curve origin; Game starts with the same count)
+local ALPHA0       = 0.38   -- stage-1 pressure (was 0.50)
+local ALPHA_GAIN   = 0.012  -- per-stage increase (was 0.016; stage 21 = 0.62, stage 31 = 0.74)
+local ALPHA_CAP    = 0.86   -- pressure cap (at alpha 0.86, need = 6.4 > MULT_CAP forces decay; second safety)
+local RHO0         = 1.28   -- stage-1 target net growth
+local RHO_DECAY    = 0.012  -- per-stage decrease
+local RHO_MIN      = 0.90   -- net-growth floor (< 1 = the late game always declines)
+local MULT_CAP     = 6      -- multiplier-gate cap (late-game required gain exceeds it => natural decay)
+local TRAP_CHANCE     = 0.15   -- chance the off-gate is a trap (divide-by-2 / -N) (was 0.18)
+local BOTHBAD_CHANCE  = 0.10   -- chance both gates are negative ("lose-lose") (was 0.12)
+local SKIRM_CHANCE    = 0.60   -- chance a skirmish blob spawns
+local TRAP_MIN_STAGE    = 4    -- first stage traps may appear (was 3)
+local BOTHBAD_MIN_STAGE = 8    -- first stage lose-lose may appear (was 6 -- collided with the boss aftermath)
+local SKIRM_MIN_STAGE   = 2    -- first stage skirmishes may appear
+local SKIRM_FRAC_LO, SKIRM_FRAC_HI = 0.10, 0.18   -- skirmish = 10~18% of par (was 12~22)
 local BOSS_EVERY      = 5
-local BOSS_ALPHA_MULT = 1.18   -- (旧 1.28 — 门只补普通 α,1.28 时基准过 Boss 净损 21%)
+local BOSS_ALPHA_MULT = 1.18   -- (was 1.28 -- gates only compensate plain alpha, so 1.28 cost par 21% per boss)
 local BOSS_ALPHA_CAP  = 0.90
 
--- 元素间距(px,gapAfter = 此元素与下一元素的滚动距离)
-local GAP_GATE_SKIRM = 210   -- 门 -> 散兵
-local GAP_SKIRM_WALL = 230   -- 散兵 -> 敌墙
-local GAP_GATE_WALL  = 360   -- 门 -> 敌墙(无散兵时)
-local GAP_WALL_GATE  = 340   -- 敌墙 -> 下一关门(磨墙最长 2 秒也来得及)
+-- Element spacing (px; gapAfter = scroll distance between this element and the next)
+local GAP_GATE_SKIRM = 210   -- gates -> skirmish
+local GAP_SKIRM_WALL = 230   -- skirmish -> wall
+local GAP_GATE_WALL  = 360   -- gates -> wall (no skirmish)
+local GAP_WALL_GATE  = 340   -- wall -> next stage's gates (enough room even for a max 2 s grind)
 
 Track.START_PAR = START_PAR
 
@@ -61,7 +68,7 @@ local function RhoAt(i)
     return r
 end
 
--- 圆整成"好看的数":>=100 取整十,>=30 取整五,最小 1
+-- Round to a "nice" number: >=100 to tens, >=30 to fives, minimum 1
 local function NiceNum(n)
     n = math.floor(n + 0.5)
     if n >= 100 then n = math.floor(n / 10 + 0.5) * 10
@@ -70,8 +77,9 @@ local function NiceNum(n)
     return n
 end
 
--- 门作用于人数(Game 结算也用这个,保证显示与结算一致)
--- ÷ 用 ceil:除法不会直接除到 0(0 只能死于 -门 或战斗)
+-- Apply a gate to a crowd count (Game settles with this too, so display == settlement)
+-- Division uses ceil: a divide gate can never reach 0 directly (only minus gates or
+-- combat can finish a crowd)
 function Track.ApplyOp(C, g)
     if g.op == "+" then C = C + g.v
     elseif g.op == "-" then C = C - g.v
@@ -89,14 +97,14 @@ function Track.GateText(g)
     return "-" .. g.v
 end
 
--- 生成一对门:best = 设计上的最优选,other = 次优/陷阱
+-- Generate a gate pair: best = the designed optimal pick, other = suboptimal / trap
 local function MakeGatePair(i, P)
-    -- Boss 后一关:固定奖励走廊 ×3 / ×2
+    -- Stage right after a boss: fixed bonus corridor x3 / x2
     if i > 1 and ((i - 1) % BOSS_EVERY == 0) then
         return { op = "×", v = 3 }, { op = "×", v = 2 }
     end
 
-    local need = RhoAt(i) / (1 - AlphaAt(i))   -- 本关需要的最优增益倍率
+    local need = RhoAt(i) / (1 - AlphaAt(i))   -- optimal gain multiplier required this stage
     local best
     if need <= 3.3 and math.random() < 0.5 then
         best = { op = "+", v = NiceNum((need - 1) * P) }
@@ -109,7 +117,7 @@ local function MakeGatePair(i, P)
     local other
     local r = math.random()
     if i >= BOTHBAD_MIN_STAGE and r < BOTHBAD_CHANCE then
-        -- 两害相权:本关没有增长,选损失小的
+        -- Lose-lose: no growth this stage, pick the smaller loss
         best = { op = "-", v = NiceNum(P * 0.18) }
         if math.random() < 0.5 then
             other = { op = "÷", v = 2 }
@@ -117,14 +125,15 @@ local function MakeGatePair(i, P)
             other = { op = "-", v = NiceNum(P * 0.5) }
         end
     elseif i >= TRAP_MIN_STAGE and r < BOTHBAD_CHANCE + TRAP_CHANCE then
-        -- 陷阱门:选错很疼
+        -- Trap gate: picking wrong hurts
         if math.random() < 0.5 then
             other = { op = "÷", v = 2 }
         else
             other = { op = "-", v = NiceNum(P * (0.3 + math.random() * 0.3)) }
         end
     else
-        -- 次优门:增长是最优的 60~85%,尽量用另一种形态(教学加/乘交叉点)
+        -- Suboptimal gate: 60~85% of the optimal growth, preferring the other form
+        -- (teaches the add/multiply crossover)
         local f = 0.60 + math.random() * 0.25
         local bc = Track.ApplyOp(P, best)
         local target = P + (bc - P) * f
@@ -139,7 +148,7 @@ local function MakeGatePair(i, P)
     return best, other
 end
 
--- 生成第 i 关的全部元素进队列
+-- Generate all elements of stage i into the queue
 local function GenStage()
     state.stage = state.stage + 1
     local i = state.stage
@@ -149,7 +158,7 @@ local function GenStage()
     local L, R
     if math.random() < 0.5 then L, R = best, other else L, R = other, best end
 
-    -- 过门后的基准 = 两门里较好的那个(完美玩家)
+    -- Post-gate par = the better of the two gates (perfect player)
     local Pb = math.max(Track.ApplyOp(P, best), Track.ApplyOp(P, other), 1)
 
     local isBoss = (i % BOSS_EVERY == 0)
@@ -186,7 +195,7 @@ function Track.Reset()
     wipe(state.queue)
 end
 
--- 取下一个待生成元素(队列空了就生成下一关)
+-- Pop the next element to spawn (generates the next stage when the queue runs dry)
 function Track.Next()
     if #state.queue == 0 then GenStage() end
     return table.remove(state.queue, 1)

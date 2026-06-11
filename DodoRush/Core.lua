@@ -1,7 +1,9 @@
 -- DodoRush - Core
--- 初始化、小地图按钮、游戏主窗口(竖版)、开始界面。
--- 结构与 DodoPool/DodoBricks 同款:开始界面 <-> 跑道,ESC 关窗,窗口可拖动并记忆位置。
--- 无落盘存档:"继续本局"只续接内存里还活着的一局(关窗不丢,/reload 丢)。
+-- Initialization, minimap button, main game window (portrait), start screen.
+-- Same structure as DodoPool/DodoBricks: start screen <-> track, ESC closes,
+-- window is draggable and remembers its position.
+-- No save file: "Continue Run" only reattaches to a run still alive in memory
+-- (closing the window keeps it, /reload loses it).
 
 local ADDON = ...
 local DR = _G.DodoRush or {}
@@ -10,12 +12,12 @@ _G.DodoRush = DR
 local geo = DR.geo
 
 local DEFAULTS = {
-    bestStage    = nil,    -- 最高到达关数,nil = 暂无
-    bestDist     = nil,    -- 最远距离(米)
-    sound        = true,   -- 音效开关
-    soundVolume  = 3,      -- 音量 1~10(同帧叠播次数)
-    minimapAngle = 265,    -- 小地图按钮角度(错开 DodoPool 205 / DodoBricks 235)
-    windowPoint  = nil,    -- 窗口位置(拖动后保存)
+    bestStage    = nil,    -- furthest stage reached, nil = none yet
+    bestDist     = nil,    -- furthest distance (meters)
+    sound        = true,   -- sound on/off
+    soundVolume  = 3,      -- volume 1~10 (same-frame repeat plays)
+    minimapAngle = 265,    -- minimap button angle (offset from DodoPool 205 / DodoBricks 235)
+    windowPoint  = nil,    -- window position (saved after dragging)
 }
 
 local db
@@ -36,7 +38,7 @@ local function CopyDefaults(dst, src)
 end
 
 -- ============================================================
--- 切换:开始界面 <-> 跑道
+-- Switching: start screen <-> track
 -- ============================================================
 local function StartNew()
     startPanel:Hide()
@@ -54,16 +56,17 @@ end
 
 local function ShowStartScreen()
     if playArea then playArea:Hide() end
-    -- 盖在 HUD 之上(HUD 控件后建、层级更高,把开始面板抬上去完整遮住)
+    -- Lift above the HUD (HUD widgets are created later with higher levels;
+    -- raise the start panel so it fully covers them)
     if startPanel and mainFrame then
         startPanel:SetFrameLevel((mainFrame:GetFrameLevel() or 0) + 40)
     end
     if startPanel and startPanel.recordText then
         local best = db and db.bestStage
         if best then
-            startPanel.recordText:SetText("最高纪录: 第 " .. best .. " 关 · " .. (db.bestDist or 0) .. " 米")
+            startPanel.recordText:SetText("Best: stage " .. best .. " - " .. (db.bestDist or 0) .. " m")
         else
-            startPanel.recordText:SetText("最高纪录: --")
+            startPanel.recordText:SetText("Best: --")
         end
     end
     if startPanel and startPanel.resumeBtn then
@@ -78,7 +81,7 @@ end
 DR.ShowStartScreen = ShowStartScreen
 
 -- ============================================================
--- 主窗口(竖版)
+-- Main window (portrait)
 -- ============================================================
 local function CreateMainFrame()
     local f = CreateFrame("Frame", "DodoRushFrame", UIParent, "BasicFrameTemplateWithInset")
@@ -100,9 +103,9 @@ local function CreateMainFrame()
         if DR.Game and DR.Game.OnWindowHidden then DR.Game.OnWindowHidden() end
     end)
 
-    if f.TitleText then f.TitleText:SetText("DodoRush  人海快跑") end
+    if f.TitleText then f.TitleText:SetText("DodoRush") end
 
-    -- 跑道区:竖版,窗口下部居中,顶上留 HUD 条
+    -- Track area: portrait, centered in the lower part of the window, HUD strip on top
     playArea = CreateFrame("Frame", "DodoRushPlayArea", f)
     playArea:SetSize(geo.ROAD_W, geo.ROAD_H)
     playArea:SetPoint("BOTTOM", f, "BOTTOM", 0, 16)
@@ -112,7 +115,7 @@ local function CreateMainFrame()
     mainFrame = f
     DR.frame = f
 
-    -- ESC 关闭
+    -- ESC closes
     tinsert(UISpecialFrames, "DodoRushFrame")
 end
 
@@ -120,7 +123,7 @@ local function CreateStartPanel()
     local p = CreateFrame("Frame", nil, mainFrame)
     p:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 12, -26)
     p:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -12, 12)
-    p:EnableMouse(true)   -- 吃掉点击,挡住下层 HUD 按钮
+    p:EnableMouse(true)   -- swallow clicks so the HUD buttons underneath stay unreachable
 
     local bg = p:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -132,32 +135,32 @@ local function CreateStartPanel()
 
     local sub = p:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     sub:SetPoint("TOP", title, "BOTTOM", 0, -8)
-    sub:SetText("人海快跑")
+    sub:SetText("Crowd Runner")
 
     local startBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     startBtn:SetSize(180, 34)
     startBtn:SetPoint("TOP", sub, "BOTTOM", 0, -44)
-    startBtn:SetText("开始新局")
+    startBtn:SetText("New Run")
     startBtn:SetScript("OnClick", StartNew)
 
     local resumeBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     resumeBtn:SetSize(180, 34)
     resumeBtn:SetPoint("TOP", startBtn, "BOTTOM", 0, -12)
-    resumeBtn:SetText("继续本局")
+    resumeBtn:SetText("Continue Run")
     resumeBtn:SetScript("OnClick", ResumeRun)
     p.resumeBtn = resumeBtn
 
     local recordText = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     recordText:SetPoint("TOP", resumeBtn, "BOTTOM", 0, -30)
-    recordText:SetText("最高纪录: --")
+    recordText:SetText("Best: --")
     p.recordText = recordText
 
     local hint = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOM", p, "BOTTOM", 0, 40)
-    hint:SetText("A / D(或左右方向键)横移,带队往前冲\n绿门加人(+ ×),红门减人(- ÷),中线分左右\n撞上红色敌军 = 1 换 1 互拼,人多才磨得穿\n小股散兵可以绕开白省一笔,整排敌墙必须硬刚\n每 5 关一个 BOSS 墙 · 进战斗自动暂停 · ESC 关窗")
+    hint:SetText("Strafe with A / D (or arrow keys); the crowd runs ahead on its own\nGreen gates add (+ ×), red gates cut (- ÷), the dashed line splits left/right\nRed enemies trade one for one: you need the numbers to grind through\nSmall packs can be dodged for free, full-width walls must be fought\nBoss wall every 5 stages - auto-pauses in combat - ESC closes")
     hint:SetJustifyH("CENTER")
 
-    -- 音效开关 + 音量滑条(左下角)
+    -- Sound toggle + volume slider (bottom-left corner)
     if DR.Sound and DR.Sound.CreateToggle then
         local cb = DR.Sound.CreateToggle(p)
         cb:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 14, 10)
@@ -172,7 +175,7 @@ local function CreateStartPanel()
 end
 
 -- ============================================================
--- 小地图按钮(同 DodoPool:Shift+左键拖动定位,左键开关游戏)
+-- Minimap button (same as DodoPool: Shift+left-drag repositions, left-click toggles the game)
 -- ============================================================
 local function NormalizeAngle(a)
     a = (tonumber(a) or 265) % 360
@@ -254,9 +257,9 @@ local function CreateMinimapButton()
     end)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("DodoRush 人海快跑", 1, 1, 1)
-        GameTooltip:AddLine("左键: 打开/关闭游戏", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Shift+左键拖动: 移动图标", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("DodoRush", 1, 1, 1)
+        GameTooltip:AddLine("Left-click: open/close the game", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Shift+left-drag: move this button", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     b:SetScript("OnLeave", GameTooltip_Hide)
@@ -266,7 +269,7 @@ local function CreateMinimapButton()
 end
 
 -- ============================================================
--- 初始化
+-- Initialization
 -- ============================================================
 local function Initialize()
     DodoRushDB = CopyDefaults(DodoRushDB, DEFAULTS)
@@ -289,7 +292,7 @@ local function Initialize()
     SLASH_DODORUSH2 = "/rush"
     SlashCmdList["DODORUSH"] = ToggleGame
 
-    Print("已就绪。小地图按钮或 /rush 打开。")
+    Print("Ready. Open with the minimap button or /rush.")
 end
 
 local ev = CreateFrame("Frame")
