@@ -1,7 +1,7 @@
 -- DodoItemLevelOverlay - SidePanel.lua
 -- Gear summary panel docked to the right side of the character
 -- frame. One row per equipment slot:
---   [slot] [stat grid] [ilvl] [item name] [enchant] [sockets]
+--   [slot] [stat grid] [ilvl] [item name][enchant] ... [sockets]
 --
 -- - slot:      localized slot abbreviation (same words as the bags)
 -- - stat grid: fixed four-column grid (vers / haste / mastery /
@@ -9,12 +9,17 @@
 --              secondary stat
 -- - ilvl:      gradient colored, same ramp as everywhere else
 -- - name:      localized by the game client, quality colored
--- - enchant:   green tag when enchanted (Death Knight runeforges
---              count), red tag when an enchantable slot is empty,
---              nothing on slots that take no enchant this season
--- - sockets:   gem icons for filled sockets, a bright empty socket
---              for unfilled ones, and a dim outline on slots that
---              could take a socket but have none yet
+-- - enchant:   hugs the end of the item name; green when enchanted
+--              (Death Knight runeforges count), red when an
+--              enchantable slot is empty, hidden on slots that take
+--              no enchant this season. Mouse over a green tag to see
+--              the actual enchant line from the item tooltip.
+-- - sockets:   right-packed, exactly as many icons as the item has
+--              sockets: gem icons for filled ones, a bright empty
+--              socket for unfilled ones, plus a dim outline on slots
+--              that could take a jewelbinder socket but have none
+--
+-- The panel matches the character frame height; rows spread evenly.
 
 local _, ns = ...
 
@@ -47,7 +52,12 @@ local STAT_KEYS = {
     crit        = "ITEM_MOD_CRIT_RATING_SHORT",
 }
 
-local MAX_SOCKETS = 3
+-- Row geometry (x offsets from the row left edge).
+local NAME_X       = 122 -- where the item name column starts
+local SOCKET_STEP  = 15  -- horizontal spacing between socket icons
+local ENCH_RESERVE = 30  -- room kept for the enchant tag after the name
+local MAX_SOCKETS  = 4   -- display cap; matches the gem fields in a link
+
 local EMPTY_SOCKET_TEXTURE = "Interface\\ItemSocketingFrame\\UI-EmptySocket-Prismatic"
 
 local panel, rows
@@ -96,7 +106,9 @@ local function GetStatsTable(itemLink)
     return nil
 end
 
-local function CountEmptySockets(stats)
+-- Despite the key names, EMPTY_SOCKET_* entries report the sockets
+-- the item HAS (filled or not), so this is the total socket count.
+local function CountTemplateSockets(stats)
     if not stats then return 0 end
     local count = 0
     for key, value in pairs(stats) do
@@ -107,18 +119,57 @@ local function CountEmptySockets(stats)
     return count
 end
 
+-- The localized "Enchanted: ..." line from the equipped item's
+-- tooltip, or nil (Death Knight runeforges may format differently;
+-- the caller falls back to the full item tooltip).
+local enchantLinePattern
+local function GetEnchantTooltipLine(slotID)
+    if not (C_TooltipInfo and C_TooltipInfo.GetInventoryItem) then return nil end
+    local data = C_TooltipInfo.GetInventoryItem("player", slotID)
+    if not data or not data.lines then return nil end
+
+    if not enchantLinePattern and type(ENCHANTED_TOOLTIP_LINE) == "string" then
+        local p = ENCHANTED_TOOLTIP_LINE:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+        enchantLinePattern = "^" .. p:gsub("%%%%s", "(.+)")
+    end
+    if not enchantLinePattern then return nil end
+
+    for _, line in ipairs(data.lines) do
+        local text = line.leftText
+        if type(text) == "string" and text:match(enchantLinePattern) then
+            return text
+        end
+    end
+    return nil
+end
+
+local function OnEnchantEnter(self)
+    local slotID = self.slotID
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    local line = GetEnchantTooltipLine(slotID)
+    if line then
+        GameTooltip:SetText(line, 0.3, 1.0, 0.3, 1, true)
+    else
+        -- fallback: the full item tooltip still shows the enchant
+        GameTooltip:SetInventoryItem("player", slotID)
+    end
+    GameTooltip:Show()
+end
+
+local function OnEnchantLeave()
+    GameTooltip:Hide()
+end
+
 ------------------------------------------------------------------
 -- Row construction
 ------------------------------------------------------------------
 
-local function CreateRow(parent, index, slotInfo)
+local function CreateRow(parent, slotInfo)
     local cfg = ns.Config
     local row = CreateFrame("Frame", nil, parent)
     row.slotID = slotInfo.id
     row.slotKey = slotInfo.key
-    row:SetSize(cfg.PANEL_WIDTH - 12, cfg.PANEL_ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 6,
-        -10 - (index - 1) * cfg.PANEL_ROW_HEIGHT)
+    row:SetSize(cfg.PANEL_WIDTH - 12, 18) -- height assigned by LayoutRows
 
     local function NewText(justify)
         local fs = row:CreateFontString(nil, "OVERLAY")
@@ -135,12 +186,12 @@ local function CreateRow(parent, index, slotInfo)
     row.slot:SetWidth(24)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
-    -- four-column secondary stat grid
+    -- four-column secondary stat grid; center-anchored with natural
+    -- width so two-letter labels never get truncated to "..."
     row.stats = {}
     for i = 1, #STAT_ORDER do
         local fs = NewText("CENTER")
-        fs:SetPoint("LEFT", row, "LEFT", 26 + (i - 1) * 15, 0)
-        fs:SetWidth(15)
+        fs:SetPoint("CENTER", row, "LEFT", 32 + (i - 1) * 15, 0)
         row.stats[i] = fs
     end
 
@@ -149,28 +200,52 @@ local function CreateRow(parent, index, slotInfo)
     row.ilvl:SetPoint("LEFT", row, "LEFT", 88, 0)
     row.ilvl:SetWidth(28)
 
-    -- enchant state tag (right side, before the sockets)
-    row.ench = NewText("RIGHT")
-    row.ench:SetPoint("RIGHT", row, "RIGHT", -(MAX_SOCKETS * 15 + 2), 0)
-    row.ench:SetWidth(22)
+    -- item name; width set per refresh so the enchant tag and the
+    -- socket icons get exactly the room they need
+    row.name = NewText("LEFT")
+    row.name:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
+    row.name:SetWidth(100)
+    if row.name.SetWordWrap then row.name:SetWordWrap(false) end
+    if row.name.SetMaxLines then row.name:SetMaxLines(1) end
 
-    -- socket icons
+    -- enchant tag, re-anchored to the end of the name text on every
+    -- refresh; the overlay frame provides the mouseover tooltip
+    row.ench = NewText("LEFT")
+    row.ench:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
+
+    row.enchHit = CreateFrame("Frame", nil, row)
+    row.enchHit.slotID = slotInfo.id
+    row.enchHit:SetAllPoints(row.ench)
+    row.enchHit:SetScript("OnEnter", OnEnchantEnter)
+    row.enchHit:SetScript("OnLeave", OnEnchantLeave)
+    row.enchHit:EnableMouse(false)
+
+    -- socket icons, right-packed (index 1 is the rightmost)
     row.sockets = {}
     for i = 1, MAX_SOCKETS do
         local tex = row:CreateTexture(nil, "OVERLAY")
         tex:SetSize(13, 13)
-        tex:SetPoint("RIGHT", row, "RIGHT", -(MAX_SOCKETS - i) * 15, 0)
+        tex:SetPoint("RIGHT", row, "RIGHT", -(i - 1) * SOCKET_STEP, 0)
         row.sockets[i] = tex
     end
 
-    -- item name, quality colored, clipped between ilvl and enchant
-    row.name = NewText("LEFT")
-    row.name:SetPoint("LEFT", row, "LEFT", 122, 0)
-    row.name:SetPoint("RIGHT", row.ench, "LEFT", -4, 0)
-    if row.name.SetWordWrap then row.name:SetWordWrap(false) end
-    if row.name.SetMaxLines then row.name:SetMaxLines(1) end
-
     return row
+end
+
+-- Spread the rows evenly over the panel's current height.
+local function LayoutRows()
+    if not panel or not rows then return end
+    local height = panel:GetHeight()
+    if not height or height <= 0 then return end
+
+    local pad = 10
+    local rowHeight = (height - pad * 2) / #rows
+    for i, row in ipairs(rows) do
+        row:SetHeight(rowHeight)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 6,
+            -pad - (i - 1) * rowHeight)
+    end
 end
 
 ------------------------------------------------------------------
@@ -186,6 +261,7 @@ local function UpdateRow(row)
 
     for i = 1, #STAT_ORDER do row.stats[i]:Hide() end
     row.ench:Hide()
+    row.enchHit:EnableMouse(false)
     for i = 1, MAX_SOCKETS do row.sockets[i]:Hide() end
 
     local itemLink = GetInventoryItemLink("player", slotID)
@@ -207,23 +283,6 @@ local function UpdateRow(row)
         row.ilvl:SetText("")
     end
 
-    -- item name in the client language, quality colored; uncached
-    -- items refresh via GET_ITEM_INFO_RECEIVED
-    local name, _, quality = C_Item.GetItemInfo(itemLink)
-    ns.SetOverlayFont(row.name, cfg.PANEL_FONT_SIZE, "OUTLINE")
-    if name then
-        local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
-        if qc then
-            row.name:SetTextColor(qc.r, qc.g, qc.b, 1)
-        else
-            row.name:SetTextColor(1, 1, 1, 1)
-        end
-        row.name:SetText(name)
-    else
-        row.name:SetTextColor(0.6, 0.6, 0.6, 1)
-        row.name:SetText("...")
-    end
-
     -- secondary stat grid
     local stats = GetStatsTable(itemLink)
     if stats then
@@ -239,19 +298,14 @@ local function UpdateRow(row)
         end
     end
 
-    -- enchant state
+    -- sockets: only as many icons as the item actually has. The
+    -- EMPTY_SOCKET_* stats report the item's total socket count
+    -- (filled or not), so subtract the filled gems to get the
+    -- genuinely empty ones.
     local enchantID, gems = ParseItemLink(itemLink)
-    if IsEnchantableSlot(slotID, itemLink) then
-        local enchanted = enchantID and enchantID ~= "" and enchantID ~= "0"
-        local c = enchanted and cfg.ENCHANT_OK_COLOR or cfg.ENCHANT_MISSING_COLOR
-        ns.SetOverlayFont(row.ench, cfg.PANEL_FONT_SIZE, "OUTLINE")
-        row.ench:SetText((ns.L and ns.L.enchant) or "EN")
-        row.ench:SetTextColor(c[1], c[2], c[3], c[4])
-        row.ench:Show()
-    end
+    local totalSockets = CountTemplateSockets(stats)
+    local emptyCount = math.max(0, totalSockets - #gems)
 
-    -- sockets: filled gems, then bright empty sockets, then a dim
-    -- outline on slots that could be socketed but have no socket
     local shown = 0
     for _, gemID in ipairs(gems) do
         if shown >= MAX_SOCKETS then break end
@@ -262,7 +316,7 @@ local function UpdateRow(row)
         tex:SetAlpha(1)
         tex:Show()
     end
-    for _ = 1, CountEmptySockets(stats) do
+    for _ = 1, emptyCount do
         if shown >= MAX_SOCKETS then break end
         shown = shown + 1
         local tex = row.sockets[shown]
@@ -271,10 +325,53 @@ local function UpdateRow(row)
         tex:Show()
     end
     if shown == 0 and cfg.SOCKETABLE_SLOTS[slotID] then
+        shown = 1
         local tex = row.sockets[1]
         tex:SetTexture(EMPTY_SOCKET_TEXTURE)
         tex:SetAlpha(0.3)
         tex:Show()
+    end
+
+    -- item name in the client language, quality colored; sized so
+    -- the enchant tag and the shown sockets get exactly their room
+    local enchantable = IsEnchantableSlot(slotID, itemLink)
+    local socketsWidth = shown * SOCKET_STEP
+    local nameWidth = row:GetWidth() - NAME_X - socketsWidth
+        - (enchantable and ENCH_RESERVE or 4)
+    if nameWidth < 40 then nameWidth = 40 end
+    row.name:SetWidth(nameWidth)
+
+    local name, _, quality = C_Item.GetItemInfo(itemLink)
+    ns.SetOverlayFont(row.name, cfg.PANEL_FONT_SIZE, "OUTLINE")
+    if name then
+        local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+        if qc then
+            row.name:SetTextColor(qc.r, qc.g, qc.b, 1)
+        else
+            row.name:SetTextColor(1, 1, 1, 1)
+        end
+        row.name:SetText(name)
+    else
+        row.name:SetTextColor(0.6, 0.6, 0.6, 1)
+        row.name:SetText("...")
+    end
+
+    -- enchant tag hugging the end of the visible name text
+    if enchantable then
+        local enchanted = enchantID and enchantID ~= "" and enchantID ~= "0"
+        local c = enchanted and cfg.ENCHANT_OK_COLOR or cfg.ENCHANT_MISSING_COLOR
+        local textWidth = row.name:GetStringWidth() or 0
+        local offset = math.min(textWidth, nameWidth) + 6
+
+        ns.SetOverlayFont(row.ench, cfg.PANEL_FONT_SIZE, "OUTLINE")
+        row.ench:ClearAllPoints()
+        row.ench:SetPoint("LEFT", row.name, "LEFT", offset, 0)
+        row.ench:SetText((ns.L and ns.L.enchant) or "EN")
+        row.ench:SetTextColor(c[1], c[2], c[3], c[4])
+        row.ench:Show()
+
+        -- tooltip only when there is an enchant to describe
+        row.enchHit:EnableMouse(enchanted and true or false)
     end
 end
 
@@ -287,12 +384,13 @@ function ns.SetupSidePanel()
     if not CharacterFrame then return end
 
     local cfg = ns.Config
-    local height = #SLOTS * cfg.PANEL_ROW_HEIGHT + 20
 
     panel = CreateFrame("Frame", "DodoItemLevelOverlaySidePanel",
         CharacterFrame, "BackdropTemplate")
-    panel:SetSize(cfg.PANEL_WIDTH, height)
+    panel:SetWidth(cfg.PANEL_WIDTH)
+    -- match the character frame height exactly
     panel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 2, 0)
+    panel:SetPoint("BOTTOMLEFT", CharacterFrame, "BOTTOMRIGHT", 2, 0)
     panel:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -304,11 +402,16 @@ function ns.SetupSidePanel()
 
     rows = {}
     for index, slotInfo in ipairs(SLOTS) do
-        rows[index] = CreateRow(panel, index, slotInfo)
+        rows[index] = CreateRow(panel, slotInfo)
     end
 
+    LayoutRows()
+    panel:SetScript("OnSizeChanged", LayoutRows)
     panel:SetScript("OnShow", function()
-        C_Timer.After(0, ns.UpdateSidePanel)
+        C_Timer.After(0, function()
+            LayoutRows()
+            ns.UpdateSidePanel()
+        end)
     end)
 end
 

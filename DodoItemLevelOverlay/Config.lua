@@ -95,10 +95,11 @@ ns.Config = {
     ------------------------------------------------------------------
     -- Character side panel (gear list right of the character frame)
     ------------------------------------------------------------------
-    PANEL_ENABLED    = true,
-    PANEL_WIDTH      = 365,
-    PANEL_ROW_HEIGHT = 19,
-    PANEL_FONT_SIZE  = 11,
+    -- The panel height always matches the character frame; rows
+    -- spread evenly over it.
+    PANEL_ENABLED   = true,
+    PANEL_WIDTH     = 365,
+    PANEL_FONT_SIZE = 11,
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)
