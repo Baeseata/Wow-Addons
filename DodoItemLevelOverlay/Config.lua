@@ -99,7 +99,7 @@ ns.Config = {
     -- spread evenly over it.
     PANEL_ENABLED   = true,
     PANEL_WIDTH     = 365,
-    PANEL_FONT_SIZE = 11,
+    PANEL_FONT_SIZE = 14,
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)
@@ -137,14 +137,5 @@ ns.Config = {
         [16] = true, -- main hand
         -- off hand (17) is handled in code: weapons yes,
         -- shields and held-in-off-hand items no
-    },
-
-    -- Slots that can receive a socket from a Radiant Jewelbinder in
-    -- Midnight: helm, bracers, belt. Items without a socket on these
-    -- slots show a dim socket outline as a reminder.
-    SOCKETABLE_SLOTS = {
-        [1] = true, -- head
-        [9] = true, -- wrist
-        [6] = true, -- waist
     },
 }
