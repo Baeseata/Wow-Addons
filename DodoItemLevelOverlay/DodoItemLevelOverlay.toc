@@ -1,10 +1,14 @@
 ## Interface: 120005
-## Group: Dodo
-## OptionalDeps: Dodo
 ## Title: DodoItemLevelOverlay
-## Notes: doodo的显示背包和身上装备等级的小助手
+## Notes: Item level overlays for bags and the character frame, colored with a Raider.IO style gradient.
 ## Author: Doodo
-## Version: 1.0
-## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## Version: 2.0.0
+## X-Category: Bags and Inventory
 
-DodoItemLevelOverlay.lua
+Config.lua
+Gradient.lua
+ItemInfo.lua
+Overlay.lua
+Equipment.lua
+Bags.lua
+Core.lua
