@@ -10,13 +10,13 @@ an item is for, what is vendor trash, and who you are looking at.
 **Bags** (combined or separated Blizzard bags), on every equippable item
 that is worth wearing:
 
-- **Top-left: item level**, colored with a Raider.IO style gradient. Item
-  levels are mapped onto the same color ramp Raider.IO uses for Mythic+
-  scores: white at the bottom of the window, blending smoothly through
-  green, blue, purple, pink and legendary orange; the very top of the
-  window then rises through gold into hot red, so the last few item
-  levels of a season each get a clearly distinct step instead of
-  saturating into one color. The higher the item level, the hotter.
+- **Top-left: item level**, colored with a Raider.IO style gradient.
+  The lower half of the window runs the Raider.IO Mythic+ score ramp
+  (white through green, blue, purple, pink); the entire upper half is
+  warm, going legendary orange at the midpoint and rising through
+  amber and gold into hot red at the cap. Good gear is unmistakably
+  orange territory, and near-cap item levels still get clearly
+  distinct steps instead of saturating into one color.
 - **Center: slot label**, localized (see Languages below).
 - **Bottom-left: BOE tag**, shown only while that specific item is still
   unbound, or the equipment set name when the item belongs to a set.
@@ -163,10 +163,10 @@ Beyond the options panel, everything else is constants in `Config.lua`
 
 - `GRADIENT_MIN_ILVL` / `GRADIENT_MAX_ILVL`: the item level window mapped
   onto the color ramp. Anything at or below MIN shows white, anything at
-  or above MAX shows hot red, with the gold-to-red stretch reserved for
-  the top of the window. Tune these two numbers once per season: MAX a
-  touch above the current best-in-slot ceiling, MIN around where gear
-  starts to matter.
+  or above MAX shows hot red; the whole upper half of the window is the
+  warm orange-to-red stretch. Tune these two numbers once per season:
+  MAX a touch above the current best-in-slot ceiling, MIN so that the
+  window midpoint sits where "good gear" begins.
 - `HIDE_JUNK_QUALITY`: set to `false` to treat white gear as normal gear
   (gear overlays shown, no junk tag). Gray items are always tagged junk.
 - Font sizes, anchor corners and colors for each overlay text.
