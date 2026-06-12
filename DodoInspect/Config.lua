@@ -15,12 +15,13 @@ ns.Config = {
     -- lower half of the window blends through green, blue, purple and
     -- pink, and the entire upper half is warm: orange from the window
     -- midpoint, rising through amber and gold into hot red at MAX.
-    -- With the default 250-310 window the warm half starts at 280.
-    -- Tune these two numbers once per season: MAX a touch above the
-    -- current best-in-slot ceiling, MIN so that the midpoint sits
-    -- where "good gear" begins (orange from there on up).
-    GRADIENT_MIN_ILVL = 250,
-    GRADIENT_MAX_ILVL = 310,
+    -- With the default 262-298 window the warm half starts at 280
+    -- and the season cap (298) burns hot red.
+    -- Tune these two numbers once per season: MAX at the current
+    -- best-in-slot ceiling, MIN so that the midpoint sits where
+    -- "good gear" begins (orange from there on up).
+    GRADIENT_MIN_ILVL = 262,
+    GRADIENT_MAX_ILVL = 298,
 
     ------------------------------------------------------------------
     -- Junk filter
