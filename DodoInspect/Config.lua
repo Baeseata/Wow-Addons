@@ -28,15 +28,6 @@ ns.Config = {
     HIDE_JUNK_QUALITY = true,
 
     ------------------------------------------------------------------
-    -- Text style (every overlay text on bag and character slots)
-    ------------------------------------------------------------------
-    -- true: colored fill with a white rim plus black edge and drop
-    -- shadow (subtitle style; the engine only draws black outlines,
-    -- so the rim is rendered from offset white copies).
-    -- false: the classic plain black outline (*_FONT_FLAGS below).
-    WHITE_OUTLINE = true,
-
-    ------------------------------------------------------------------
     -- Item level text (top-left corner; bags and character frame)
     ------------------------------------------------------------------
     ILVL_FONT_SIZE  = 12,

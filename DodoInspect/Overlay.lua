@@ -36,70 +36,13 @@ function ns.SetOverlayFont(fs, size, flags)
     end
 end
 
--- The engine can only draw black outlines, so the white rim is four
--- white copies of the text offset by one pixel each way; their own
--- black outlines and shadows provide the dark edge and the drop
--- shadow, and the colored original renders on top of them.
-local RIM_OFFSETS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
-
-local function EnsureRim(fs)
-    if fs.DodoRim then return fs.DodoRim end
-    local rim = {}
-    for i = 1, #RIM_OFFSETS do
-        local copy = fs:GetParent():CreateFontString(nil, "OVERLAY")
-        copy:SetDrawLayer("OVERLAY", 1)
-        copy:SetTextColor(1, 1, 1, 1)
-        copy:SetShadowOffset(1, -1)
-        copy:SetShadowColor(0, 0, 0, 1)
-        copy:Hide()
-        rim[i] = copy
-    end
-    fs:SetDrawLayer("OVERLAY", 2)
-    fs.DodoRim = rim
-    return rim
-end
-
-local function HideOverlay(fs)
-    if not fs then return end
-    fs:Hide()
-    if fs.DodoRim then
-        for _, copy in ipairs(fs.DodoRim) do copy:Hide() end
-    end
-end
-
 local function ApplyText(fs, text, size, flags, r, g, b, a, point, x, y)
-    local parent = fs:GetParent()
-    local white = ns.Config.WHITE_OUTLINE
-
-    -- in white rim mode the copies supply outline and shadow, the
-    -- original is pure colored fill
-    ns.SetOverlayFont(fs, size, white and "" or flags)
-    fs:SetShadowOffset(white and 0 or 1, white and 0 or -1)
+    ns.SetOverlayFont(fs, size, flags)
     fs:ClearAllPoints()
-    fs:SetPoint(point, parent, point, x, y)
+    fs:SetPoint(point, fs:GetParent(), point, x, y)
     fs:SetTextColor(r, g, b, a)
     fs:SetText(text)
     fs:Show()
-
-    if white then
-        local rim = EnsureRim(fs)
-        for i, off in ipairs(RIM_OFFSETS) do
-            local copy = rim[i]
-            ns.SetOverlayFont(copy, size, "OUTLINE")
-            copy:SetJustifyH(fs:GetJustifyH())
-            copy:ClearAllPoints()
-            copy:SetPoint(point, parent, point, x + off[1], y + off[2])
-            if fs.DodoClampW then
-                copy:SetWidth(fs.DodoClampW)
-                if copy.SetWordWrap then copy:SetWordWrap(false) end
-                if copy.SetMaxLines then copy:SetMaxLines(1) end
-            end
-            copy:SetText(text)
-            copy:Show()
-        end
-    elseif fs.DodoRim then
-        for _, copy in ipairs(fs.DodoRim) do copy:Hide() end
-    end
 end
 
 -- Constrain a font string to the button width so long texts clip on
@@ -108,7 +51,6 @@ local function ClampToButtonWidth(fs, button)
     local w = (button.GetWidth and button:GetWidth()) or 0
     if type(w) == "number" and w > 4 then
         fs:SetWidth(w - 2)
-        fs.DodoClampW = w - 2
     end
     if fs.SetWordWrap then fs:SetWordWrap(false) end
     if fs.SetMaxLines then fs:SetMaxLines(1) end
@@ -118,7 +60,7 @@ end
 function ns.SetItemLevelText(button, ilvl)
     if not button then return end
     if not ilvl or ilvl <= 0 then
-        HideOverlay(button.DodoIlvlText)
+        if button.DodoIlvlText then button.DodoIlvlText:Hide() end
         return
     end
 
@@ -133,7 +75,7 @@ end
 function ns.SetSlotText(button, text)
     if not button then return end
     if type(text) ~= "string" or text == "" then
-        HideOverlay(button.DodoSlotText)
+        if button.DodoSlotText then button.DodoSlotText:Hide() end
         return
     end
 
@@ -149,7 +91,7 @@ end
 function ns.SetTagText(button, kind, text)
     if not button then return end
     if kind ~= "boe" and not (kind == "set" and type(text) == "string" and text ~= "") then
-        HideOverlay(button.DodoTagText)
+        if button.DodoTagText then button.DodoTagText:Hide() end
         return
     end
 
@@ -175,7 +117,7 @@ function ns.SetTypeText(button, tagKey)
     if not button then return end
     local text = tagKey and ns.L and ns.L.tags[tagKey]
     if type(text) ~= "string" or text == "" then
-        HideOverlay(button.DodoTypeText)
+        if button.DodoTypeText then button.DodoTypeText:Hide() end
         return
     end
 
@@ -190,17 +132,17 @@ end
 -- Hide every overlay this addon owns on a button.
 function ns.ClearAllOverlays(button)
     if not button then return end
-    HideOverlay(button.DodoIlvlText)
-    HideOverlay(button.DodoSlotText)
-    HideOverlay(button.DodoTagText)
-    HideOverlay(button.DodoTypeText)
+    if button.DodoIlvlText then button.DodoIlvlText:Hide() end
+    if button.DodoSlotText then button.DodoSlotText:Hide() end
+    if button.DodoTagText then button.DodoTagText:Hide() end
+    if button.DodoTypeText then button.DodoTypeText:Hide() end
 end
 
 -- Hide just the gear overlays (item level, slot label, BOE/set tag),
 -- leaving the type tag alone.
 function ns.ClearGearOverlays(button)
     if not button then return end
-    HideOverlay(button.DodoIlvlText)
-    HideOverlay(button.DodoSlotText)
-    HideOverlay(button.DodoTagText)
+    if button.DodoIlvlText then button.DodoIlvlText:Hide() end
+    if button.DodoSlotText then button.DodoSlotText:Hide() end
+    if button.DodoTagText then button.DodoTagText:Hide() end
 end
