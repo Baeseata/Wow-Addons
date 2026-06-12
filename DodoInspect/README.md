@@ -195,6 +195,7 @@ Copy the `DodoInspect` folder into
 | `TargetInfo.lua` | Player summary line above the target frame |
 | `Options.lua` | Settings panel (language, feature toggles) and slash command |
 | `Core.lua` | SavedVariables, events and refresh wiring |
+| `Media/Dodo.tga` | AddOn list icon |
 
 ## Credits
 

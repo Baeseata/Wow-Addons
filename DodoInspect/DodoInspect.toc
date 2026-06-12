@@ -4,6 +4,7 @@
 ## Author: Doodo
 ## Version: 1.3.0
 ## SavedVariables: DodoInspectDB
+## IconTexture: Interface\AddOns\DodoInspect\Media\Dodo.tga
 ## X-Category: Bags and Inventory
 
 Config.lua
