@@ -456,6 +456,7 @@ end
 
 function ns.SetupSidePanel()
     if panel or not ns.Config.PANEL_ENABLED then return end
+    if not ns.IsEnabled("showSidePanel") then return end
     if not CharacterFrame then return end
 
     ComputeGeometry()
@@ -487,6 +488,21 @@ function ns.SetupSidePanel()
             ns.UpdateSidePanel()
         end)
     end)
+end
+
+-- React to the side panel toggle. Turning it on builds the panel on
+-- first use (login with the toggle off skips construction entirely);
+-- turning it off just hides it, state intact.
+function ns.ApplySidePanelEnabled()
+    if ns.IsEnabled("showSidePanel") then
+        ns.SetupSidePanel()
+        if panel then
+            panel:Show()
+            ns.UpdateSidePanel()
+        end
+    elseif panel then
+        panel:Hide()
+    end
 end
 
 function ns.UpdateSidePanel()

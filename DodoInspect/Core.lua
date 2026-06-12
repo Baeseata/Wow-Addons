@@ -3,6 +3,15 @@
 
 local ADDON_NAME, ns = ...
 
+-- Feature toggles stored in SavedVariables. Only an explicit false
+-- disables a feature, so fresh installs (and sessions before the DB
+-- loads) default to everything on. Keys: showEquipmentIlvl,
+-- showBagOverlays, showSidePanel.
+function ns.IsEnabled(flag)
+    local db = DodoInspectDB
+    return not db or db[flag] ~= false
+end
+
 -- Everything anchored to the character frame: the equipment slot
 -- overlays and the gear summary side panel.
 function ns.UpdateCharacterViews()

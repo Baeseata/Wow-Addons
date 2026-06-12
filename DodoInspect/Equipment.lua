@@ -25,12 +25,15 @@ local EQUIP_BUTTONS = {
 }
 
 function ns.UpdateEquipment()
+    -- when the toggle is off, the loop still runs with a nil item
+    -- level, which hides any text drawn before the toggle flipped
+    local enabled = ns.IsEnabled("showEquipmentIlvl")
     for _, name in ipairs(EQUIP_BUTTONS) do
         local button = _G[name]
         if button then
             local ilvl
             local slotID = button:GetID()
-            if type(slotID) == "number" and slotID > 0 then
+            if enabled and type(slotID) == "number" and slotID > 0 then
                 local itemLoc = ItemLocation:CreateFromEquipmentSlot(slotID)
                 ilvl = ns.GetItemLevel(itemLoc)
                 if ilvl and ns.Config.HIDE_JUNK_QUALITY

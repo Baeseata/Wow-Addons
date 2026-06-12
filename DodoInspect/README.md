@@ -64,6 +64,37 @@ helm, shoulder, chest, legs via spellthread/armor kit, boots, rings and
 weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
+## Options
+
+All options live under **Esc > Options > AddOns > DodoInspect**:
+
+- **Language** for the slot labels and type tags (see Languages below).
+- **Equipment slot item levels**: the numbers on the character frame
+  equipment slots.
+- **Bag overlays**: item levels, slot labels, BOE and type tags on the
+  Blizzard bags.
+- **Gear summary side panel**: the gear list next to the character
+  frame.
+
+The three feature toggles render independently, so any combination
+works: keep only the side panel, only the bags, or anything in
+between. Settings are saved per account and apply immediately.
+
+## Compatibility
+
+DodoInspect only draws its own text on top of the default Blizzard
+frames. It never modifies or blocks other addons, so running it next
+to another item level addon breaks nothing; you would simply see two
+copies of the same information stacked on the slots. If your UI
+already shows item levels somewhere (ElvUI, SimpleItemLevel, a bag
+addon with its own numbers, and so on), use the three toggles above to
+switch off the overlapping part and keep the rest.
+
+Bag replacement addons (Bagnon, BetterBags, AdiBags, ...) hide the
+default Blizzard bags entirely, so the bag overlays have nowhere to
+draw and silently do nothing. The character frame overlays and the
+side panel keep working alongside them.
+
 ## Languages
 
 The slot labels and type tags ship in four languages: **English**
@@ -92,8 +123,8 @@ render as squares.
 
 ## Configuration
 
-Everything else is constants in `Config.lua` (no options UI for them by
-design):
+Beyond the options panel, everything else is constants in `Config.lua`
+(no options UI for them by design):
 
 - `GRADIENT_MIN_ILVL` / `GRADIENT_MAX_ILVL`: the item level window mapped
   onto the color ramp. Anything at or below MIN shows white, anything at
@@ -122,7 +153,7 @@ Copy the `DodoInspect` folder into
 | `Overlay.lua` | FontString management on item buttons |
 | `Equipment.lua` | Character frame equipment slots |
 | `Bags.lua` | Blizzard bag frames |
-| `Options.lua` | Settings panel and slash command |
+| `Options.lua` | Settings panel (language, feature toggles) and slash command |
 | `Core.lua` | SavedVariables, events and refresh wiring |
 
 ## Credits

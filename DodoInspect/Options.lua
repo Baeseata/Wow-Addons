@@ -1,6 +1,8 @@
 -- DodoInspect - Options.lua
 -- Settings panel under Esc > Options > AddOns, plus a slash command
--- fallback. The only option for now is the overlay language.
+-- fallback. Options: overlay language, plus one independent toggle
+-- per feature (equipment slot item levels, bag overlays, side panel)
+-- so users can switch off whatever another addon already covers.
 
 local ADDON_NAME, ns = ...
 
@@ -15,6 +17,25 @@ end
 local function ApplyLocale(key)
     ns.SetLocale(key)
     ns.UpdateAllVisible()
+end
+
+-- One checkbox per feature toggle, stored in DodoInspectDB[dbKey]
+-- (absent = on; see ns.IsEnabled). onChanged applies the new state
+-- to anything currently on screen.
+local function AddFeatureCheckbox(category, variable, dbKey, label, tooltip, onChanged)
+    local setting = Settings.RegisterProxySetting(
+        category,
+        variable,
+        Settings.VarType.Boolean,
+        label,
+        true,
+        function() return ns.IsEnabled(dbKey) end,
+        function(value)
+            DodoInspectDB[dbKey] = value and true or false
+            onChanged()
+        end
+    )
+    Settings.CreateCheckbox(category, setting, tooltip)
 end
 
 -- Register the addon category in the modern Settings UI. Wrapped in
@@ -38,6 +59,24 @@ function ns.RegisterOptions()
         )
         Settings.CreateDropdown(category, setting, BuildLanguageOptions,
             "Language used for the slot labels and the item type tags (junk, quest, consumables).")
+
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_EQUIPMENT_ILVL", "showEquipmentIlvl",
+            "Equipment slot item levels",
+            "Show the item level on each equipment slot of the character frame.",
+            ns.UpdateEquipment)
+
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_BAG_OVERLAYS", "showBagOverlays",
+            "Bag overlays",
+            "Show item levels, slot labels, BOE and item type tags on the Blizzard bags.",
+            ns.UpdateAllVisible)
+
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_SIDE_PANEL", "showSidePanel",
+            "Gear summary side panel",
+            "Show the gear list panel docked to the right of the character frame.",
+            ns.ApplySidePanelEnabled)
 
         Settings.RegisterAddOnCategory(category)
         ns.OptionsCategory = category

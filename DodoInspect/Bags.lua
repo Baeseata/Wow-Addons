@@ -60,9 +60,16 @@ function ns.UpdateBagFrame(frame)
     if not frame or not frame.IsShown or not frame:IsShown() then return end
     if type(frame.EnumerateValidItems) ~= "function" then return end
 
+    -- when the toggle is off, clear instead of skip: the hooks keep
+    -- firing and texts drawn before the toggle flipped must go away
+    local enabled = ns.IsEnabled("showBagOverlays")
     for _, itemButton in frame:EnumerateValidItems() do
         if itemButton then
-            UpdateItemButton(itemButton, frame)
+            if enabled then
+                UpdateItemButton(itemButton, frame)
+            else
+                ns.ClearAllOverlays(itemButton)
+            end
         end
     end
 end
