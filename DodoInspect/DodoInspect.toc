@@ -2,7 +2,7 @@
 ## Title: DodoInspect
 ## Notes: Item overlays for bags, a character gear panel and a target info line, with a Raider.IO style item level gradient.
 ## Author: Doodo
-## Version: 1.2.0
+## Version: 1.2.1
 ## SavedVariables: DodoInspectDB
 ## X-Category: Bags and Inventory
 

@@ -82,7 +82,9 @@ function ns.SetSlotText(button, text)
     local cfg = ns.Config
     local fs = EnsureText(button, "DodoSlotText", "CENTER")
     local c = cfg.SLOT_COLOR
-    ApplyText(fs, text, cfg.SLOT_FONT_SIZE, cfg.SLOT_FONT_FLAGS,
+    -- locale-table text: CJK locales ask for a slightly larger size
+    local size = cfg.SLOT_FONT_SIZE + ((ns.L and ns.L.sizeBump) or 0)
+    ApplyText(fs, text, size, cfg.SLOT_FONT_FLAGS,
         c[1], c[2], c[3], c[4], cfg.SLOT_POINT, cfg.SLOT_X, cfg.SLOT_Y)
 end
 
@@ -125,7 +127,9 @@ function ns.SetTypeText(button, tagKey)
     local fs = EnsureText(button, "DodoTypeText", "LEFT")
     ClampToButtonWidth(fs, button)
     local c = cfg.TYPE_COLORS[tagKey] or cfg.TYPE_COLORS.cons
-    ApplyText(fs, text, cfg.TYPE_FONT_SIZE, cfg.TYPE_FONT_FLAGS,
+    -- locale-table text: CJK locales ask for a slightly larger size
+    local size = cfg.TYPE_FONT_SIZE + ((ns.L and ns.L.sizeBump) or 0)
+    ApplyText(fs, text, size, cfg.TYPE_FONT_FLAGS,
         c[1], c[2], c[3], c[4], cfg.TYPE_POINT, cfg.TYPE_X, cfg.TYPE_Y)
 end
 
