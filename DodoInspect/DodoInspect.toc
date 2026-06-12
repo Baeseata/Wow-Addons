@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 120005, 120007
 ## Title: DodoInspect
 ## Notes: Item overlays for bags plus a character gear panel, with a Raider.IO style item level gradient.
 ## Author: Doodo
