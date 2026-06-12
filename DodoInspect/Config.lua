@@ -12,11 +12,14 @@ ns.Config = {
     ------------------------------------------------------------------
     -- Item levels are mapped onto a Raider.IO style score color ramp
     -- (see Gradient.lua). Anything at or below MIN renders white,
-    -- anything at or above MAX renders legendary orange, everything
-    -- in between blends smoothly through green, blue, purple and
-    -- pink. Tune these two numbers once per season.
-    GRADIENT_MIN_ILVL = 205,
-    GRADIENT_MAX_ILVL = 270,
+    -- the bulk of the window blends through green, blue, purple,
+    -- pink and orange, and the last stretch below MAX rises through
+    -- gold into hot red so the top few item levels stand apart
+    -- instead of all clamping to the same orange. Tune these two
+    -- numbers once per season: MAX a touch above the current
+    -- best-in-slot ceiling, MIN around where gear starts to matter.
+    GRADIENT_MIN_ILVL = 250,
+    GRADIENT_MAX_ILVL = 310,
 
     ------------------------------------------------------------------
     -- Junk filter
@@ -117,6 +120,16 @@ ns.Config = {
 
     ENCHANT_OK_COLOR      = { 0.30, 1.00, 0.30, 1 }, -- enchant present
     ENCHANT_MISSING_COLOR = { 1.00, 0.25, 0.25, 1 }, -- enchantable but empty
+
+    -- Tertiary stat tags (speed / leech / avoidance), shown in a
+    -- compact column between the item name and the enchant tag.
+    -- Rendered at the panel font size plus this delta.
+    TERT_FONT_DELTA = -3,
+    TERT_COLORS = {
+        speed     = { 0.45, 0.95, 0.95, 1 }, -- cyan (movement speed)
+        leech     = { 1.00, 0.50, 0.80, 1 }, -- pink (life steal)
+        avoidance = { 0.80, 0.70, 1.00, 1 }, -- lavender (aoe damage reduction)
+    },
 
     ------------------------------------------------------------------
     -- Target info (one line above the default target frame)

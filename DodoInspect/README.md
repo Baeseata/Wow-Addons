@@ -13,8 +13,10 @@ that is worth wearing:
 - **Top-left: item level**, colored with a Raider.IO style gradient. Item
   levels are mapped onto the same color ramp Raider.IO uses for Mythic+
   scores: white at the bottom of the window, blending smoothly through
-  green, blue, purple and pink up to legendary orange at the cap. The
-  higher the item level, the hotter the color.
+  green, blue, purple, pink and legendary orange; the very top of the
+  window then rises through gold into hot red, so the last few item
+  levels of a season each get a clearly distinct step instead of
+  saturating into one color. The higher the item level, the hotter.
 - **Center: slot label**, localized (see Languages below).
 - **Bottom-left: BOE tag**, shown only while that specific item is still
   unbound, or the equipment set name when the item belongs to a set.
@@ -47,6 +49,10 @@ One row per equipment slot:
 - Item level (gradient colored) and the item name in your client
   language, quality colored. Mouse over the name for the full item
   tooltip, and over a gem icon for the gem tooltip.
+- Tertiary stats: compact color-coded tags between the name and the
+  enchant tag when the item has speed (cyan), leech (pink) or
+  avoidance (lavender), localized like the other labels. Items
+  without tertiary stats leave the column empty.
 - The empty off-hand row is hidden. Enchant tags and gems sit in
   fixed columns so they align vertically across rows; the item name
   column has a fixed width and long names clip (the tooltip always
@@ -157,8 +163,10 @@ Beyond the options panel, everything else is constants in `Config.lua`
 
 - `GRADIENT_MIN_ILVL` / `GRADIENT_MAX_ILVL`: the item level window mapped
   onto the color ramp. Anything at or below MIN shows white, anything at
-  or above MAX shows legendary orange. Tune these two numbers once per
-  season.
+  or above MAX shows hot red, with the gold-to-red stretch reserved for
+  the top of the window. Tune these two numbers once per season: MAX a
+  touch above the current best-in-slot ceiling, MIN around where gear
+  starts to matter.
 - `HIDE_JUNK_QUALITY`: set to `false` to treat white gear as normal gear
   (gear overlays shown, no junk tag). Gray items are always tagged junk.
 - Font sizes, anchor corners and colors for each overlay text.

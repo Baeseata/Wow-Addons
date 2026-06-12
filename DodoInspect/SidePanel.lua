@@ -56,6 +56,16 @@ local STAT_KEYS = {
     crit        = "ITEM_MOD_CRIT_RATING_SHORT",
 }
 
+-- Tertiary stats, shown as compact tags between the item name and
+-- the enchant tag. Most items have none, the occasional roll or gem
+-- gives one (rarely two), so the column stays narrow.
+local TERT_ORDER = { "speed", "leech", "avoidance" }
+local TERT_KEYS = {
+    speed     = "ITEM_MOD_CR_SPEED_SHORT",
+    leech     = "ITEM_MOD_CR_LIFESTEAL_SHORT",
+    avoidance = "ITEM_MOD_CR_AVOIDANCE_SHORT",
+}
+
 -- Sockets the layout reserves room for; rare items with more will
 -- overflow to the right.
 local SOCKET_COLUMNS = 2
@@ -66,7 +76,7 @@ local EMPTY_SOCKET_TEXTURE = "Interface\\ItemSocketingFrame\\UI-EmptySocket-Pris
 -- scales when PANEL_FONT_SIZE changes.
 local FS
 local SLOT_W, STAT_X, STAT_STEP, ILVL_X, ILVL_W, NAME_X
-local NAME_W, ENCH_X, ENCH_W, SOCKET_X
+local NAME_W, TERT_FS, TERT_X, TERT_W, ENCH_X, ENCH_W, SOCKET_X
 local SOCKET_SIZE, SOCKET_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
@@ -78,7 +88,11 @@ local function ComputeGeometry()
     ILVL_W      = math.floor(FS * 2.2)
     NAME_X      = ILVL_X + ILVL_W + math.floor(FS * 0.5)
     NAME_W      = ns.Config.PANEL_NAME_WIDTH
-    ENCH_X      = NAME_X + NAME_W + math.floor(FS * 0.45)
+    TERT_FS     = math.max(9, FS + ns.Config.TERT_FONT_DELTA)
+    TERT_X      = NAME_X + NAME_W + math.floor(FS * 0.35)
+    -- room for two compact tags; a third (extremely rare) clips
+    TERT_W      = math.floor(TERT_FS * 3.2)
+    ENCH_X      = TERT_X + TERT_W + math.floor(FS * 0.35)
     ENCH_W      = math.floor(FS * 1.5)
     SOCKET_SIZE = FS - 1
     SOCKET_STEP = SOCKET_SIZE + 2
@@ -271,6 +285,13 @@ local function CreateRow(parent, slotInfo)
     row.nameHit = NewHit(OnNameEnter)
     row.nameHit:SetAllPoints(row.name)
 
+    -- tertiary stat tags (speed / leech / avoidance), compact column
+    row.tert = NewText("LEFT")
+    row.tert:SetPoint("LEFT", row, "LEFT", TERT_X, 0)
+    row.tert:SetWidth(TERT_W)
+    if row.tert.SetWordWrap then row.tert:SetWordWrap(false) end
+    if row.tert.SetMaxLines then row.tert:SetMaxLines(1) end
+
     -- enchant tag, fixed column
     row.ench = NewText("LEFT")
     row.ench:SetPoint("LEFT", row, "LEFT", ENCH_X, 0)
@@ -335,6 +356,7 @@ local function UpdateRow(row)
         row.stats[i]:Hide()
         row.statLines[i]:Hide()
     end
+    row.tert:SetText("")
     row.ench:Hide()
     row.enchHit:EnableMouse(false)
     row.nameHit:EnableMouse(false)
@@ -394,6 +416,29 @@ local function UpdateRow(row)
                     line:Show()
                 end
             end
+        end
+    end
+
+    -- tertiary stat tags (speed / leech / avoidance) in their
+    -- compact column, color coded per stat
+    if stats then
+        local tags = {}
+        for _, tertKey in ipairs(TERT_ORDER) do
+            local v = stats[TERT_KEYS[tertKey]]
+            if type(v) == "number" and v > 0 then
+                local label = ns.L and ns.L.terts and ns.L.terts[tertKey]
+                if type(label) == "string" and label ~= "" then
+                    local c = cfg.TERT_COLORS[tertKey]
+                    tags[#tags + 1] = string.format("|cff%02x%02x%02x%s|r",
+                        math.floor(c[1] * 255 + 0.5),
+                        math.floor(c[2] * 255 + 0.5),
+                        math.floor(c[3] * 255 + 0.5), label)
+                end
+            end
+        end
+        if #tags > 0 then
+            ns.SetOverlayFont(row.tert, TERT_FS, "OUTLINE")
+            row.tert:SetText(table.concat(tags, " "))
         end
     end
 

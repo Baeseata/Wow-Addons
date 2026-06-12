@@ -68,6 +68,12 @@ ns.Locales = {
             mastery     = "MA",
             crit        = "CR",
         },
+        -- tertiary stats, 2 letters max (1 CJK char)
+        terts = {
+            speed     = "SP",
+            leech     = "LE",
+            avoidance = "AV",
+        },
         enchant = "EN",
     },
 
@@ -116,6 +122,11 @@ ns.Locales = {
             mastery     = "精",
             crit        = "爆",
         },
+        terts = {
+            speed     = "速",
+            leech     = "吸",
+            avoidance = "避",
+        },
         enchant = "附",
     },
 
@@ -163,6 +174,11 @@ ns.Locales = {
             mastery     = "MA", -- maitrise
             crit        = "CR", -- critique
         },
+        terts = {
+            speed     = "VI", -- vitesse
+            leech     = "PO", -- ponction
+            avoidance = "EV", -- evitement
+        },
         enchant = "EN", -- enchantement
     },
 
@@ -209,6 +225,11 @@ ns.Locales = {
             haste       = "CE", -- celeridad
             mastery     = "MA", -- maestria
             crit        = "CR", -- critico
+        },
+        terts = {
+            speed     = "VE", -- velocidad
+            leech     = "SU", -- sustraccion de vida
+            avoidance = "EV", -- evasion
         },
         enchant = "EN", -- encantamiento
     },
