@@ -11,10 +11,10 @@ an item is for, what is vendor trash, and who you are looking at.
 that is worth wearing:
 
 - **Top-left: item level**, colored with a Raider.IO style gradient.
-  The lower half of the window runs the Raider.IO Mythic+ score ramp
-  (white through green, blue, purple, pink); the entire upper half is
-  warm, going legendary orange at the midpoint and rising through
-  amber and gold into hot red at the cap. Good gear is unmistakably
+  Below the orange threshold the ramp runs the Raider.IO Mythic+
+  score colors (white through green, blue, purple, pink); at the
+  threshold gear turns legendary orange and climbs through amber and
+  gold into hot red at the season cap. Good gear is unmistakably
   orange territory, and near-cap item levels still get clearly
   distinct steps instead of saturating into one color.
 - **Center: slot label**, localized (see Languages below).
@@ -161,12 +161,14 @@ render as squares.
 Beyond the options panel, everything else is constants in `Config.lua`
 (no options UI for them by design):
 
-- `GRADIENT_MIN_ILVL` / `GRADIENT_MAX_ILVL`: the item level window mapped
-  onto the color ramp. Anything at or below MIN shows white, anything at
-  or above MAX shows hot red; the whole upper half of the window is the
-  warm orange-to-red stretch. Tune these two numbers once per season:
-  MAX a touch above the current best-in-slot ceiling, MIN so that the
-  window midpoint sits where "good gear" begins.
+- `GRADIENT_MIN_ILVL` / `GRADIENT_ORANGE_ILVL` / `GRADIENT_MAX_ILVL`:
+  the three item levels that pin the color ramp. At or below MIN is
+  white; between MIN and ORANGE the ramp blends through green, blue,
+  purple and pink; ORANGE itself is legendary orange and from there
+  the colors climb through amber and gold into hot red at MAX. Tune
+  per season: MAX at the best-in-slot ceiling, ORANGE where "good
+  gear" begins, MIN below which gear is leveling fodder. Each number
+  moves independently.
 - `HIDE_JUNK_QUALITY`: set to `false` to treat white gear as normal gear
   (gear overlays shown, no junk tag). Gray items are always tagged junk.
 - Font sizes, anchor corners and colors for each overlay text.

@@ -11,17 +11,17 @@ ns.Config = {
     -- Item level color gradient window
     ------------------------------------------------------------------
     -- Item levels are mapped onto a Raider.IO style score color ramp
-    -- (see Gradient.lua). Anything at or below MIN renders white, the
-    -- lower half of the window blends through green, blue, purple and
-    -- pink, and the entire upper half is warm: orange from the window
-    -- midpoint, rising through amber and gold into hot red at MAX.
-    -- With the default 262-298 window the warm half starts at 280
-    -- and the season cap (298) burns hot red.
-    -- Tune these two numbers once per season: MAX at the current
-    -- best-in-slot ceiling, MIN so that the midpoint sits where
-    -- "good gear" begins (orange from there on up).
-    GRADIENT_MIN_ILVL = 262,
-    GRADIENT_MAX_ILVL = 298,
+    -- (see Gradient.lua) pinned by three thresholds:
+    --   MIN     at or below renders white
+    --   ORANGE  this item level is exactly legendary orange; the
+    --           cool body (green, blue, purple, pink) runs between
+    --           MIN and here
+    --   MAX     the season ceiling, hot red; between ORANGE and MAX
+    --           the ramp climbs through amber and gold
+    -- Tune the three numbers per season, each moves independently.
+    GRADIENT_MIN_ILVL    = 216,
+    GRADIENT_ORANGE_ILVL = 280,
+    GRADIENT_MAX_ILVL    = 298,
 
     ------------------------------------------------------------------
     -- Junk filter

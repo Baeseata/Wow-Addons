@@ -1,16 +1,14 @@
 -- DodoInspect - Gradient.lua
 -- Raider.IO style color ramp applied to item levels.
 --
--- The lower half of the window runs the Raider.IO Mythic+ score
--- gradient: white at the bottom, peak green at the uncommon
--- threshold, rare blue, epic purple, pink. The entire upper half is
--- warm: legendary orange from the midpoint, rising through amber and
--- gold into hot red at the very top. Gearing up reads as "warming
--- up": everything above the window midpoint is unmistakably orange
--- territory, yet near-cap item levels still get clearly distinct
--- steps instead of saturating into one color. Positions are
--- normalized 0..1; the item level window from Config.lua is mapped
--- onto that range and colors between anchors are linearly
+-- The ramp body (white through green, blue, purple, pink) covers
+-- item levels between GRADIENT_MIN_ILVL and GRADIENT_ORANGE_ILVL;
+-- at the orange threshold gear turns legendary orange and the rest
+-- of the ramp is warm, rising through amber and gold into hot red
+-- at GRADIENT_MAX_ILVL. The three Config thresholds are mapped onto
+-- the anchor positions piecewise (cool body below ORANGE_POS, warm
+-- stretch above it), so each threshold tunes independently without
+-- touching this table. Colors between anchors are linearly
 -- interpolated.
 
 local _, ns = ...
@@ -45,6 +43,10 @@ local ANCHORS = {
     { 1.000, 1.00, 0.20, 0.12 }, -- hot red (season top end)
 }
 
+-- Position of legendary orange in the ANCHORS table; the warm
+-- stretch (amber, gold, hot red) occupies the positions above it.
+local ORANGE_POS = 0.500
+
 -- Returns r, g, b, a for the given item level.
 function ns.ColorForItemLevel(ilvl)
     if type(ilvl) ~= "number" then
@@ -52,14 +54,25 @@ function ns.ColorForItemLevel(ilvl)
     end
 
     local cfg = ns.Config
-    local minIlvl = cfg.GRADIENT_MIN_ILVL
-    local span = cfg.GRADIENT_MAX_ILVL - minIlvl
+    local lo = cfg.GRADIENT_MIN_ILVL
+    local hi = cfg.GRADIENT_MAX_ILVL
 
     local t
-    if span <= 0 then
-        t = (ilvl >= minIlvl) and 1 or 0
+    if hi - lo <= 1 then
+        t = (ilvl >= hi) and 1 or 0
+    elseif ilvl <= lo then
+        t = 0
+    elseif ilvl >= hi then
+        t = 1
     else
-        t = (ilvl - minIlvl) / span
+        -- keep the orange threshold strictly inside the window so
+        -- both segments keep a positive span even with odd configs
+        local mid = math.min(math.max(cfg.GRADIENT_ORANGE_ILVL, lo + 1), hi - 1)
+        if ilvl <= mid then
+            t = (ilvl - lo) / (mid - lo) * ORANGE_POS
+        else
+            t = ORANGE_POS + (ilvl - mid) / (hi - mid) * (1 - ORANGE_POS)
+        end
     end
 
     if t <= 0 then
