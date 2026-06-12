@@ -78,6 +78,12 @@ function ns.RegisterOptions()
             "Show the gear list panel docked to the right of the character frame.",
             ns.ApplySidePanelEnabled)
 
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_TARGET_INFO", "showTargetInfo",
+            "Target info",
+            "Show item level, race, class, spec and hero talent above the target frame when targeting a player. Hostile players show what the game exposes: race and class, plus the spec inside battlegrounds and arenas.",
+            ns.ApplyTargetInfoEnabled)
+
         Settings.RegisterAddOnCategory(category)
         ns.OptionsCategory = category
     end)

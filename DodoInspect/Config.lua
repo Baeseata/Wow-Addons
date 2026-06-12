@@ -119,6 +119,15 @@ ns.Config = {
     ENCHANT_MISSING_COLOR = { 1.00, 0.25, 0.25, 1 }, -- enchantable but empty
 
     ------------------------------------------------------------------
+    -- Target info (one line above the default target frame)
+    ------------------------------------------------------------------
+    -- Item level, race, class, spec and hero talent of the targeted
+    -- player. The offset is relative to the top of the target frame.
+    TARGET_FONT_SIZE = 20,
+    TARGET_OFFSET_X  = 0,
+    TARGET_OFFSET_Y  = -16,
+
+    ------------------------------------------------------------------
     -- Season data: which slots take enchants and sockets
     ------------------------------------------------------------------
     -- Midnight (12.0) season 1, verified 2026-06-11:

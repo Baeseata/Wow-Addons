@@ -1,9 +1,9 @@
 # DodoInspect
 
 Lightweight item overlays for the default Blizzard bags and character
-frame. No minimap button, no dependencies. One glance tells you what is
-an upgrade, what is bind-on-equip, what an item is for, and what is
-vendor trash.
+frame, plus a target info line. No minimap button, no dependencies.
+One glance tells you what is an upgrade, what is bind-on-equip, what
+an item is for, what is vendor trash, and who you are looking at.
 
 ## Features
 
@@ -64,6 +64,24 @@ helm, shoulder, chest, legs via spellthread/armor kit, boots, rings and
 weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
+**Target info**, one line above the default target frame whenever you
+target a player: item level (same gradient), race, class and spec
+(class colored) and hero talent (gold). The line renders in layers,
+showing each piece as soon as the game provides it:
+
+- **Friendly players within inspect range** (about 28 yards) get the
+  full line: race and class appear instantly, item level, spec and
+  hero talent follow a moment later through the inspect data.
+- **Hostile players cannot be inspected**; that is a Blizzard API
+  rule, not an addon choice. They show race and class everywhere, and
+  inside battlegrounds and arenas the spec too (read from the
+  scoreboard and the arena opponent data, which cover both factions).
+  Item levels and hero talents of hostile players are not available
+  to any addon.
+
+All words on the line (race, class, spec, hero talent) come from the
+game's own localization, so they always match your client language.
+
 ## Options
 
 All options live under **Esc > Options > AddOns > DodoInspect**:
@@ -75,10 +93,11 @@ All options live under **Esc > Options > AddOns > DodoInspect**:
   Blizzard bags.
 - **Gear summary side panel**: the gear list next to the character
   frame.
+- **Target info**: the player summary line above the target frame.
 
-The three feature toggles render independently, so any combination
-works: keep only the side panel, only the bags, or anything in
-between. Settings are saved per account and apply immediately.
+The feature toggles render independently, so any combination works:
+keep only the side panel, only the bags, or anything in between.
+Settings are saved per account and apply immediately.
 
 ## Compatibility
 
@@ -94,6 +113,10 @@ Bag replacement addons (Bagnon, BetterBags, AdiBags, ...) hide the
 default Blizzard bags entirely, so the bag overlays have nowhere to
 draw and silently do nothing. The character frame overlays and the
 side panel keep working alongside them.
+
+The target info line anchors above the default target frame. If a UI
+overhaul addon removes that frame, the line falls back to the top
+center of the screen.
 
 ## Languages
 
@@ -114,7 +137,9 @@ command:
 ```
 
 The choice is saved per account. Item levels, BOE and set names are
-language independent.
+language independent. The target info line is not affected by this
+option at all: race, class, spec and hero talent names come from the
+game client itself, in whatever language the client runs.
 
 Note for the Chinese option on non-Chinese clients: the labels use the
 Chinese client font shipped with the game. If that font file is missing
@@ -153,6 +178,7 @@ Copy the `DodoInspect` folder into
 | `Overlay.lua` | FontString management on item buttons |
 | `Equipment.lua` | Character frame equipment slots |
 | `Bags.lua` | Blizzard bag frames |
+| `TargetInfo.lua` | Player summary line above the target frame |
 | `Options.lua` | Settings panel (language, feature toggles) and slash command |
 | `Core.lua` | SavedVariables, events and refresh wiring |
 
