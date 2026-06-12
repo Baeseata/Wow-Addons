@@ -1,0 +1,213 @@
+name: CurseForge Release
+
+# Push a tag like "DodoBricks-v1.2.0" to package that addon and upload it to
+# CurseForge automatically. The tag version must match the TOC "## Version:".
+# The annotated tag message becomes the changelog (Markdown).
+#
+# Manual dry run: Actions tab, run this workflow with dry_run = true. It builds
+# the zip, validates the API token and resolves game version ids, but skips the
+# actual upload.
+#
+# Registering a new addon: add a line to the "case" project id map below AND to
+# the workflow_dispatch options list.
+
+on:
+  push:
+    tags:
+      - 'Dodo*-v*'
+  workflow_dispatch:
+    inputs:
+      addon:
+        description: Addon folder name
+        required: true
+        type: choice
+        options:
+          - DodoBricks
+          - DodoInspect
+      dry_run:
+        description: Build and validate everything but skip the upload
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve addon, version and project id
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ADDON="${{ inputs.addon }}"
+            DRY_RUN="${{ inputs.dry_run }}"
+            TAG=""
+          else
+            TAG="$GITHUB_REF_NAME"
+            ADDON="${TAG%-v*}"
+            DRY_RUN="false"
+          fi
+
+          if [ ! -d "$ADDON" ]; then
+            echo "Addon folder $ADDON not found in repo root"
+            exit 1
+          fi
+
+          TOC="$ADDON/$ADDON.toc"
+          VERSION=$(grep -i '^## Version:' "$TOC" | head -n1 | cut -d: -f2- | tr -d ' \r')
+          INTERFACES=$(grep -i '^## Interface:' "$TOC" | head -n1 | cut -d: -f2- | tr -d ' \r')
+
+          if [ -z "$VERSION" ]; then
+            echo "No Version line in $TOC"
+            exit 1
+          fi
+          if [ -z "$INTERFACES" ]; then
+            echo "No Interface line in $TOC"
+            exit 1
+          fi
+
+          if [ -n "$TAG" ]; then
+            TAG_VERSION="${TAG##*-v}"
+            if [ "$TAG_VERSION" != "$VERSION" ]; then
+              echo "Tag version $TAG_VERSION does not match TOC version $VERSION"
+              exit 1
+            fi
+          fi
+
+          # CurseForge project id map. New addon: register here.
+          case "$ADDON" in
+            DodoBricks)  PROJECT_ID=1571430 ;;
+            DodoInspect) PROJECT_ID=1572493 ;;
+            *) echo "No CurseForge project id registered for $ADDON. Add it to this workflow."; exit 1 ;;
+          esac
+
+          # TOC interface numbers (comma separated) to version names: 120005 to 12.0.5
+          VER_NAMES=""
+          for n in $(echo "$INTERFACES" | tr ',' ' '); do
+            major=$((10#${n:0:2}))
+            minor=$((10#${n:2:2}))
+            patch=$((10#${n:4:2}))
+            VER_NAMES="$VER_NAMES $major.$minor.$patch"
+          done
+          VER_NAMES=$(echo "$VER_NAMES" | sed 's/^ //')
+
+          echo "Addon: $ADDON  Version: $VERSION  Project: $PROJECT_ID  GameVersions: $VER_NAMES  DryRun: $DRY_RUN"
+          {
+            echo "addon=$ADDON"
+            echo "version=$VERSION"
+            echo "dry_run=$DRY_RUN"
+            echo "project_id=$PROJECT_ID"
+            echo "game_versions=$VER_NAMES"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build addon zip
+        id: zip
+        run: |
+          ADDON="${{ steps.meta.outputs.addon }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          STAGE=$(mktemp -d)
+          mkdir -p "$STAGE/$ADDON"
+
+          # Ship only addon runtime files. Excludes CLAUDE.md, dev notes, test folders.
+          cd "$ADDON"
+          find . -type f \
+            \( -name '*.lua' -o -name '*.toc' -o -name 'README.md' -o -name '*.tga' -o -name '*.blp' -o -name '*.png' -o -name '*.ttf' -o -name '*.xml' -o -name '*.mp3' -o -name '*.ogg' \) \
+            -not -path './test/*' -not -name 'CLAUDE.md' \
+            -print | while read -r f; do
+              install -D "$f" "$STAGE/$ADDON/$f"
+            done
+          cd "$GITHUB_WORKSPACE"
+
+          ZIP="$GITHUB_WORKSPACE/$ADDON-$VERSION.zip"
+          cd "$STAGE"
+          zip -r "$ZIP" "$ADDON"
+          cd "$GITHUB_WORKSPACE"
+
+          echo "Zip contents:"
+          unzip -l "$ZIP"
+          if unzip -l "$ZIP" | grep -E 'CLAUDE\.md|/test/'; then
+            echo "Forbidden files leaked into the zip"
+            exit 1
+          fi
+          echo "zip_path=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$ADDON-$VERSION.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve CurseForge game version ids
+        id: gv
+        run: |
+          if [ -z "$CF_API_KEY" ]; then
+            echo "CF_API_KEY secret is not set. Generate a token at authors.curseforge.com and add it as a repo secret."
+            exit 1
+          fi
+          curl -sS -H "X-Api-Token: $CF_API_KEY" -o versions.json https://wow.curseforge.com/api/game/versions
+          if ! jq -e 'type == "array"' versions.json > /dev/null; then
+            echo "Unexpected response from the game versions API:"
+            head -c 500 versions.json
+            exit 1
+          fi
+
+          IDS="[]"
+          for v in ${{ steps.meta.outputs.game_versions }}; do
+            # 517 is the retail WoW game version type. Fall back to a plain name
+            # match if that filter finds nothing.
+            HIT=$(jq -c --arg n "$v" '[.[] | select(.name == $n and .gameVersionTypeID == 517) | .id]' versions.json)
+            if [ "$HIT" = "[]" ]; then
+              HIT=$(jq -c --arg n "$v" '[.[] | select(.name == $n) | .id]' versions.json)
+            fi
+            if [ "$HIT" = "[]" ]; then
+              echo "Game version $v was not found on CurseForge"
+              exit 1
+            fi
+            IDS=$(jq -cn --argjson a "$IDS" --argjson b "$HIT" '$a + $b | unique')
+          done
+          echo "Resolved game version ids: $IDS"
+          echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the zip as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.zip_name }}
+          path: ${{ steps.zip.outputs.zip_path }}
+
+      - name: Upload to CurseForge
+        if: steps.meta.outputs.dry_run != 'true'
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          CHANGELOG=""
+          if [ -n "$TAG" ]; then
+            git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG" || true
+            CHANGELOG=$(git tag -l --format='%(contents)' "$TAG")
+          fi
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="See the GitHub repository for details."
+          fi
+
+          METADATA=$(jq -n \
+            --arg changelog "$CHANGELOG" \
+            --arg display "${{ steps.meta.outputs.addon }} ${{ steps.meta.outputs.version }}" \
+            --argjson gv '${{ steps.gv.outputs.ids }}' \
+            '{changelog: $changelog, changelogType: "markdown", displayName: $display, gameVersions: $gv, releaseType: "release"}')
+          echo "Metadata: $METADATA"
+
+          HTTP=$(curl -sS -o response.json -w "%{http_code}" \
+            -H "X-Api-Token: $CF_API_KEY" \
+            -F "metadata=$METADATA" \
+            -F "file=@${{ steps.zip.outputs.zip_path }}" \
+            "https://wow.curseforge.com/api/projects/${{ steps.meta.outputs.project_id }}/upload-file")
+          echo "HTTP $HTTP"
+          cat response.json
+          echo ""
+          if [ "$HTTP" != "200" ]; then
+            echo "CurseForge upload failed"
+            exit 1
+          fi
+          echo "Uploaded ${{ steps.meta.outputs.addon }} ${{ steps.meta.outputs.version }} to CurseForge." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dry run note
+        if: steps.meta.outputs.dry_run == 'true'
+        run: |
+          echo "Dry run: zip built and game versions resolved, upload skipped." >> "$GITHUB_STEP_SUMMARY"
