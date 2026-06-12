@@ -186,16 +186,22 @@ jobs:
             CHANGELOG="See the GitHub repository for details."
           fi
 
-          METADATA=$(jq -n \
+          # metadata goes through a file ("<" makes curl read the form value from it).
+          # Inline -F "metadata=$JSON" breaks as soon as the changelog contains a
+          # semicolon or comma: curl parses those as form-part attributes and truncates
+          # the JSON - CurseForge then answers 400 "Invalid JSON" (bitten by 1.2.0).
+          jq -cn \
             --arg changelog "$CHANGELOG" \
             --arg display "${{ steps.meta.outputs.addon }} ${{ steps.meta.outputs.version }}" \
             --argjson gv '${{ steps.gv.outputs.ids }}' \
-            '{changelog: $changelog, changelogType: "markdown", displayName: $display, gameVersions: $gv, releaseType: "release"}')
-          echo "Metadata: $METADATA"
+            '{changelog: $changelog, changelogType: "markdown", displayName: $display, gameVersions: $gv, releaseType: "release"}' \
+            > metadata.json
+          echo "Metadata:"
+          cat metadata.json
 
           HTTP=$(curl -sS -o response.json -w "%{http_code}" \
             -H "X-Api-Token: $CF_API_KEY" \
-            -F "metadata=$METADATA" \
+            -F "metadata=<metadata.json" \
             -F "file=@${{ steps.zip.outputs.zip_path }}" \
             "https://wow.curseforge.com/api/projects/${{ steps.meta.outputs.project_id }}/upload-file")
           echo "HTTP $HTTP"
