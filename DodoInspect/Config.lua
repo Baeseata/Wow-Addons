@@ -126,6 +126,11 @@ ns.Config = {
     TARGET_FONT_SIZE = 20,
     TARGET_OFFSET_X  = 0,
     TARGET_OFFSET_Y  = -16,
+    -- Wrap the line between words once it would render wider than
+    -- this, onto up to 3 lines (long locales: German, French,
+    -- Russian...). A break never lands inside a race / spec / talent
+    -- name. Compact locales (CJK) never reach the cap and keep one line.
+    TARGET_MAX_WIDTH = 420,
 
     ------------------------------------------------------------------
     -- Season data: which slots take enchants and sockets

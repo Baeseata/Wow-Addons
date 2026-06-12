@@ -41,6 +41,11 @@ text:SetJustifyH("CENTER")
 -- Render, and SetText on a font-less FontString is an error
 ns.SetOverlayFont(text, ns.Config.TARGET_FONT_SIZE, "OUTLINE")
 
+-- hidden twin of `text`, used to measure candidate lines while wrapping
+local measure = display:CreateFontString(nil, "OVERLAY")
+measure:Hide()
+ns.SetOverlayFont(measure, ns.Config.TARGET_FONT_SIZE, "OUTLINE")
+
 local function AnchorDisplay()
     local cfg = ns.Config
     display:ClearAllPoints()
@@ -233,8 +238,35 @@ local function Render()
 
     AnchorDisplay()
     ns.SetOverlayFont(text, ns.Config.TARGET_FONT_SIZE, "OUTLINE")
-    text:SetText(table.concat(parts, "  "))
-    display:SetWidth(math.max(100, text:GetStringWidth() + 20))
+    ns.SetOverlayFont(measure, ns.Config.TARGET_FONT_SIZE, "OUTLINE")
+
+    -- Long locales (German, French, Russian...) can push the one-line
+    -- form past half a screen. Wrap between parts onto up to 3 lines;
+    -- a break never lands inside a name. Compact locales (CJK) stay
+    -- under the cap and keep a single line.
+    local maxW = ns.Config.TARGET_MAX_WIDTH
+    local lines, current = {}, nil
+    for _, part in ipairs(parts) do
+        local candidate = current and (current .. "  " .. part) or part
+        measure:SetText(candidate)
+        if current and #lines < 2 and measure:GetStringWidth() > maxW then
+            lines[#lines + 1] = current
+            current = part
+        else
+            current = candidate
+        end
+    end
+    lines[#lines + 1] = current
+
+    local widest = 0
+    for _, line in ipairs(lines) do
+        measure:SetText(line)
+        widest = math.max(widest, measure:GetStringWidth())
+    end
+
+    text:SetText(table.concat(lines, "\n"))
+    display:SetSize(math.max(100, widest + 20),
+        math.max(30, text:GetStringHeight() + 10))
     display:Show()
 end
 
