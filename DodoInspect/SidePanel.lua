@@ -388,6 +388,18 @@ local function UpdateRow(row)
 
     -- secondary stat grid with dominant-stat underline. The "big"
     -- stat is the strictly greatest one; ties mean no underline.
+    -- Latin two-letter abbreviations carry side bearings that make a
+    -- full-width underline look wider than the glyphs, so pull it in
+    -- a touch (more on the right, where the gap is bigger). A single
+    -- CJK char fills its box, so the cn locale keeps the full width.
+    local underL, underR = 0, 0
+    local sample = (ns.L and ns.L.stats and ns.L.stats.versatility) or ""
+    local isCJK = strlenutf8 and #sample > strlenutf8(sample)
+    if not isCJK then
+        underL = math.floor(FS * 0.06 + 0.5)
+        underR = math.floor(FS * 0.17 + 0.5)
+    end
+
     local stats = GetStatsTable(itemLink)
     if stats then
         local maxKey, maxVal, tie = nil, 0, false
@@ -414,6 +426,9 @@ local function UpdateRow(row)
                 if statKey == maxKey then
                     local line = row.statLines[i]
                     line:SetColorTexture(c[1], c[2], c[3], 0.9)
+                    line:ClearAllPoints()
+                    line:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", underL, 1)
+                    line:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", -underR, 1)
                     line:Show()
                 end
             end
