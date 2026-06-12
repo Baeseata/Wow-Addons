@@ -64,10 +64,12 @@ helm, shoulder, chest, legs via spellthread/armor kit, boots, rings and
 weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
-**Target info**, one line above the default target frame whenever you
-target a player: item level (same gradient), race, class and spec
-(class colored) and hero talent (gold). The line renders in layers,
-showing each piece as soon as the game provides it:
+**Target info**, above the default target frame whenever you target a
+player: item level (same gradient), race, class and spec (class
+colored) and hero talent (gold). Compact locales fit on one line; long
+ones (German, French, Russian) wrap between words onto up to three
+lines, never inside a name. The line renders in layers, showing each
+piece as soon as the game provides it:
 
 - **Friendly players within inspect range** (about 28 yards) get the
   full line: race and class appear instantly, item level, spec and
@@ -125,6 +127,8 @@ The slot labels and type tags ship in four languages: **English**
 five characters or fewer so they fit a bag icon (JUNK / NUL / MALO,
 QST / QTE / MIS, FOOD / BOUF / COMI, and so on); French and Spanish
 labels are deliberately accent-free so they render in any client font.
+Chinese labels render a couple of points larger than the Latin ones
+(CJK glyphs are denser), still sized to fit the icons.
 Pick a language in the options panel:
 **Esc > Options > AddOns > DodoInspect**, or use the slash
 command:

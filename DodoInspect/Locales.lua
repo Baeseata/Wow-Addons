@@ -6,7 +6,7 @@
 -- labels are deliberately accent-free so they render in any client
 -- font). Everything else (code, comments, docs) stays pure ASCII.
 -- HARD RULE: tags are 4 characters max (2 CJK chars max) -- that is
--- all a bag icon row fits at font size 11.
+-- all a bag icon row fits (size 11 Latin, 13 for CJK via sizeBump).
 --
 -- "font" is an optional font override for languages the default
 -- client font cannot render (Chinese glyphs are missing from the
