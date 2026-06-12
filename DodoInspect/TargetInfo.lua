@@ -37,6 +37,9 @@ display:Hide()
 local text = display:CreateFontString(nil, "OVERLAY")
 text:SetPoint("CENTER", display, "CENTER", 0, 0)
 text:SetJustifyH("CENTER")
+-- set a font right away: HideDisplay can SetText("") before the first
+-- Render, and SetText on a font-less FontString is an error
+ns.SetOverlayFont(text, ns.Config.TARGET_FONT_SIZE, "OUTLINE")
 
 local function AnchorDisplay()
     local cfg = ns.Config
