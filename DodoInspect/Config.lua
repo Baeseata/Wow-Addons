@@ -123,10 +123,8 @@ ns.Config = {
     ENCHANT_OK_COLOR      = { 0.30, 1.00, 0.30, 1 }, -- enchant present
     ENCHANT_MISSING_COLOR = { 1.00, 0.25, 0.25, 1 }, -- enchantable but empty
 
-    -- Tertiary stat tags (speed / leech / avoidance), shown in a
-    -- compact column between the item name and the enchant tag.
-    -- Rendered at the panel font size plus this delta.
-    TERT_FONT_DELTA = -3,
+    -- Tertiary stat tags (speed / leech / avoidance), shown right
+    -- before the enchant tag at the panel font size.
     TERT_COLORS = {
         speed     = { 0.45, 0.95, 0.95, 1 }, -- cyan (movement speed)
         leech     = { 1.00, 0.50, 0.80, 1 }, -- pink (life steal)

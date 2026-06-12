@@ -76,7 +76,7 @@ local EMPTY_SOCKET_TEXTURE = "Interface\\ItemSocketingFrame\\UI-EmptySocket-Pris
 -- scales when PANEL_FONT_SIZE changes.
 local FS
 local SLOT_W, STAT_X, STAT_STEP, ILVL_X, ILVL_W, NAME_X
-local NAME_W, TERT_FS, TERT_X, TERT_W, ENCH_X, ENCH_W, SOCKET_X
+local NAME_W, TERT_W, TERT_RIGHT, ENCH_X, ENCH_W, SOCKET_X
 local SOCKET_SIZE, SOCKET_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
@@ -88,11 +88,13 @@ local function ComputeGeometry()
     ILVL_W      = math.floor(FS * 2.2)
     NAME_X      = ILVL_X + ILVL_W + math.floor(FS * 0.5)
     NAME_W      = ns.Config.PANEL_NAME_WIDTH
-    TERT_FS     = math.max(9, FS + ns.Config.TERT_FONT_DELTA)
-    TERT_X      = NAME_X + NAME_W + math.floor(FS * 0.35)
-    -- room for two compact tags; a third (extremely rare) clips
-    TERT_W      = math.floor(TERT_FS * 3.2)
-    ENCH_X      = TERT_X + TERT_W + math.floor(FS * 0.35)
+    -- reserved width covers the common case of one tag; the tags are
+    -- right-aligned against the enchant column, so a rare second tag
+    -- grows left into the name gap instead of pushing the layout
+    TERT_W      = math.floor(FS * 1.4)
+    ENCH_X      = NAME_X + NAME_W + math.floor(FS * 0.35)
+                  + TERT_W + math.floor(FS * 0.3)
+    TERT_RIGHT  = ENCH_X - math.floor(FS * 0.3)
     ENCH_W      = math.floor(FS * 1.5)
     SOCKET_SIZE = FS - 1
     SOCKET_STEP = SOCKET_SIZE + 2
@@ -285,12 +287,11 @@ local function CreateRow(parent, slotInfo)
     row.nameHit = NewHit(OnNameEnter)
     row.nameHit:SetAllPoints(row.name)
 
-    -- tertiary stat tags (speed / leech / avoidance), compact column
-    row.tert = NewText("LEFT")
-    row.tert:SetPoint("LEFT", row, "LEFT", TERT_X, 0)
-    row.tert:SetWidth(TERT_W)
+    -- tertiary stat tags (speed / leech / avoidance), right-aligned
+    -- against the enchant column so a single tag sits snug next to it
+    row.tert = NewText("RIGHT")
+    row.tert:SetPoint("RIGHT", row, "LEFT", TERT_RIGHT, 0)
     if row.tert.SetWordWrap then row.tert:SetWordWrap(false) end
-    if row.tert.SetMaxLines then row.tert:SetMaxLines(1) end
 
     -- enchant tag, fixed column
     row.ench = NewText("LEFT")
@@ -437,7 +438,7 @@ local function UpdateRow(row)
             end
         end
         if #tags > 0 then
-            ns.SetOverlayFont(row.tert, TERT_FS, "OUTLINE")
+            ns.SetOverlayFont(row.tert, FS, "OUTLINE")
             row.tert:SetText(table.concat(tags, " "))
         end
     end
