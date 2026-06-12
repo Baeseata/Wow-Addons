@@ -160,11 +160,9 @@ LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`,winget DEVCOM.LuaJIT 装的)。
    - **慢动作**: 全清/首次道具/boss 击杀三处,0.25 倍率够不够戏剧性。
 2. **音效听感**(从未专门确认): 既有 hit/launch/brk + 新 split(862)/heal(844)/连击音阶 5 档
    (857/856/3175/8960/875 纯赌)。不行按 DodoPool 迭代路径换 `KITS`/`COMBO_KITS`(终极方案 media/ 自带 ogg)。
-3. **全自动发布(拍板待做,2026-06-11)**: GitHub Action + CF API token,push tag 自动上 CurseForge。
-   monorepo 注意点 + 预研细节见 `Code/Wow-Addons/PUBLISHING.md` §7(本地文件,gitignore)。Jerry 说"架自动发布"就干。
-4. **暂缓项(用户拍板)**: 回血脉冲事件(治疗砖替代)、分数发聊天框、种子挑战、挑战模式、底行危险警告、
+3. **暂缓项(用户拍板)**: 回血脉冲事件(治疗砖替代)、分数发聊天框、种子挑战、挑战模式、底行危险警告、
    开始界面统计。事件池后续可加: 硬化行(下行全双倍,铁灰入场)等。
-5. **手感调参**按用户反馈(见 §6)。加速/回收按钮用户已两次说不要,提需求再做。
+4. **手感调参**按用户反馈(见 §6)。加速/回收按钮用户已两次说不要,提需求再做。
 
 ---
 
@@ -244,3 +242,4 @@ LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`,winget DEVCOM.LuaJIT 装的)。
 - 仓库 `github.com/Baeseata/Wow-Addons`(public)。本机 AddOns 不是 git clone:
   推送 = 临时目录 clone → 拷贝 DodoBricks/ 进去 → commit + push(沙箱禁 `Remove-Item` D: 路径,用 .NET Delete 或 Copy-Item 覆盖)。
 - 另一台机器开工 checklist: ① `git pull` ② 读本文件 ③ 确认 `DodoBricks` + `Dodo` 都进 AddOns ④ 完全重启魔兽 ⑤ 跑 §5.1 ⑥ 报错记下来修。
+- **发版到 CurseForge(2026-06-11 起全自动)**: 提 TOC Version -> push -> 打 annotated tag `DodoBricks-vX.Y.Z`(tag message = changelog)-> GitHub Action 自动打包上传几分钟上线;dry-run 与细节见 `PUBLISHING.md` §7(local-only)。
