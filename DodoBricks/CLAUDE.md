@@ -56,11 +56,24 @@
   动画 0.40s。boss 关 / boss 在场不排(3×3 身位会撞第二行)。
 - 死亡判定相应变 row ≤ 2 —— 预告闪烁就是给玩家一回合清底排的窗口,体验 = 有读条的 boss 大招。
 
-**Boss(0.3.0)**:
+**Boss(0.3.0,0.4.0 重平衡)**:
 - 每 25 关,顶部 3×3 巨砖**替代**普通刷新行(落点随机,**吞掉**所辖格的旧砖,其血量并入 boss;道具直接消失)。
-- 血量 = 关数×35 + 吞掉量;固定深红、大数字;正常随场下压,压到底照样死你。
+- 血量(0.4.0): `500 + (关数-25)×14 + 吞掉量×0.5`(25 关 ≈600 / 50 关 ≈1100 / 75 关 ≈1550)。
+  旧版 `关数×35 + 吞掉全额` Jerry 实测第一轮勉强过、第二轮打不动——后期砖肥,吞掉量自身爆炸,双重失控。
+- 固定深红、大数字;正常随场下压,压到底照样死你。
 - 击杀: 底+1 行原地掉 3 个随机道具圆环 + maxHp 分 + "BOSS DOWN!" 大字 + 爆圈 + 0.6s 慢动作 + 钟声。
 - **75 关起的 boss 带治疗光环**: 每回合结束全场普通砖 +1 血(早期 boss 是节日,后期 boss 是考试)。
+
+**基岩砖(0.4.0,Jerry 提需求)**:
+- 12 关起淡入的**不可击碎**石板灰砖(四角铆钉、无血量数字): 球正常反弹但不掉血不给分,激光/炸弹同样无效
+  (HitBrick 开头守门一处覆盖所有伤害来源);治疗砖不奶它(kind 守门天然排除)。
+- 正常随场下压;**压过底线不算输**,直接滑出棋盘消失(StartDescend lose 判定特判 + 移除)。
+- **防封禁**: 每行最多 1 块 + 不与上一行同列(`G.lastBedrockCol`)——围死一个口袋至少要同行 2 块,结构上不可能。
+- **全清判定全部改走 `AnyBreakableBrick()`**(Fire 的 turnHadBricks / StartDescend 全清 / last-brick 慢动作三处)——
+  否则基岩在场永远"没清干净",全清链(+2 球 + 倍率)从此断光。
+- **防永动死弹**: 球撞基岩反弹角 ±3° 微扰(Physics 内 kind 特判)。不然球会卡在顶墙和基岩之间垂直弹到天荒地老
+  (vx≈0、|vy| 大,防水平死弹的 anti-stall 不触发;普通砖弹几下就破所以从没暴露)——harness 59 关实抓。
+- Boss 登场吞格子时把基岩一并碾掉(hp=1 只并入 1 点,无感);boss 关不刷新行所以不出基岩。
 
 **Juice(0.3.0)**:
 - **卡缝连击音阶**: 同一颗球 0.30s 内连续命中,第 4 跳起音效走 5 档爬升音表(SoundKit 无变调,音表纯赌听感待迭代)。
@@ -117,6 +130,13 @@
 无关数提速、无 HUD 速度指示(Game.lua 顶部注释自称 0.2.3)。本文件旧的 0.2.2 描述(关数提速 ×1.6 / HUD"速 ×N.N")
 与代码不符,以代码为准。⚠️ 0.2.1 尾迹 + 0.2.3 快进至今未实机验证,这次随 0.3.0 一起验。
 
+**0.4.0 = 插件版本 1.2.0,已写完 + headless 烟测 ALL PASS(2026-06-12),⚠️ 未实机验证、未 push/发版**:
+Jerry 实测反馈驱动——"boss 血太厚,第一轮很费劲,第二轮打不掉" + 提需求要不可击碎的基岩砖。
+① **Boss 重平衡**: `关数×35+吞掉全额` 改 `500+(关-25)×14+吞掉×0.5`(25 关 ≈600 / 50 关 ≈1100,约砍半)
+② **基岩砖**: 12 关起淡入,不可击碎、随场推、压底不算输、每行 ≤1 块防封禁;全清判定三处改
+`AnyBreakableBrick()`;球撞基岩 ±3° 反弹微扰防顶墙夹缝永动死弹(harness 59 关实抓的坑)。
+harness 同步加 bedrock 覆盖(神仙手跳过 + 打不动断言 + Phase D victim 排除)。详见 §1 玩法规则。
+
 **0.3.0 = 插件版本 1.1.0,已实机首验通过(2026-06-11,Jerry"行,不错"),已 push,
 CurseForge 已上线(同日,更新免审几分钟过;display name + changelog 是事后 Edit file 补的)**:
 **sinfulness(多伦多玩家)实测反馈驱动的大版本**——
@@ -147,6 +167,10 @@ LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`,winget DEVCOM.LuaJIT 装的)。
 
 ## 5. 待办 / 下一步 (TODO)
 
+0. **0.4.0 实机验证 + 发版**(headless 已过,实机没跑):
+   - boss 新血量手感(25 关 ≈600 / 50 关 ≈1100)——Jerry 上轮卡死在第二个 boss,这次能不能过;
+   - 基岩观感(石板灰+四角铆钉认不认得出"打不动")、压底滑出、球在基岩缝里弹跳是否自然(±3° 微扰);
+   - 验过手感 OK 再 push + 打 tag `DodoBricks-v1.2.0` 发 CurseForge(流程见 §8)。
 1. **0.3.0 深关数实机细项**(首验已过,以下多在 25+ 关才出现,Jerry 平时玩 + sinfulness 复测时留意):
    - **新棋盘**: 窗口 ~492×792 在你的分辨率/UI scale 下挤不挤;8 列瞄准手感。
    - **计分**: HUD 金色分数 + 倍率后缀;碎砖飘分密度(刷屏就减飘字/只飘大额);全清链 BigFloat;
@@ -183,7 +207,9 @@ LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`,winget DEVCOM.LuaJIT 装的)。
 **特殊砖**: `CHEST_FROM=8 / CHEST_CHANCE=0.06 / CHEST_HP=2 / CHEST_BONUS=25` · `HEALER_FROM=30 / HEALER_CHANCE=0.08`
 (治疗砖血量 = ceil(关/5),在 SpawnRow 里)·
 **事件**: `EVENT_FROM=30 / EVENT_CHANCE=0.18 / EVENT_CD=4`(预告闪烁亮度在 Driver 内 `0.10+0.13*sin`)·
-**Boss**: `BOSS_EVERY=25 / BOSS_HP_PER_LEVEL=35 / BOSS_AURA_FROM=75` ·
+**Boss(0.4.0)**: `BOSS_EVERY=25 / BOSS_BASE=500 / BOSS_HP_GAIN=14 / BOSS_EAT_RATE=0.5 / BOSS_AURA_FROM=75` ·
+**基岩**: `BEDROCK_FROM=12 / BEDROCK_CHANCE=0.10 / BEDROCK_GAIN=0.004 / BEDROCK_CAP=0.32`(~67 关到顶,
+稳态场上 ~3-4 块;反弹微扰 ±3° 在 Physics.lua StepBall 内 `math.rad(6)`)·
 **计分**: `DANGER_ROWS=2 / DANGER_MULT=2` 险区 · `MULT_CAP=10` 全清链上限 · `COMBO_WINDOW=0.30` 卡缝连击窗口 ·
 `SLOWMO_RATE=0.25` 慢动作倍率(全清 0.35s / 首见道具 0.45s / boss 击杀 0.6s,在各触发点)。
 
@@ -192,7 +218,7 @@ LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`,winget DEVCOM.LuaJIT 装的)。
 
 **配色**(Render.lua `TIER_CLASS`): 血量 `(hp-1+colorShift)%9+1` → 职业色 黄/蓝/红/淡紫/橙/玉绿/棕/粉/青
 (与 DodoPool 球色同源),每掉血换色;`colorShift` 每 10 关 +1(色板轮换)。特殊砖固定色 `KIND_COLOR`
-(治疗绿/宝箱金),boss 固定深红(NewBossBrick 内)。
+(治疗绿/宝箱金/基岩石板灰),boss 固定深红(NewBossBrick 内)。
 
 ---
 

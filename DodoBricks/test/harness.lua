@@ -112,7 +112,7 @@ local function gridConsistent()
     return true
 end
 
-local stats = { boss = 0, healer = 0, chest = 0, doubles = 0, splits = 0, maxBalls = 0, maxScore = 0 }
+local stats = { boss = 0, healer = 0, chest = 0, bedrock = 0, doubles = 0, splits = 0, maxBalls = 0, maxScore = 0 }
 
 local function launch()
     -- aim at a random upward direction and release
@@ -135,10 +135,16 @@ local function playRound(leaveOne)
         G.Driver(0.05)
         if G.state == "FLY" and frames == 20 and not cheated then
             cheated = true
-            -- play like a god: chip every brick down (optionally leave one to break the clear chain)
+            -- play like a god: chip every brick down (optionally leave one to break the clear chain).
+            -- Bedrock can't die even to a god hand - assert it shrugs the hit off instead.
             local skip = leaveOne
             for brick in pairs(G.bricks) do
-                if skip then skip = false
+                if brick.kind == "bedrock" then
+                    local hpBefore, scoreBefore = brick.hp, G.score or 0
+                    G.HitBrick(brick)
+                    assert(G.bricks[brick] and brick.hp == hpBefore, "bedrock must not take damage")
+                    assert((G.score or 0) == scoreBefore, "bedrock must not give score")
+                elseif skip then skip = false
                 else
                     local guard = 0
                     while G.bricks[brick] do
@@ -156,6 +162,7 @@ local function playRound(leaveOne)
         if brick.kind == "boss" then stats.boss = stats.boss + 1 end
         if brick.kind == "healer" then stats.healer = stats.healer + 1 end
         if brick.kind == "chest" then stats.chest = stats.chest + 1 end
+        if brick.kind == "bedrock" then stats.bedrock = stats.bedrock + 1 end
     end
     stats.maxBalls = math.max(stats.maxBalls, G.ballTotal + (G.tempCount or 0))
     stats.maxScore = math.max(stats.maxScore, G.score or 0)
@@ -184,9 +191,10 @@ end
 assert(G.state ~= "OVER", "god hand should not die")
 assert(stats.boss > 0, "no boss ever seen")
 assert(stats.doubles > 0, "no double-descend event ever executed")
+assert(stats.bedrock > 0, "no bedrock ever seen in 110 levels")
 assert((G.mult or 1) >= 1, "mult broken")
-print(string.format("Phase B  OK: reached level %d, score %d, mult x%d, bosses seen %d, healers %d, chests %d, doubles %d, max balls %d",
-    G.round, G.score, G.mult, stats.boss, stats.healer, stats.chest, stats.doubles, stats.maxBalls))
+print(string.format("Phase B  OK: reached level %d, score %d, mult x%d, bosses seen %d, healers %d, chests %d, bedrock %d, doubles %d, max balls %d",
+    G.round, G.score, G.mult, stats.boss, stats.healer, stats.chest, stats.bedrock, stats.doubles, stats.maxBalls))
 
 -- ------------------------------------------------------------------
 -- Phase C: save -> load roundtrip
@@ -205,8 +213,10 @@ print(string.format("Phase C  OK: save/load roundtrip at level %d, then 5 more r
 -- Phase D: forced death + play again
 -- ------------------------------------------------------------------
 local victim
-for b in pairs(G.bricks) do victim = b break end
-if not victim then error("no brick to push to the floor") end
+for b in pairs(G.bricks) do
+    if b.kind ~= "bedrock" then victim = b break end   -- bedrock on the floor is NOT a loss
+end
+if not victim then error("no breakable brick to push to the floor") end
 victim.row = 1
 launch()
 local frames = 0
@@ -216,7 +226,7 @@ while G.state == "FLY" or G.state == "DESCEND" do
     G.Driver(0.05)
     if frames == 20 then
         for brick in pairs(G.bricks) do
-            if brick ~= victim then
+            if brick ~= victim and brick.kind ~= "bedrock" then
                 while G.bricks[brick] do G.HitBrick(brick) end
             end
         end

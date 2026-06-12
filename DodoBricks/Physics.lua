@@ -146,6 +146,15 @@ local function StepBall(ctx, b, h)
         if dot < 0 then
             b.vx = b.vx - 2 * dot * nx
             b.vy = b.vy - 2 * dot * ny
+            -- bedrock bounces with a +-3 degree jitter (rock is rough). Without it a ball can
+            -- ping-pong forever in the gap between the top wall and a bedrock below: vx ~ 0,
+            -- |vy| huge, so the horizontal anti-stall never fires, and unlike a normal brick
+            -- the bedrock never dies to break the loop. The random walk drifts it out in ~1s.
+            if best.kind == "bedrock" then
+                local ang = math.atan2(b.vy, b.vx) + (math.random() - 0.5) * math.rad(6)
+                local sp = math.sqrt(b.vx * b.vx + b.vy * b.vy)
+                b.vx, b.vy = math.cos(ang) * sp, math.sin(ang) * sp
+            end
         end
         if ctx.OnBrickHit then ctx.OnBrickHit(best, b) end
     end

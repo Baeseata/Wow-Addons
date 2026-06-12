@@ -56,7 +56,16 @@ local EVENT_FROM, EVENT_CHANCE, EVENT_CD = 30, 0.18, 4   -- from lv 30, ~18%/rou
 -- Boss (0.3.0): every 25 levels a 3x3 mega brick spawns instead of the normal row, swallowing whatever
 -- it lands on (their hp folds into it). Drops 3 item rings + big score on death. From lv 75 its aura
 -- heals ALL normal bricks +1/round ("the exam" - earlier bosses are just loot festivals).
-local BOSS_EVERY, BOSS_HP_PER_LEVEL, BOSS_AURA_FROM = 25, 35, 75
+-- 0.4.0 rebalance (playtest: boss 1 was a grind, boss 2 a wall): hp = BASE + (lv-25)*GAIN + eaten*EAT_RATE.
+-- The old lv*35 + full eaten compounded twice - late bricks are fat, so "eaten" alone exploded.
+local BOSS_EVERY, BOSS_AURA_FROM = 25, 75
+local BOSS_BASE, BOSS_HP_GAIN, BOSS_EAT_RATE = 500, 14, 0.5
+
+-- Bedrock (0.4.0): unbreakable grey filler brick. Balls bounce off (no damage, no score), lasers/bombs
+-- ignore it, it rides the descend like any brick, and past the floor it simply leaves the board (never
+-- a loss). Max 1 per row and never the same column as the previous row's one - a sealed pocket would
+-- need 2 in one row, so the board can always be shot through.
+local BEDROCK_FROM, BEDROCK_CHANCE, BEDROCK_GAIN, BEDROCK_CAP = 12, 0.10, 0.004, 0.32
 
 -- Scoring (0.3.0): 1 hp chipped = 1 point; bricks on the bottom 2 rows pay DOUBLE (danger pay);
 -- everything is multiplied by the clear-chain multiplier (consecutive full clears: x1 -> x2 -> ... x10, broken = back to x1).
@@ -230,6 +239,17 @@ local function GridSet(brick, on)
             end
         end
     end
+end
+
+-- "any brick left that can actually be broken?" - bedrock is permanent scenery, so every
+-- clear-all check (bonus balls / chain multiplier / last-brick slow-mo) must use this, not
+-- next(G.bricks). Defined up here in the utility block: Fire / HitBrick / StartDescend all
+-- call it and Lua locals resolve in lexical order.
+local function AnyBreakableBrick()
+    for brick in pairs(G.bricks) do
+        if brick.kind ~= "bedrock" then return true end
+    end
+    return false
 end
 
 -- weighted random pick from a {key=weight} table
@@ -562,7 +582,7 @@ local function Fire()
     G.flyT = 0               -- this round's flight timer (for the ball speed ramp, real seconds)
     G.slowmoT = 0
     G.nextX = nil
-    G.turnHadBricks = next(G.bricks) ~= nil
+    G.turnHadBricks = AnyBreakableBrick()   -- a bedrock-only board must not count as a clearable turn
     -- trail segment count: shared from the board-wide budget, auto-shortens when there are many balls for performance
     G.trailN = math.min(TRAIL_MAX, math.floor(TRAIL_BUDGET / math.max(1, G.ballTotal)))
     G.marker:Hide()
@@ -682,6 +702,13 @@ end
 
 function G.HitBrick(brick, ball)
     if not G.bricks[brick] then return end   -- already broken this frame by a laser/bomb chain
+    if brick.kind == "bedrock" then
+        -- unbreakable: the ball already bounced in Physics; just flash as feedback. No damage,
+        -- no score, no combo bookkeeping (it neither extends nor breaks a ball's hit chain).
+        BrickFlash(brick)
+        Snd("hit")
+        return
+    end
     brick.hp = brick.hp - 1
 
     -- scoring: 1 point per hp chipped, doubled in the danger rows, times the clear-chain multiplier
@@ -729,7 +756,7 @@ function G.HitBrick(brick, ball)
         FreeBrickFrame(brick)
         Snd("brk")
         -- last brick of a full clear: brief slow-mo as the board empties (the ritual moment)
-        if G.turnHadBricks and next(G.bricks) == nil and G.state == "FLY" then
+        if G.turnHadBricks and not AnyBreakableBrick() and G.state == "FLY" then
             G.slowmoT = math.max(G.slowmoT or 0, 0.35)
         end
     else
@@ -921,6 +948,23 @@ local function SpawnRow(targetRow)
         end
     end
 
+    -- bedrock: at most 1 per row, never in the same column as the previous row's one (no vertical
+    -- pillars, and a sealed pocket would need 2 in one row - so the board can always be shot through).
+    -- hp 1 is a dummy: HitBrick returns before any damage. Runs after the guaranteed brick on purpose.
+    local prevBedCol = G.lastBedrockCol
+    G.lastBedrockCol = nil
+    if N >= BEDROCK_FROM then
+        local bedChance = math.min(BEDROCK_CAP, BEDROCK_CHANCE + BEDROCK_GAIN * (N - BEDROCK_FROM))
+        if math.random() < bedChance then
+            local col = PickEmpty(occupied)
+            if col and col ~= prevBedCol then
+                AddBrick(col, targetRow, "sq", nil, 1, "bedrock")
+                occupied[col] = true
+                G.lastBedrockCol = col
+            end
+        end
+    end
+
     -- special item: weighted pick from the pool, placed in a remaining empty cell
     if math.random() < SPECIAL_CHANCE then
         local col = PickEmpty(occupied)
@@ -955,7 +999,9 @@ local function SpawnBoss()
             FreeItemFrame(it)
         end
     end
-    local hp = N * BOSS_HP_PER_LEVEL + eaten
+    -- 0.4.0: flat base + gentle per-level growth + only half the eaten hp (late-game bricks are so
+    -- fat that full folding alone made boss 2 unkillable in playtests)
+    local hp = BOSS_BASE + (N - BOSS_EVERY) * BOSS_HP_GAIN + math.floor(eaten * BOSS_EAT_RATE)
     AddBrick(col, row, "sq", nil, hp, "boss", { w = 3, h = 3, maxHp = hp, spawnLevel = N })
     Snd("boom")
 end
@@ -1049,8 +1095,9 @@ local function StartDescend()
     PlaceLauncher()
 
     -- clear-all: bonus balls + the clear-chain multiplier climbs; surviving bricks break the chain
+    -- (surviving bedrock doesn't - it can't be broken, so it neither blocks nor grants a clear)
     if G.turnHadBricks then
-        if next(G.bricks) == nil then
+        if not AnyBreakableBrick() then
             G.ballTotal = G.ballTotal + CLEAR_BONUS
             G.mult = math.min((G.mult or 1) + 1, MULT_CAP)
             if G.mult >= 2 then
@@ -1083,9 +1130,19 @@ local function StartDescend()
     G.pendingDouble = nil
     if G.warnBar then G.warnBar:Hide() end
 
-    -- bricks within `rows` of the strip => this push shoves them past the floor, game over
+    -- bricks within `rows` of the strip => this push shoves them past the floor, game over.
+    -- Bedrock is the exception: it just slides off the board (removing during pairs() is fine
+    -- in Lua as long as we only delete the current key).
     for brick in pairs(G.bricks) do
-        if brick.row <= rows then GameOver(); return end
+        if brick.row <= rows then
+            if brick.kind == "bedrock" then
+                GridSet(brick, nil)
+                G.bricks[brick] = nil
+                FreeBrickFrame(brick)
+            else
+                GameOver(); return
+            end
+        end
     end
 
     -- low items: +1 ball is auto-collected before being pushed out, others just disappear
@@ -1415,6 +1472,7 @@ function G.New()
     G.mult = 1
     G.pendingDouble = nil
     G.eventCd = 0
+    G.lastBedrockCol = nil
     G.startBest = (DodoBricksDB and DodoBricksDB.bestLevel) or 0
     G.startBestScore = (DodoBricksDB and DodoBricksDB.bestScore) or 0
     Render.colorShift = 0
@@ -1446,6 +1504,7 @@ function G.Load()
     G.mult = sv.mult or 1
     G.pendingDouble = sv.pendingDouble or nil
     G.eventCd = sv.eventCd or 0
+    G.lastBedrockCol = nil   -- not saved; worst case one adjacent-column bedrock after a load
     G.startBest = (DodoBricksDB and DodoBricksDB.bestLevel) or 0
     G.startBestScore = (DodoBricksDB and DodoBricksDB.bestScore) or 0
     Render.colorShift = math.floor((G.round - 1) / 10)

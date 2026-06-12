@@ -53,8 +53,9 @@ end
 
 -- Fixed colors for special bricks (not part of the hp color cycle)
 local KIND_COLOR = {
-    healer = { 0.16, 0.72, 0.32 },   -- green: "the medic" - kill it first or it heals its neighbors
-    chest  = { 0.95, 0.76, 0.20 },   -- gold: treasure, breaking it drops an item ring
+    healer  = { 0.16, 0.72, 0.32 },   -- green: "the medic" - kill it first or it heals its neighbors
+    chest   = { 0.95, 0.76, 0.20 },   -- gold: treasure, breaking it drops an item ring
+    bedrock = { 0.33, 0.34, 0.38 },   -- slate grey: unbreakable, shows no hp number
 }
 
 -- Apply a circle mask to a texture (same as DodoPool; the texture must be SetPoint or it won't render)
@@ -155,6 +156,17 @@ function Render.NewBrick(parent, shape, orient, kind)
         ch:SetColorTexture(1, 1, 1, 0.95)
     end
 
+    -- bedrock: four dark studs in the corners = "this is rock, not a brick" (it also has no hp number)
+    if kind == "bedrock" then
+        local o = math.floor(S * 0.26)
+        for _, p in ipairs({ { -o, -o }, { o, -o }, { -o, o }, { o, o } }) do
+            local d = b:CreateTexture(nil, "OVERLAY")
+            d:SetSize(5, 5)
+            d:SetPoint("CENTER", b, "CENTER", p[1], p[2])
+            d:SetColorTexture(0.14, 0.14, 0.17, 0.9)
+        end
+    end
+
     function b.SetHP(self, hp)
         local fc = KIND_COLOR[self.kind]
         local r, g, bl
@@ -168,9 +180,12 @@ function Render.NewBrick(parent, shape, orient, kind)
         else
             self.inner:SetColorTexture(r, g, bl, 1)
         end
-        -- chest shows "?" instead of an hp number (mystery loot reads better than "2")
+        -- chest shows "?" instead of an hp number (mystery loot reads better than "2");
+        -- bedrock shows nothing - no number = the at-a-glance "you can't break this" signal
         if self.kind == "chest" then
             self.num:SetText("?")
+        elseif self.kind == "bedrock" then
+            self.num:SetText("")
         else
             self.num:SetText(tostring(hp))
         end
