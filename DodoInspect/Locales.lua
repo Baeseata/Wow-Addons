@@ -15,7 +15,7 @@
 --
 -- "sizeBump" is an optional addition to the bag slot label and type
 -- tag font sizes: CJK glyphs are denser than Latin and need a point
--- more than the default 11px to stay readable.
+-- or two more than the default 11px to stay readable.
 
 local _, ns = ...
 
@@ -74,7 +74,7 @@ ns.Locales = {
     cn = {
         name = "中文",
         font = "Fonts\\ARKai_T.ttf", -- simplified Chinese client font
-        sizeBump = 1,
+        sizeBump = 2,
         slots = {
             INVTYPE_HEAD           = "头",
             INVTYPE_NECK           = "颈",

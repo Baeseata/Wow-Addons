@@ -44,7 +44,7 @@ ns.Config = {
     SLOT_COLOR      = { 0.20, 1.00, 0.20, 1 },
     SLOT_POINT      = "CENTER",
     SLOT_X          = 0,
-    SLOT_Y          = 0,
+    SLOT_Y          = -1,
 
     ------------------------------------------------------------------
     -- BOE tag (bottom-left corner; bags only)
