@@ -82,16 +82,20 @@ local SOCKET_SIZE, SOCKET_STEP, ROW_H, PANEL_W
 local function ComputeGeometry()
     FS          = ns.Config.PANEL_FONT_SIZE
     SLOT_W      = math.floor(FS * 2.0)
-    STAT_X      = SLOT_W + math.floor(FS * 0.7)
+    -- gap from the slot box to the centered stat grid; kept tight so
+    -- the slot abbreviation sits close to the first stat (the 2-letter
+    -- Latin abbreviations still clear each other at this distance)
+    STAT_X      = SLOT_W + math.floor(FS * 0.3)
     STAT_STEP   = math.floor(FS * 1.6)
     ILVL_X      = STAT_X + STAT_STEP * 3 + math.floor(FS * 0.9)
     ILVL_W      = math.floor(FS * 2.2)
     NAME_X      = ILVL_X + ILVL_W + math.floor(FS * 0.5)
     NAME_W      = ns.Config.PANEL_NAME_WIDTH
-    -- reserved width covers the common case of one tag; the tags are
+    -- reserved width for the common one-tag case, sized to about one
+    -- glyph so a lone tag sits snug after the item name; the tags are
     -- right-aligned against the enchant column, so a rare second tag
     -- grows left into the name gap instead of pushing the layout
-    TERT_W      = math.floor(FS * 1.4)
+    TERT_W      = math.floor(FS * 1.0)
     ENCH_X      = NAME_X + NAME_W + math.floor(FS * 0.35)
                   + TERT_W + math.floor(FS * 0.3)
     TERT_RIGHT  = ENCH_X - math.floor(FS * 0.3)
@@ -161,6 +165,20 @@ local function CountTemplateSockets(stats)
     end
     return count
 end
+
+-- Shared with the inspect gear panel (InspectPanel.lua): the pure
+-- read-only data helpers plus the slot and stat tables, exposed on ns
+-- so the simplified inspect panel reuses this logic instead of
+-- duplicating it. Rendering and layout stay per-panel.
+ns.GEAR_SLOTS           = SLOTS
+ns.STAT_ORDER           = STAT_ORDER
+ns.STAT_KEYS            = STAT_KEYS
+ns.MAX_SOCKETS          = MAX_SOCKETS
+ns.EMPTY_SOCKET_TEXTURE = EMPTY_SOCKET_TEXTURE
+ns.IsEnchantableSlot    = IsEnchantableSlot
+ns.ParseItemLink        = ParseItemLink
+ns.GetStatsTable        = GetStatsTable
+ns.CountTemplateSockets = CountTemplateSockets
 
 ------------------------------------------------------------------
 -- Tooltips

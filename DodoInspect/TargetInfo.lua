@@ -15,6 +15,26 @@
 -- Every visible word (race, class, spec, hero talent) comes from the
 -- game's own localization in the client language, so this works in
 -- any locale without addon-side translations.
+--
+-- =====================================================================
+-- !! 12.0 SECRET VALUES -- read before editing this file.
+-- Hostile players in instanced PvP expose unit fields (name, realm,
+-- localized className, scoreboard guid/spec) as *secret values*.
+-- Tainted addon code may NOT compare, concatenate, do arithmetic on,
+-- tostring, take # of, or MEASURE them (a fontstring built from a
+-- secret has a secret width) -- any of these throws
+-- "attempt to compare ... a secret ... value, while execution tainted".
+-- Rules that keep this file safe -- do NOT regress:
+--   * issecretvalue(x) FIRST on anything unit-derived (it accepts nil
+--     and never throws). C_* are engine C (safe); FrameXML Lua globals
+--     like GetUnitName run tainted when WE call them and WILL throw.
+--   * class via the readable classToken -> LOCALIZED_CLASS_NAMES_MALE,
+--     never UnitClass's secret className.
+--   * BG spec via C_PvP.GetScoreInfoByPlayerGuid(readable UnitGUID),
+--     never a self-rolled scoreboard match.
+--   * every text part goes through AddPart; the wrap/measure block is
+--     pcall-netted. Full history: DodoInspect/CLAUDE.md.
+-- =====================================================================
 
 local _, ns = ...
 
@@ -78,7 +98,7 @@ local function GetInspectSpecID(unit)
 end
 
 local function SpecNameByID(specID)
-    if not specID or specID <= 0 then return nil end
+    if issecretvalue(specID) or not specID or specID <= 0 then return nil end
     local name
     if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfoByID then
         name = select(2, C_SpecializationInfo.GetSpecializationInfoByID(specID))
@@ -122,27 +142,30 @@ local function GetPvPSpecName()
         return nil
     end
 
-    -- battleground: the scoreboard lists both factions. Match the row
-    -- by name, not GUID: in 12.0 the scoreboard's per-row `guid` is a
-    -- secret value that tainted addon code may not compare (the compare
-    -- throws), while `name` stays readable. GetUnitName(unit, true) and
-    -- the scoreboard share the same "Name" / "Name-Realm" format.
-    if instanceType == "pvp" and C_PvP and C_PvP.GetScoreInfo then
-        local targetName = GetUnitName("target", true)
-        if not targetName then return nil end
-        local n = (GetNumBattlefieldScores and GetNumBattlefieldScores()) or 0
-        for i = 1, n do
-            local info = C_PvP.GetScoreInfo(i)
-            local name = info and info.name
-            if name and not issecretvalue(name) and name == targetName then
-                local spec = info.talentSpec
-                if not issecretvalue(spec)
-                    and type(spec) == "string" and spec ~= "" then
-                    return spec
-                end
-                return nil
+    -- battleground: in 12.0 BOTH the scoreboard's per-row `guid` and
+    -- the hostile target's unit name/realm are secret, so neither a
+    -- guid compare nor a name match works from addon code -- and
+    -- GetUnitName itself throws on the secret realm (the 1.3.1 crash:
+    -- GetUnitName is FrameXML *Lua*, so it ran in our tainted context).
+    -- Hand the target's readable GUID to the engine lookup instead: a
+    -- C_PvP *C* function resolves the row in secure code with no
+    -- tainted comparison. talentSpec can still come back secret for a
+    -- hostile player, so it is issecretvalue-guarded and the whole
+    -- block runs under pcall -- a spec that stays secret shows nothing
+    -- instead of erroring, and race/class still render.
+    local ScoreByGuid = C_PvP and
+        (C_PvP.GetScoreInfoByPlayerGuid or C_PvP.GetScoreInfoByPlayerGUID)
+    if instanceType == "pvp" and ScoreByGuid then
+        local ok, spec = pcall(function()
+            local guid = UnitGUID("target")
+            if issecretvalue(guid) or not guid then return end
+            local info = ScoreByGuid(guid)
+            local s = info and info.talentSpec
+            if not issecretvalue(s) and type(s) == "string" and s ~= "" then
+                return s
             end
-        end
+        end)
+        if ok and spec then return spec end
     end
 
     return nil
@@ -200,6 +223,17 @@ local function ColorWrap(hex, s)
     return "|cff" .. hex .. s .. "|r"
 end
 
+-- Append a colored part only when the source string is readable.
+-- Hostile unit fields (className, and others) are secret values in
+-- instanced PvP on 12.0; a secret in the line would poison the width
+-- measurement used for wrapping. issecretvalue is checked first so
+-- nothing downstream ever compares or concatenates a secret.
+local function AddPart(parts, hex, s)
+    if not issecretvalue(s) and type(s) == "string" and s ~= "" then
+        parts[#parts + 1] = ColorWrap(hex, s)
+    end
+end
+
 local function Render()
     if not ns.IsEnabled("showTargetInfo") or not IsPlayerTarget() then
         HideDisplay()
@@ -208,36 +242,45 @@ local function Render()
 
     local parts = {}
 
-    -- item level: inspect only, same gradient as everywhere else
+    -- item level: inspect only, same gradient as everywhere else.
+    -- issecretvalue-guarded like the text fields below (math.floor and
+    -- the > 0 compare would throw on a secret number).
     if C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel then
         local ilvl = C_PaperDollInfo.GetInspectItemLevel("target")
-        ilvl = (type(ilvl) == "number") and math.floor(ilvl + 0.5) or nil
-        if ilvl and ilvl > 0 then
-            local r, g, b = ns.ColorForItemLevel(ilvl)
-            parts[#parts + 1] = string.format("|cff%02x%02x%02x%d|r",
-                math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
-                math.floor(b * 255 + 0.5), ilvl)
+        if not issecretvalue(ilvl) and type(ilvl) == "number" then
+            ilvl = math.floor(ilvl + 0.5)
+            if ilvl > 0 then
+                local r, g, b = ns.ColorForItemLevel(ilvl)
+                parts[#parts + 1] = string.format("|cff%02x%02x%02x%d|r",
+                    math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
+                    math.floor(b * 255 + 0.5), ilvl)
+            end
         end
     end
 
     -- race: visible on any player target, friendly or hostile
-    local race = UnitRace("target")
-    if race then parts[#parts + 1] = ColorWrap(WHITE, race) end
+    AddPart(parts, WHITE, UnitRace("target"))
 
-    -- class: visible on any player target, class colored
-    local className, classToken = UnitClass("target")
-    local classColor = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
-    local classHex = (classColor and classColor.colorStr)
-        and classColor.colorStr:sub(3) or WHITE
-    if className then parts[#parts + 1] = ColorWrap(classHex, className) end
+    -- class: localize from the class TOKEN, not UnitClass's localized
+    -- name. The token ("PRIEST") stays readable for everyone, while the
+    -- localized className is a secret value for hostile players in
+    -- instanced PvP (12.0) and would poison the width measurement.
+    local _, classToken = UnitClass("target")
+    local classHex = WHITE
+    local classDisplay
+    if not issecretvalue(classToken) and type(classToken) == "string" then
+        local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
+        if cc and cc.colorStr then classHex = cc.colorStr:sub(3) end
+        classDisplay = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[classToken]
+    end
+    AddPart(parts, classHex, classDisplay)
 
     -- spec: inspect first, PvP scoreboard or arena opponents second
-    local spec = SpecNameByID(GetInspectSpecID("target")) or GetPvPSpecName()
-    if spec then parts[#parts + 1] = ColorWrap(classHex, spec) end
+    AddPart(parts, classHex,
+        SpecNameByID(GetInspectSpecID("target")) or GetPvPSpecName())
 
     -- hero talent: inspect only
-    local hero = GetInspectHeroTalentName()
-    if hero then parts[#parts + 1] = ColorWrap(HERO_COLOR, hero) end
+    AddPart(parts, HERO_COLOR, GetInspectHeroTalentName())
 
     if #parts == 0 then
         HideDisplay()
@@ -251,30 +294,40 @@ local function Render()
     -- Long locales (German, French, Russian...) can push the one-line
     -- form past half a screen. Wrap between parts onto up to 3 lines;
     -- a break never lands inside a name. Compact locales (CJK) stay
-    -- under the cap and keep a single line.
-    local maxW = ns.Config.TARGET_MAX_WIDTH
-    local lines, current = {}, nil
-    for _, part in ipairs(parts) do
-        local candidate = current and (current .. "  " .. part) or part
-        measure:SetText(candidate)
-        if current and #lines < 2 and measure:GetStringWidth() > maxW then
-            lines[#lines + 1] = current
-            current = part
-        else
-            current = candidate
+    -- under the cap and keep a single line. Every part above is already
+    -- issecretvalue-guarded, so the width measurement is safe; the pcall
+    -- is a last-ditch guard so any unforeseen secret hides the line
+    -- instead of throwing on the width compare.
+    local ok = pcall(function()
+        local maxW = ns.Config.TARGET_MAX_WIDTH
+        local lines, current = {}, nil
+        for _, part in ipairs(parts) do
+            local candidate = current and (current .. "  " .. part) or part
+            measure:SetText(candidate)
+            if current and #lines < 2 and measure:GetStringWidth() > maxW then
+                lines[#lines + 1] = current
+                current = part
+            else
+                current = candidate
+            end
         end
-    end
-    lines[#lines + 1] = current
+        lines[#lines + 1] = current
 
-    local widest = 0
-    for _, line in ipairs(lines) do
-        measure:SetText(line)
-        widest = math.max(widest, measure:GetStringWidth())
-    end
+        local widest = 0
+        for _, line in ipairs(lines) do
+            measure:SetText(line)
+            widest = math.max(widest, measure:GetStringWidth())
+        end
 
-    text:SetText(table.concat(lines, "\n"))
-    display:SetSize(math.max(100, widest + 20),
-        math.max(30, text:GetStringHeight() + 10))
+        text:SetText(table.concat(lines, "\n"))
+        display:SetSize(math.max(100, widest + 20),
+            math.max(30, text:GetStringHeight() + 10))
+    end)
+
+    if not ok then
+        HideDisplay()
+        return
+    end
     display:Show()
 end
 
@@ -341,7 +394,10 @@ EVT:SetScript("OnEvent", function(_, event, ...)
 
     if event == "INSPECT_READY" then
         local guid = ...
-        if inspectPendingGUID and guid and guid ~= inspectPendingGUID then return end
+        -- inspect is friendly-only so both GUIDs are readable; guard the
+        -- event arg anyway so no future secret GUID can throw the compare
+        if not issecretvalue(guid) and inspectPendingGUID
+            and guid and guid ~= inspectPendingGUID then return end
         Render()
         C_Timer.After(0, Render) -- traits may lag one frame behind
         return

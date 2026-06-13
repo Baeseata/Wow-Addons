@@ -1,8 +1,9 @@
 -- DodoInspect - Overlay.lua
 -- FontString management on item buttons. Each button gets up to
 -- four overlay texts, created lazily and reused across refreshes:
---   top-left:     item level on gear, OR the item type tag
---                 (junk / quest / consumable) on everything else
+--   top-left:     item level (gear only)
+--   top-right:    item type tag (junk / quest / consumable),
+--                 shown on everything that is not gear
 --   center:       slot label
 --   bottom-left:  tag (BOE or equipment set name)
 
@@ -112,9 +113,9 @@ function ns.SetTagText(button, kind, text)
     end
 end
 
--- Localized item type tag, top-left aligned (it takes the spot the
--- item level uses on real gear; the two never show together).
--- Pass nil to hide.
+-- Localized item type tag, top-right aligned and right-justified so
+-- it hugs the right edge (the item level holds the opposite top-left
+-- corner; the two never show on the same item). Pass nil to hide.
 function ns.SetTypeText(button, tagKey)
     if not button then return end
     local text = tagKey and ns.L and ns.L.tags[tagKey]
@@ -124,13 +125,70 @@ function ns.SetTypeText(button, tagKey)
     end
 
     local cfg = ns.Config
-    local fs = EnsureText(button, "DodoTypeText", "LEFT")
+    local fs = EnsureText(button, "DodoTypeText", "RIGHT")
     ClampToButtonWidth(fs, button)
     local c = cfg.TYPE_COLORS[tagKey] or cfg.TYPE_COLORS.cons
     -- locale-table text: CJK locales ask for a slightly larger size
     local size = cfg.TYPE_FONT_SIZE + ((ns.L and ns.L.sizeBump) or 0)
     ApplyText(fs, text, size, cfg.TYPE_FONT_FLAGS,
         c[1], c[2], c[3], c[4], cfg.TYPE_POINT, cfg.TYPE_X, cfg.TYPE_Y)
+end
+
+-- Bottom-left enchant tag for a gear slot button (inspect window):
+-- green when enchanted, red when an enchantable slot is missing its
+-- enchant. state is "ok", "missing", or nil to hide.
+function ns.SetEnchantTag(button, state)
+    if not button then return end
+    if state ~= "ok" and state ~= "missing" then
+        if button.DodoEnchTag then button.DodoEnchTag:Hide() end
+        return
+    end
+
+    local cfg = ns.Config
+    local fs = EnsureText(button, "DodoEnchTag", "LEFT")
+    local c = (state == "ok") and cfg.ENCHANT_OK_COLOR or cfg.ENCHANT_MISSING_COLOR
+    ApplyText(fs, (ns.L and ns.L.enchant) or "EN",
+        cfg.ENCH_OVL_FONT_SIZE, cfg.ENCH_OVL_FONT_FLAGS,
+        c[1], c[2], c[3], c[4], cfg.ENCH_OVL_POINT, cfg.ENCH_OVL_X, cfg.ENCH_OVL_Y)
+end
+
+-- Bottom-right gem icons for a gear slot button, growing left: filled
+-- gems (their icons) first, then empty sockets. gems is an array of
+-- gem item IDs, emptyCount the empty sockets after them. The pooled
+-- textures are reused across refreshes; extras are hidden.
+local GEM_CAP = 3 -- a gear slot only has room for a few
+function ns.SetGemOverlay(button, gems, emptyCount)
+    if not button then return end
+    local cfg = ns.Config
+    button.DodoGems = button.DodoGems or {}
+    local pool = button.DodoGems
+
+    local shown = 0
+    local function add(texture)
+        if shown >= GEM_CAP then return end
+        shown = shown + 1
+        local tex = pool[shown]
+        if not tex then
+            tex = button:CreateTexture(nil, "OVERLAY")
+            pool[shown] = tex
+        end
+        tex:SetSize(cfg.GEM_OVL_SIZE, cfg.GEM_OVL_SIZE)
+        tex:ClearAllPoints()
+        tex:SetPoint(cfg.GEM_OVL_POINT, button, cfg.GEM_OVL_POINT,
+            cfg.GEM_OVL_X - (shown - 1) * cfg.GEM_OVL_STEP, cfg.GEM_OVL_Y)
+        tex:SetTexture(texture)
+        tex:Show()
+    end
+
+    for _, gemID in ipairs(gems or {}) do
+        local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(gemID)
+        add(icon or ns.EMPTY_SOCKET_TEXTURE)
+    end
+    for _ = 1, (emptyCount or 0) do
+        add(ns.EMPTY_SOCKET_TEXTURE)
+    end
+
+    for i = shown + 1, #pool do pool[i]:Hide() end
 end
 
 -- Hide every overlay this addon owns on a button.

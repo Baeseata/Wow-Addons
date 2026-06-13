@@ -27,8 +27,8 @@ local function UpdateItemButton(itemButton, frame)
     local quality = info and info.quality
     local isEquippable = IsEquippableItem(itemLink) and true or false
 
-    -- the top-left corner shows exactly one thing: the item level on
-    -- gear worth wearing, or the type tag on everything else
+    -- gear worth wearing shows its item level (top-left corner);
+    -- everything else shows a type tag (top-right) instead
     local junkGear = ns.Config.HIDE_JUNK_QUALITY and ns.IsJunkQuality(quality)
     if not isEquippable or junkGear then
         ns.ClearGearOverlays(itemButton)

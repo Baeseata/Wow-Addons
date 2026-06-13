@@ -6,6 +6,13 @@
 
 local ADDON_NAME, ns = ...
 
+-- Addon version straight from the TOC, so the panel can never show a
+-- number that drifts from the actual build.
+local function GetVersion()
+    local meta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    return (meta and meta(ADDON_NAME, "Version")) or "?"
+end
+
 local function BuildLanguageOptions()
     local container = Settings.CreateControlTextContainer()
     for _, key in ipairs(ns.LocaleOrder) do
@@ -46,7 +53,14 @@ function ns.RegisterOptions()
     if not Settings or not Settings.RegisterVerticalLayoutCategory then return end
 
     local ok = pcall(function()
-        local category = Settings.RegisterVerticalLayoutCategory(ADDON_NAME)
+        local category, layout = Settings.RegisterVerticalLayoutCategory(ADDON_NAME)
+
+        -- Version banner at the top of the panel. Guarded so a future
+        -- Settings internals change can't stop the options registering.
+        if layout and CreateSettingsListSectionHeaderInitializer then
+            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(
+                "DodoInspect  v" .. GetVersion()))
+        end
 
         local setting = Settings.RegisterProxySetting(
             category,
@@ -67,6 +81,12 @@ function ns.RegisterOptions()
             ns.UpdateEquipment)
 
         AddFeatureCheckbox(category,
+            "DODO_INSPECT_INSPECT_ILVL", "showInspectIlvl",
+            "Inspect window gear overlays",
+            "Show item level (top-left), enchant (bottom-left) and gems (bottom-right) on each gear slot when inspecting another player.",
+            ns.ApplyInspectEnabled)
+
+        AddFeatureCheckbox(category,
             "DODO_INSPECT_BAG_OVERLAYS", "showBagOverlays",
             "Bag overlays",
             "Show item levels, slot labels, BOE and item type tags on the Blizzard bags.",
@@ -77,6 +97,12 @@ function ns.RegisterOptions()
             "Gear summary side panel",
             "Show the gear list panel docked to the right of the character frame.",
             ns.ApplySidePanelEnabled)
+
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_INSPECT_PANEL", "showInspectPanel",
+            "Inspect window gear panel",
+            "Show a simplified gear panel (stats, enchants, gems) docked to the right of the inspect window.",
+            ns.ApplyInspectPanelEnabled)
 
         AddFeatureCheckbox(category,
             "DODO_INSPECT_TARGET_INFO", "showTargetInfo",

@@ -28,7 +28,7 @@ ns.Config = {
     ------------------------------------------------------------------
     -- When true, equippable items of Poor (gray) or Common (white)
     -- quality lose their gear overlays (item level, BOE, slot label)
-    -- and get the junk tag in the bottom-right corner instead.
+    -- and get the junk type tag in the top-right corner instead.
     -- Poor quality items are always tagged as junk regardless.
     HIDE_JUNK_QUALITY = true,
 
@@ -75,17 +75,18 @@ ns.Config = {
     SET_Y          = 1,
 
     ------------------------------------------------------------------
-    -- Item type tag (top-left corner; bags only)
+    -- Item type tag (top-right corner; bags only)
     ------------------------------------------------------------------
     -- Localized tag for vendor junk, quest items and consumables
-    -- (food, flask, potion, generic consumable). It reuses the spot
-    -- the item level occupies on real gear: an item shows either an
-    -- item level or a type tag, never both, so the corner stays
-    -- clean and far away from the stack count number.
+    -- (food, flask, potion, generic consumable). Top-right corner,
+    -- opposite the item level's top-left: gear shows an item level,
+    -- other items show a type tag, never both. Right-justified (see
+    -- Overlay.lua) so the tag hugs the right edge, clear of the
+    -- bottom-right stack count number.
     TYPE_FONT_SIZE  = 11,
     TYPE_FONT_FLAGS = "OUTLINE",
-    TYPE_POINT      = "TOPLEFT",
-    TYPE_X          = 1,
+    TYPE_POINT      = "TOPRIGHT",
+    TYPE_X          = -1,
     TYPE_Y          = -1,
 
     TYPE_COLORS = {
@@ -96,6 +97,24 @@ ns.Config = {
         potion = { 1.00, 0.40, 0.40, 1 }, -- red (potion bottle)
         cons   = { 0.60, 0.80, 1.00, 1 }, -- light blue (misc)
     },
+
+    ------------------------------------------------------------------
+    -- Inspect gear overlays (on the inspect window equipment slots)
+    ------------------------------------------------------------------
+    -- The item level reuses the top-left ILVL_* settings above; the
+    -- enchant tag sits bottom-left (green when enchanted, red when an
+    -- enchantable slot is empty, same colors as the side panel) and
+    -- the gem icons sit bottom-right, growing left.
+    ENCH_OVL_FONT_SIZE  = 13,
+    ENCH_OVL_FONT_FLAGS = "OUTLINE",
+    ENCH_OVL_POINT      = "BOTTOMLEFT",
+    ENCH_OVL_X          = 1,
+    ENCH_OVL_Y          = 1,
+    GEM_OVL_SIZE        = 12,
+    GEM_OVL_POINT       = "BOTTOMRIGHT",
+    GEM_OVL_X           = -1,
+    GEM_OVL_Y           = 1,
+    GEM_OVL_STEP        = 13, -- spacing between gem icons (grows left)
 
     ------------------------------------------------------------------
     -- Character side panel (gear list right of the character frame)

@@ -6,16 +6,17 @@
 -- labels are deliberately accent-free so they render in any client
 -- font). Everything else (code, comments, docs) stays pure ASCII.
 -- HARD RULE: tags are 4 characters max (2 CJK chars max) -- that is
--- all a bag icon row fits (size 11 Latin, 13 for CJK via sizeBump).
+-- all a bag icon row fits (size 9 Latin, 13 for CJK; see sizeBump).
 --
 -- "font" is an optional font override for languages the default
 -- client font cannot render (Chinese glyphs are missing from the
 -- Latin client font). When the override fails to load, the code
 -- falls back to the client default font.
 --
--- "sizeBump" is an optional addition to the bag slot label and type
--- tag font sizes: CJK glyphs are denser than Latin and need a point
--- or two more than the default 11px to stay readable.
+-- "sizeBump" is an optional adjustment to the bag slot label and
+-- type tag font sizes (base 11px). CJK glyphs are denser and ask for
+-- a couple points more (cn +2 -> 13); the wider Latin tags drop a
+-- couple to keep four characters inside the icon (-2 -> 9).
 
 local _, ns = ...
 
@@ -26,6 +27,7 @@ ns.Locales = {
     en = {
         name = "English",
         font = nil, -- client default
+        sizeBump = -2, -- Latin tags run wider; shrink to fit the icon
         slots = {
             INVTYPE_HEAD           = "HD",
             INVTYPE_NECK           = "NK",
@@ -133,6 +135,7 @@ ns.Locales = {
     fr = {
         name = "Français",
         font = nil,
+        sizeBump = -2,
         slots = {
             INVTYPE_HEAD           = "TE", -- tete
             INVTYPE_NECK           = "CO", -- cou
@@ -185,6 +188,7 @@ ns.Locales = {
     es = {
         name = "Español",
         font = nil,
+        sizeBump = -2,
         slots = {
             INVTYPE_HEAD           = "CA", -- cabeza
             INVTYPE_NECK           = "CU", -- cuello

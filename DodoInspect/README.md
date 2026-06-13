@@ -1,9 +1,10 @@
 # DodoInspect
 
-Lightweight item overlays for the default Blizzard bags and character
-frame, plus a target info line. No minimap button, no dependencies.
-One glance tells you what is an upgrade, what is bind-on-equip, what
-an item is for, what is vendor trash, and who you are looking at.
+Lightweight item overlays for the default Blizzard bags, character
+frame and inspect window, plus a target info line. No minimap button,
+no dependencies. One glance tells you what is an upgrade, what is
+bind-on-equip, what an item is for, what is vendor trash, and who you
+are looking at.
 
 ## Features
 
@@ -21,7 +22,7 @@ that is worth wearing:
 - **Bottom-left: BOE tag**, shown only while that specific item is still
   unbound, or the equipment set name when the item belongs to a set.
 
-**Top-left on everything that is not wearable gear: type tag**,
+**Top-right on everything that is not wearable gear: type tag**,
 localized and color coded:
 
 - **Junk** (gray): Poor quality items, plus Common (white) quality gear.
@@ -32,8 +33,9 @@ localized and color coded:
   have their own tag and color; every other consumable gets a generic
   tag in light blue.
 
-An item shows either an item level or a type tag in that corner, never
-both, so the text stays short and clear of the stack count number.
+Gear shows its item level in the top-left corner; everything else shows
+a type tag in the top-right instead, so the text stays short and clear
+of the stack count number.
 
 **Character frame**: item level on every equipment slot, same gradient.
 
@@ -70,6 +72,17 @@ helm, shoulder, chest, legs via spellthread/armor kit, boots, rings and
 weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
+**Inspect window**: when you inspect another player the same idea
+applies to their gear. On each inspected slot: **item level** (top-left,
+same gradient), the **enchant** state (bottom-left, green when
+enchanted, red when an enchantable slot is empty) and **gem** icons
+(bottom-right). A compact panel docked to the right of the inspect
+window adds one row per slot with the slot abbreviation, the item level
+(gradient colored) and the four-column secondary stat grid with the
+dominant stat underlined. Inspect only works on players you may inspect
+(friendly or same faction); hostile players cannot be inspected, so
+nothing shows for them.
+
 **Target info**, above the default target frame whenever you target a
 player: item level (same gradient), race, class and spec (class
 colored) and hero talent (gold). Compact locales fit on one line; long
@@ -97,10 +110,14 @@ All options live under **Esc > Options > AddOns > DodoInspect**:
 - **Language** for the slot labels and type tags (see Languages below).
 - **Equipment slot item levels**: the numbers on the character frame
   equipment slots.
+- **Inspect window gear overlays**: item level, enchant and gem markers
+  on each gear slot when inspecting another player.
 - **Bag overlays**: item levels, slot labels, BOE and type tags on the
   Blizzard bags.
 - **Gear summary side panel**: the gear list next to the character
   frame.
+- **Inspect window gear panel**: the slot / item level / stat panel
+  next to the inspect window.
 - **Target info**: the player summary line above the target frame.
 
 The feature toggles render independently, so any combination works:
@@ -133,8 +150,9 @@ The slot labels and type tags ship in four languages: **English**
 five characters or fewer so they fit a bag icon (JUNK / NUL / MALO,
 QST / QTE / MIS, FOOD / BOUF / COMI, and so on); French and Spanish
 labels are deliberately accent-free so they render in any client font.
-Chinese labels render a couple of points larger than the Latin ones
-(CJK glyphs are denser), still sized to fit the icons.
+Chinese labels render larger than the Latin ones (CJK glyphs are
+denser); the Latin labels are trimmed a couple of points so the longer
+words still fit the icons.
 Pick a language in the options panel:
 **Esc > Options > AddOns > DodoInspect**, or use the slash
 command:
@@ -191,7 +209,10 @@ Copy the `DodoInspect` folder into
 | `ItemInfo.lua` | Item data helpers (item level, bind state, quality, type) |
 | `Overlay.lua` | FontString management on item buttons |
 | `Equipment.lua` | Character frame equipment slots |
+| `Inspect.lua` | Inspect window gear overlays (item level, enchant, gems) |
 | `Bags.lua` | Blizzard bag frames |
+| `SidePanel.lua` | Gear summary panel beside the character frame |
+| `InspectPanel.lua` | Compact gear panel beside the inspect window |
 | `TargetInfo.lua` | Player summary line above the target frame |
 | `Options.lua` | Settings panel (language, feature toggles) and slash command |
 | `Core.lua` | SavedVariables, events and refresh wiring |
