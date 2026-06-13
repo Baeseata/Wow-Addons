@@ -122,16 +122,24 @@ local function GetPvPSpecName()
         return nil
     end
 
-    -- battleground: the scoreboard lists both factions, match by GUID
+    -- battleground: the scoreboard lists both factions. Match the row
+    -- by name, not GUID: in 12.0 the scoreboard's per-row `guid` is a
+    -- secret value that tainted addon code may not compare (the compare
+    -- throws), while `name` stays readable. GetUnitName(unit, true) and
+    -- the scoreboard share the same "Name" / "Name-Realm" format.
     if instanceType == "pvp" and C_PvP and C_PvP.GetScoreInfo then
-        local guid = UnitGUID("target")
-        if not guid then return nil end
+        local targetName = GetUnitName("target", true)
+        if not targetName then return nil end
         local n = (GetNumBattlefieldScores and GetNumBattlefieldScores()) or 0
         for i = 1, n do
             local info = C_PvP.GetScoreInfo(i)
-            if info and info.guid == guid then
+            local name = info and info.name
+            if name and not issecretvalue(name) and name == targetName then
                 local spec = info.talentSpec
-                if type(spec) == "string" and spec ~= "" then return spec end
+                if not issecretvalue(spec)
+                    and type(spec) == "string" and spec ~= "" then
+                    return spec
+                end
                 return nil
             end
         end
