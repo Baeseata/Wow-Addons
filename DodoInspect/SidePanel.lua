@@ -533,6 +533,18 @@ end
 -- Panel lifecycle
 ------------------------------------------------------------------
 
+-- The panel belongs to the character (paper doll) tab only; switching
+-- to the reputation or currency tab hides it. It is still a child of
+-- the character frame, so closing the whole window hides it too.
+local function ApplyTabVisibility()
+    if not panel then return end
+    if ns.IsEnabled("showSidePanel") and PaperDollFrame and PaperDollFrame:IsShown() then
+        panel:Show()
+    else
+        panel:Hide()
+    end
+end
+
 function ns.SetupSidePanel()
     if panel or not ns.Config.PANEL_ENABLED then return end
     if not ns.IsEnabled("showSidePanel") then return end
@@ -567,6 +579,13 @@ function ns.SetupSidePanel()
             ns.UpdateSidePanel()
         end)
     end)
+
+    -- follow the character-frame tab: only the paper doll tab shows it
+    if PaperDollFrame and PaperDollFrame.HookScript then
+        PaperDollFrame:HookScript("OnShow", ApplyTabVisibility)
+        PaperDollFrame:HookScript("OnHide", ApplyTabVisibility)
+    end
+    ApplyTabVisibility()
 end
 
 -- React to the side panel toggle. Turning it on builds the panel on
@@ -576,7 +595,7 @@ function ns.ApplySidePanelEnabled()
     if ns.IsEnabled("showSidePanel") then
         ns.SetupSidePanel()
         if panel then
-            panel:Show()
+            ApplyTabVisibility()
             ns.UpdateSidePanel()
         end
     elseif panel then

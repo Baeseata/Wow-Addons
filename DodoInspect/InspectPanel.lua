@@ -196,6 +196,19 @@ end
 -- Panel lifecycle
 ------------------------------------------------------------------
 
+-- The panel belongs to the character tab of the inspect window only;
+-- the PvP and guild tabs hide it. It is still a child of the inspect
+-- frame, so closing the whole window hides it too.
+local function ApplyTabVisibility()
+    if not panel then return end
+    if ns.IsEnabled("showInspectPanel") and InspectPaperDollFrame
+        and InspectPaperDollFrame:IsShown() then
+        panel:Show()
+    else
+        panel:Hide()
+    end
+end
+
 function ns.SetupInspectPanel()
     if panel then return end
     if not ns.IsEnabled("showInspectPanel") then return end
@@ -227,6 +240,13 @@ function ns.SetupInspectPanel()
     panel:SetScript("OnShow", function()
         C_Timer.After(0, ns.UpdateInspectPanel)
     end)
+
+    -- follow the inspect-frame tab: only the character tab shows it
+    if InspectPaperDollFrame and InspectPaperDollFrame.HookScript then
+        InspectPaperDollFrame:HookScript("OnShow", ApplyTabVisibility)
+        InspectPaperDollFrame:HookScript("OnHide", ApplyTabVisibility)
+    end
+    ApplyTabVisibility()
 end
 
 -- Options checkbox hook.
@@ -234,7 +254,7 @@ function ns.ApplyInspectPanelEnabled()
     if ns.IsEnabled("showInspectPanel") then
         ns.SetupInspectPanel()
         if panel then
-            panel:Show()
+            ApplyTabVisibility()
             ns.UpdateInspectPanel()
         end
     elseif panel then
