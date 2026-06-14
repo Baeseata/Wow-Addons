@@ -110,6 +110,12 @@ function ns.RegisterOptions()
             "Show item level, race, class, spec and hero talent above the target frame when targeting a player. Hostile players show what the game exposes: race and class, plus the spec inside battlegrounds and arenas.",
             ns.ApplyTargetInfoEnabled)
 
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_BIS", "showBIS",
+            "BiS comparison window",
+            "When hovering a gear name in the character side panel, show whether that item is best-in-slot for your spec (raid and M+), and where the BiS drops if not.",
+            function() if ns.HideBIS then ns.HideBIS() end end)
+
         Settings.RegisterAddOnCategory(category)
         ns.OptionsCategory = category
     end)

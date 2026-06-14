@@ -16,6 +16,8 @@ Equipment.lua
 Inspect.lua
 Bags.lua
 SidePanel.lua
+Data\BIS.lua
+BIS.lua
 InspectPanel.lua
 TargetInfo.lua
 Options.lua

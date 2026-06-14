@@ -224,6 +224,7 @@ local function OnNameEnter(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetInventoryItem("player", self.slotID)
     GameTooltip:Show()
+    if ns.ShowBISForSlot then ns.ShowBISForSlot(self.slotID, GameTooltip) end
 end
 
 local function OnSocketEnter(self)
@@ -235,6 +236,7 @@ end
 
 local function OnHitLeave()
     GameTooltip:Hide()
+    if ns.HideBIS then ns.HideBIS() end
 end
 
 ------------------------------------------------------------------

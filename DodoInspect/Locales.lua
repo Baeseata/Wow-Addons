@@ -26,6 +26,14 @@ ns.Locales = {
 
     en = {
         name = "English",
+        bis = {
+            title = "BiS", raid = "Raid", mplus = "M+",
+            isBis = "BiS", notBis = "Not BiS",
+            bisLabel = "BiS:", srcLabel = "From:",
+            noData = "No BiS data for this spec yet",
+            src = { raid = "Raid", dungeon = "Dungeon", craft = "Crafted",
+                quest = "Quest", pvp = "PvP", other = "Other" },
+        },
         font = nil, -- client default
         sizeBump = -2, -- Latin tags run wider; shrink to fit the icon
         slots = {
@@ -81,6 +89,14 @@ ns.Locales = {
 
     cn = {
         name = "中文",
+        bis = {
+            title = "BIS对比", raid = "团本", mplus = "大米",
+            isBis = "BIS款", notBis = "非BIS",
+            bisLabel = "BIS:", srcLabel = "源:",
+            noData = "该专精暂无BIS数据",
+            src = { raid = "团本", dungeon = "大秘境", craft = "制作",
+                quest = "任务", pvp = "PvP", other = "其他" },
+        },
         font = "Fonts\\ARKai_T.ttf", -- simplified Chinese client font
         sizeBump = 2,
         slots = {
@@ -134,6 +150,14 @@ ns.Locales = {
 
     fr = {
         name = "Français",
+        bis = {
+            title = "BiS", raid = "Raid", mplus = "M+",
+            isBis = "BiS", notBis = "Pas BiS",
+            bisLabel = "BiS:", srcLabel = "De:",
+            noData = "Pas de donnees BiS pour cette spe",
+            src = { raid = "Raid", dungeon = "Donjon", craft = "Artisanat",
+                quest = "Quete", pvp = "JcJ", other = "Autre" },
+        },
         font = nil,
         sizeBump = -2,
         slots = {
@@ -187,6 +211,14 @@ ns.Locales = {
 
     es = {
         name = "Español",
+        bis = {
+            title = "BiS", raid = "Raid", mplus = "M+",
+            isBis = "BiS", notBis = "No BiS",
+            bisLabel = "BiS:", srcLabel = "De:",
+            noData = "Sin datos BiS para esta espec",
+            src = { raid = "Raid", dungeon = "Mazmorra", craft = "Fabricado",
+                quest = "Mision", pvp = "JcJ", other = "Otro" },
+        },
         font = nil,
         sizeBump = -2,
         slots = {
