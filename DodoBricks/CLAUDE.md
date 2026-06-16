@@ -4,7 +4,7 @@
 > 仓库: `github.com/Baeseata/Wow-Addons` (public)。本插件在 `DodoBricks/`。
 > **跨机协作**: 换机器先 `git pull`,Claude 先读本文件接上进度。**UI 文案用英文**(0.2.x 起已全英文,
 > 原"中文惯例"作废;中文是 Jerry 跟 Claude 的设计沟通语言)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.5,Interface 120005。
+> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
 > 姊妹项目 DodoPool(九球)有自己的 `DodoPool/CLAUDE.md`,很多套路(音效/窗口/小地图按钮)同源。
 
 ---

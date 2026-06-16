@@ -3,7 +3,7 @@
 > 单人 **9 球台球** 小游戏,World of Warcraft 插件,Dodo 系列之一。
 > 仓库: `github.com/Baeseata/Wow-Addons` (public)。本插件在 `DodoPool/`。
 > **跨机协作**: 换机器先 `git pull`,Claude 先读本文件接上进度。UI 文案用**中文**(Dodo 系列惯例)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.5,Interface 120005。
+> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
 
 ---
 

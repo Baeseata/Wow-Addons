@@ -5,7 +5,7 @@
 > **跨机协作**: 换机器先 `git pull`,Claude 先读本文件接上进度。
 > ⚠️ **本插件 shipped 内容已全英文化(2026-06-11,同 DodoPool/DodoBricks)**:.lua/.toc 的注释 +
 > UI 字符串**零中文**,改 UI 文案**务必继续用英文**,别手滑写回中文。本 CLAUDE.md 保持中文(不进发布包)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.5,Interface 120005。
+> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
 > 姊妹项目 DodoPool(九球)/ DodoBricks(打砖块)各有自己的 CLAUDE.md,套路(音效/窗口/小地图/键盘)同源。
 
 ---

@@ -3,7 +3,7 @@
 A single-player **9-ball pool** minigame for World of Warcraft, built entirely with native WoW
 UI primitives (no custom textures or audio files). Part of the **Dodo** addon series.
 
-![Interface](https://img.shields.io/badge/WoW-Retail%2012.0.5-blue) ![Type](https://img.shields.io/badge/type-minigame-orange)
+![Interface](https://img.shields.io/badge/WoW-Retail%2012.0.7-blue) ![Type](https://img.shields.io/badge/type-minigame-orange)
 
 ## Features
 
