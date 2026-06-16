@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 120005, 120007
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
