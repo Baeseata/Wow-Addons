@@ -211,6 +211,11 @@ Beyond the options panel, everything else is constants in `Config.lua`
   moves independently.
 - `HIDE_JUNK_QUALITY`: set to `false` to treat white gear as normal gear
   (gear overlays shown, no junk tag). Gray items are always tagged junk.
+- `STAT_RATING_COL_W`: width reserved for the rating column in the
+  character stats pane (raise it if very large ratings touch the
+  percentage, lower it to pull the two columns together).
+- `DURABILITY_*`: font size, anchor point and offset of the average
+  durability readout.
 - Font sizes, anchor corners and colors for each overlay text.
 
 Edit, save, then `/reload` in game.
