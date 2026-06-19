@@ -26,6 +26,7 @@ ns.Locales = {
 
     en = {
         name = "English",
+        durability = "Durability",
         font = nil, -- client default
         sizeBump = -2, -- Latin tags run wider; shrink to fit the icon
         slots = {
@@ -81,6 +82,7 @@ ns.Locales = {
 
     cn = {
         name = "中文",
+        durability = "耐久度",
         font = "Fonts\\ARKai_T.ttf", -- simplified Chinese client font
         sizeBump = 2,
         slots = {
@@ -134,6 +136,7 @@ ns.Locales = {
 
     fr = {
         name = "Français",
+        durability = "Durabilite",
         font = nil,
         sizeBump = -2,
         slots = {
@@ -187,6 +190,7 @@ ns.Locales = {
 
     es = {
         name = "Español",
+        durability = "Durabilidad",
         font = nil,
         sizeBump = -2,
         slots = {

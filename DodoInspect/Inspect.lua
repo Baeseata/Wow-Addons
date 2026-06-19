@@ -91,23 +91,8 @@ function ns.UpdateInspect()
             end
             ns.SetItemLevelText(button, ilvl)
 
-            -- bottom-left: enchant (green ok / red missing on an
-            -- enchantable slot), bottom-right: gems
-            if link then
-                local enchantID, gems = ns.ParseItemLink(link)
-                local enchState
-                if ns.IsEnchantableSlot(slotID, link) then
-                    local on = enchantID and enchantID ~= "" and enchantID ~= "0"
-                    enchState = on and "ok" or "missing"
-                end
-                ns.SetEnchantTag(button, enchState)
-                local stats = ns.GetStatsTable(link)
-                ns.SetGemOverlay(button, gems,
-                    math.max(0, ns.CountTemplateSockets(stats) - #gems))
-            else
-                ns.SetEnchantTag(button, nil)
-                ns.SetGemOverlay(button, nil, 0)
-            end
+            -- bottom-left: enchant, bottom-right: gems
+            ns.SetEnchantAndGems(button, slotID, link)
         end
     end
 end

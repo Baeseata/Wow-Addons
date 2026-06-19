@@ -6,7 +6,7 @@ local ADDON_NAME, ns = ...
 -- Feature toggles stored in SavedVariables. Only an explicit false
 -- disables a feature, so fresh installs (and sessions before the DB
 -- loads) default to everything on. Keys: showEquipmentIlvl,
--- showBagOverlays, showSidePanel.
+-- showBagOverlays, showSidePanel, showDurability, showStatRatings.
 function ns.IsEnabled(flag)
     local db = DodoInspectDB
     return not db or db[flag] ~= false
@@ -17,6 +17,7 @@ end
 function ns.UpdateCharacterViews()
     ns.UpdateEquipment()
     ns.UpdateSidePanel()
+    ns.UpdateDurability()
 end
 
 function ns.UpdateAllVisible()
@@ -48,6 +49,7 @@ end
 local function OnLogin()
     ns.HookBagFrames()
     ns.SetupSidePanel()
+    ns.SetupStatRatings()
 
     -- refresh the character views when the character frame opens
     if CharacterFrame and CharacterFrame.HookScript then
@@ -81,6 +83,8 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+frame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED") -- combat end: re-add stat ratings
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("EQUIPMENT_SETS_CHANGED")
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED") -- uncached item info arriving
@@ -96,6 +100,12 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     end
     if event == "PLAYER_LOGIN" then
         OnLogin()
+        return
+    end
+    if event == "PLAYER_REGEN_ENABLED" then
+        -- defer a frame so combat lockdown has fully cleared before we
+        -- read the (now non-secret) ratings
+        C_Timer.After(0, ns.RefreshStatRatings)
         return
     end
     ns.UpdateAllVisible()

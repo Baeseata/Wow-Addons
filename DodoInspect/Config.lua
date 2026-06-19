@@ -117,6 +117,27 @@ ns.Config = {
     GEM_OVL_STEP        = 13, -- spacing between gem icons (grows left)
 
     ------------------------------------------------------------------
+    -- Average durability readout (bottom of the stats pane)
+    ------------------------------------------------------------------
+    -- Mean durability across equipped items that have it (armor and
+    -- weapons), colored red (low) -> yellow -> green (full). Anchored
+    -- to the bottom of the character stats pane (the middle column),
+    -- in the gap below the enhancement stats; nudge with the offsets.
+    DURABILITY_FONT_SIZE  = 16,
+    DURABILITY_FONT_FLAGS = "OUTLINE",
+    DURABILITY_POINT      = "BOTTOM",
+    DURABILITY_X          = 0,
+    DURABILITY_Y          = 14,
+
+    ------------------------------------------------------------------
+    -- Secondary stat ratings (extra column in the stats pane)
+    ------------------------------------------------------------------
+    -- Width reserved for the rating column to the right of the
+    -- percentage. Raise it if very large ratings touch the percent,
+    -- lower it to pull the two columns closer together.
+    STAT_RATING_COL_W = 50,
+
+    ------------------------------------------------------------------
     -- Character side panel (gear list right of the character frame)
     ------------------------------------------------------------------
     -- The panel height always matches the character frame. Rows are

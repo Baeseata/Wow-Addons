@@ -76,8 +76,8 @@ function ns.RegisterOptions()
 
         AddFeatureCheckbox(category,
             "DODO_INSPECT_EQUIPMENT_ILVL", "showEquipmentIlvl",
-            "Equipment slot item levels",
-            "Show the item level on each equipment slot of the character frame.",
+            "Equipment slot overlays",
+            "Show item level (top-left), enchant (bottom-left) and gems (bottom-right) on each equipment slot of the character frame.",
             ns.UpdateEquipment)
 
         AddFeatureCheckbox(category,
@@ -97,6 +97,18 @@ function ns.RegisterOptions()
             "Gear summary side panel",
             "Show the gear list panel docked to the right of the character frame.",
             ns.ApplySidePanelEnabled)
+
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_DURABILITY", "showDurability",
+            "Average durability",
+            "Show the average durability of your equipped gear at the bottom of the character stats pane.",
+            ns.UpdateDurability)
+
+        AddFeatureCheckbox(category,
+            "DODO_INSPECT_STAT_RATINGS", "showStatRatings",
+            "Secondary stat ratings",
+            "Append the rating value next to each secondary stat percentage in the character stats pane. Out of combat only -- secret in-combat values are never touched.",
+            ns.RefreshStatRatings)
 
         AddFeatureCheckbox(category,
             "DODO_INSPECT_INSPECT_PANEL", "showInspectPanel",

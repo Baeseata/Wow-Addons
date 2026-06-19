@@ -6,8 +6,10 @@
 ## 这是什么
 背包物品覆盖层 + 角色装备栏侧面板 + 目标信息行,Raider.IO 风格装等渐变。
 文件:Config(可调参数)/ Locales(本地化,唯一含非 ASCII)/ Gradient / ItemInfo /
-Overlay(物品按钮字串/图标覆盖层)/ Equipment(角色面板装等)/ Inspect(检视框装备覆盖层:
-装等+附魔+宝石)/ Bags / SidePanel(角色装备侧栏)/ InspectPanel(检视简化侧栏:部位+装等+四属性)/
+Overlay(物品按钮字串/图标覆盖层 + 共享 `SetEnchantAndGems`)/ Equipment(角色面板:装等+附魔+宝石)/
+Inspect(检视框装备覆盖层:装等+附魔+宝石)/ Bags / SidePanel(角色装备侧栏)/
+InspectPanel(检视简化侧栏)/ Durability(角色属性栏底部平均耐久)/
+StatRatings(强化属性栏:百分比+评级三列 + 装等渐变/小数)/
 TargetInfo(目标信息行)/ Options(ESC 设置 + `/dins`)/ Core。
 
 ## ⚠️ 头号坑:12.0 Secret Values —— 只在 TargetInfo.lua
@@ -38,10 +40,35 @@ tainted by 'DodoInspect'`。
 **战斗中属性**。`TargetInfo` 读**敌对目标**(高危,已全面加固);`Inspect`/`InspectPanel`
 读**被检视单位**(只能检视友方/同阵营 → 装备链接可读、非 secret),但仍 `issecretvalue`
 先挡(链接/装等/属性)做防御,与全局姿态一致。`Bags`/`Equipment`/`SidePanel`/`ItemInfo`
-只读**你自己的**物品(永不 secret)。插件不读任何战斗属性 API。现实终态:战场敌方只能
+只读**你自己的**物品(永不 secret)。**🆕 1.5.0 起 `StatRatings` 是唯一读战斗属性 API 的文件**
+(`GetCombatRating`;玩家自己的属性**仅战斗中 secret**)—— 进战斗直接 bail(根本不调用)+ `issecretvalue` 兜底
++ 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.4.0(2026-06-13 发布)
+## 当前状态:1.5.0(2026-06-19 发布)
+1.4.1 → **1.5.0**,三个新功能(都在角色面板):
+1. 🆕 **平均耐久度**(Durability.lua):属性栏底部一行 `耐久度 XX%`,红→黄→绿渐变。锚
+   `CharacterStatsPane` 底部,`Config.DURABILITY_*` 可调。开关 `showDurability`,四国语言
+   (Locales `durability`)。`GetInventoryItemDurability` 读自己装备(永不 secret),
+   `UPDATE_INVENTORY_DURABILITY` 刷新。
+2. 🆕 **强化属性三列 + 装等渐变/小数**(StatRatings.lua):强化属性行 = `部位 | 百分比 | 评级`
+   三列对齐(暴雪百分比左移 `Config.STAT_RATING_COL_W`,评级单独 FontString 右对齐,按
+   `STAT_COLORS`/`TERT_COLORS` 上色),百分比保留一位小数,物品等级用插件渐变 + 一位小数。
+   开关 `showStatRatings`。**⚠️ 读战斗属性 API(secret),见上 Secret 节**。坑:
+   - **帧池跨 category 复用**:强化属性的行 frame 下次刷新可能拿去显示主属性(急速→耐力),
+     加的评级/位移会泄漏过去。解法:每次刷新后 `C_Timer.After(0)` 调度一次**清扫**,把本轮没被
+     当强化属性刷新的行还原(隐藏评级、百分比挪回)。清扫**不依赖** `PaperDollFrame_UpdateStats`
+     的函数名(靠 setter hook 触发),稳。
+   - **绝不碰主属性**:只 hook 那 7 个强化属性 setter + `PaperDollFrame_SetItemLevel`,从不 hook
+     `PaperDollFrame_SetStat`(力量/耐力/护甲)。
+   - 暴击 setter 名两种拼法都试(`SetCritChance` / `SetCriticalChance`)。
+   - 百分比小数只在暴雪原始 `numericValue` 与已显示整数吻合(±1)时才改(防它不是百分比时显示错值)。
+     装等颜色用**内联色码写进文本**(非 `SetTextColor`),复用行被暴雪重写时自愈、不泄漏。
+3. 🆕 **角色装备栏附魔/宝石**(Equipment.lua):玩家自己的装备格现在和检视框一样显示附魔(左下)
+   + 宝石(右下)。复用既有开关 `showEquipmentIlvl`(标签改 "Equipment slot overlays")。抽出共享
+   `ns.SetEnchantAndGems`(Overlay.lua),Equipment 与 Inspect 共用保持同步。
+
+## 历史:1.4.0(2026-06-13 发布)
 1.3.1 → **1.4.0** 一波发布,含:
 1. 战场 secret 崩溃**全面修复**(TargetInfo.lua,见上)。
 2. ESC 设置面板顶部**版本号横幅**(Options.lua,`C_AddOns.GetAddOnMetadata` 读 TOC

@@ -1,7 +1,11 @@
 -- DodoInspect - Equipment.lua
--- Item level overlays on the character frame equipment slots.
--- Only the item level is shown here; tags and slot labels are a
--- bag-only concept.
+-- Gear overlays on the character frame equipment slots (the player's
+-- own gear), mirroring the inspect window (Inspect.lua):
+--   top-left:     item level (gradient colored)
+--   bottom-left:  enchant tag (green ok / red missing)
+--   bottom-right: gem icons
+-- Slot labels and type tags stay a bag-only concept. The player's own
+-- gear is never a secret value, so the link helpers need no guards.
 
 local _, ns = ...
 
@@ -25,15 +29,18 @@ local EQUIP_BUTTONS = {
 }
 
 function ns.UpdateEquipment()
-    -- when the toggle is off, the loop still runs with a nil item
-    -- level, which hides any text drawn before the toggle flipped
+    -- when the toggle is off, the loop still runs with nil data, which
+    -- hides anything drawn before the toggle flipped
     local enabled = ns.IsEnabled("showEquipmentIlvl")
     for _, name in ipairs(EQUIP_BUTTONS) do
         local button = _G[name]
         if button then
-            local ilvl
             local slotID = button:GetID()
-            if enabled and type(slotID) == "number" and slotID > 0 then
+            local ok = enabled and type(slotID) == "number" and slotID > 0
+
+            -- top-left: item level (hidden for junk-quality gear)
+            local ilvl
+            if ok then
                 local itemLoc = ItemLocation:CreateFromEquipmentSlot(slotID)
                 ilvl = ns.GetItemLevel(itemLoc)
                 if ilvl and ns.Config.HIDE_JUNK_QUALITY
@@ -42,6 +49,10 @@ function ns.UpdateEquipment()
                 end
             end
             ns.SetItemLevelText(button, ilvl)
+
+            -- bottom-left: enchant, bottom-right: gems
+            local link = ok and GetInventoryItemLink("player", slotID) or nil
+            ns.SetEnchantAndGems(button, slotID, link)
         end
     end
 end

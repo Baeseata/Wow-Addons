@@ -191,6 +191,29 @@ function ns.SetGemOverlay(button, gems, emptyCount)
     for i = shown + 1, #pool do pool[i]:Hide() end
 end
 
+-- Apply the enchant tag (bottom-left) and gem icons (bottom-right) to a
+-- gear button from its item link and inventory slot; pass link=nil to
+-- clear both. Shared by the character frame (Equipment.lua) and the
+-- inspect window (Inspect.lua). The caller passes a safe link (nil when
+-- secret); the player's own gear is never secret.
+function ns.SetEnchantAndGems(button, slotID, link)
+    if not link then
+        ns.SetEnchantTag(button, nil)
+        ns.SetGemOverlay(button, nil, 0)
+        return
+    end
+    local enchantID, gems = ns.ParseItemLink(link)
+    local enchState
+    if ns.IsEnchantableSlot(slotID, link) then
+        local on = enchantID and enchantID ~= "" and enchantID ~= "0"
+        enchState = on and "ok" or "missing"
+    end
+    ns.SetEnchantTag(button, enchState)
+    local stats = ns.GetStatsTable(link)
+    ns.SetGemOverlay(button, gems,
+        math.max(0, ns.CountTemplateSockets(stats) - #gems))
+end
+
 -- Hide every overlay this addon owns on a button.
 function ns.ClearAllOverlays(button)
     if not button then return end

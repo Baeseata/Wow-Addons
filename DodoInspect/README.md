@@ -37,7 +37,25 @@ Gear shows its item level in the top-left corner; everything else shows
 a type tag in the top-right instead, so the text stays short and clear
 of the stack count number.
 
-**Character frame**: item level on every equipment slot, same gradient.
+**Character frame**: on every equipment slot, the same overlays as the
+inspect window — item level (top-left, same gradient), enchant state
+(bottom-left, green when enchanted, red when an enchantable slot is
+empty) and gem icons (bottom-right).
+
+**Character stats pane** (the middle column of the character frame):
+
+- **Average durability** of your equipped gear at the bottom of the
+  pane, colored red (low) through yellow to green (full) for an
+  at-a-glance repair check.
+- The **Enhancement** rows become three aligned columns — label,
+  percentage and the underlying **rating** — with the rating colored to
+  match the side panel stats, and percentages shown to one decimal.
+- The **Item Level** number is recolored with the same gradient and
+  shown to one decimal.
+
+These read your own character only, and never touch a value while it is
+secret in combat: the percentages keep updating live, and the ratings
+refresh when you leave combat.
 
 **Gear summary side panel**, docked to the right of the character frame.
 One row per equipment slot:
@@ -108,8 +126,12 @@ game's own localization, so they always match your client language.
 All options live under **Esc > Options > AddOns > DodoInspect**:
 
 - **Language** for the slot labels and type tags (see Languages below).
-- **Equipment slot item levels**: the numbers on the character frame
-  equipment slots.
+- **Equipment slot overlays**: item level, enchant and gem markers on
+  the character frame equipment slots.
+- **Average durability**: the equipped durability readout at the bottom
+  of the character stats pane.
+- **Secondary stat ratings**: the percentage + rating columns and the
+  item level recolor in the character stats pane.
 - **Inspect window gear overlays**: item level, enchant and gem markers
   on each gear slot when inspecting another player.
 - **Bag overlays**: item levels, slot labels, BOE and type tags on the
@@ -145,7 +167,7 @@ center of the screen.
 
 ## Languages
 
-The slot labels and type tags ship in four languages: **English**
+The slot labels, type tags and durability label ship in four languages: **English**
 (default), **Chinese**, **French** and **Spanish**. Tags are kept to
 five characters or fewer so they fit a bag icon (JUNK / NUL / MALO,
 QST / QTE / MIS, FOOD / BOUF / COMI, and so on); French and Spanish
@@ -208,7 +230,9 @@ Copy the `DodoInspect` folder into
 | `Gradient.lua` | Raider.IO style color ramp and item level mapping |
 | `ItemInfo.lua` | Item data helpers (item level, bind state, quality, type) |
 | `Overlay.lua` | FontString management on item buttons |
-| `Equipment.lua` | Character frame equipment slots |
+| `Equipment.lua` | Character frame equipment slots (item level, enchant, gems) |
+| `Durability.lua` | Average equipped durability in the character stats pane |
+| `StatRatings.lua` | Stat rating columns + item level recolor in the stats pane |
 | `Inspect.lua` | Inspect window gear overlays (item level, enchant, gems) |
 | `Bags.lua` | Blizzard bag frames |
 | `SidePanel.lua` | Gear summary panel beside the character frame |
