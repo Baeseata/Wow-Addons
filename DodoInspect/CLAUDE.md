@@ -46,7 +46,7 @@ tainted by 'DodoInspect'`。
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.6.0(2026-06-20,本机开发,**未发布/未打 tag**)
+## 当前状态:1.6.0(2026-06-20 本机发布:main `1544146`,tag `DodoInspect-v1.6.0`,CF workflow 绿、产物 `DodoInspect-1.6.0.zip`)
 1.5.0 → **1.6.0**,两个新功能:
 1. 🆕 **两个侧栏字号可调**(选项里):角色侧栏(SidePanel)与检视侧栏(InspectPanel)以前
    共用 `Config.PANEL_FONT_SIZE`,现在各有一个 px 滑条(ESC 选项面板,`Settings.CreateSlider`,
