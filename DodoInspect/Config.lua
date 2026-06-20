@@ -146,7 +146,14 @@ ns.Config = {
     -- align across rows; column widths scale with the font size,
     -- and the panel width derives from the column layout.
     PANEL_ENABLED    = true,
+    -- Default font size for both gear panels (character side panel and
+    -- inspect side panel). Players can override each one independently
+    -- under Esc > Options > AddOns > DodoInspect; the override is stored
+    -- in SavedVariables and falls back to this default when unset. The
+    -- min / max bound the option sliders.
     PANEL_FONT_SIZE  = 18,
+    PANEL_FONT_MIN   = 8,
+    PANEL_FONT_MAX   = 36,
     -- Width of the item name column; names longer than this clip
     -- (the mouseover tooltip always has the full name).
     PANEL_NAME_WIDTH = 150,

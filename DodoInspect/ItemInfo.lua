@@ -112,14 +112,27 @@ end
 
 local function IsQuestItem(bagID, slot, classID)
     if classID == CLASS_QUESTITEM then return true end
-    -- also covers quest-starting items that are not class 12
-    if C_Container and type(C_Container.GetContainerItemQuestInfo) == "function" then
+    -- also covers quest-starting items that are not class 12. The
+    -- container query needs a real bag/slot; callers without one (the
+    -- guild bank, which is link-only) pass nil and rely on the classID.
+    if type(bagID) == "number" and type(slot) == "number"
+        and C_Container and type(C_Container.GetContainerItemQuestInfo) == "function" then
         local questInfo = C_Container.GetContainerItemQuestInfo(bagID, slot)
         if type(questInfo) == "table" and questInfo.isQuestItem then
             return true
         end
     end
     return false
+end
+
+-- Quality from an item link (3rd return of GetItemInfo), for the junk
+-- filter when no item location is available (the guild bank reads items
+-- by link only). nil while the item is still uncached.
+function ns.GetLinkQuality(itemLink)
+    if not itemLink then return nil end
+    local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+    if type(getInfo) ~= "function" then return nil end
+    return select(3, getInfo(itemLink))
 end
 
 -- Item type tag key for the top-left corner, or nil.

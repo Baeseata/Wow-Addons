@@ -2,7 +2,7 @@
 ## Title: DodoInspect
 ## Notes: Item level overlays for bags, the character frame and the inspect window, gear summary side panels and a target info line, with a Raider.IO style gradient.
 ## Author: Doodo
-## Version: 1.5.0
+## Version: 1.6.0
 ## SavedVariables: DodoInspectDB
 ## IconTexture: Interface\AddOns\DodoInspect\Media\Dodo.tga
 ## X-Category: Bags and Inventory
@@ -15,6 +15,7 @@ Overlay.lua
 Equipment.lua
 Inspect.lua
 Bags.lua
+Bank.lua
 SidePanel.lua
 Durability.lua
 StatRatings.lua

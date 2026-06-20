@@ -80,7 +80,7 @@ local NAME_W, TERT_W, TERT_RIGHT, ENCH_X, ENCH_W, SOCKET_X
 local SOCKET_SIZE, SOCKET_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
-    FS          = ns.Config.PANEL_FONT_SIZE
+    FS          = ns.SidePanelFontSize()
     SLOT_W      = math.floor(FS * 2.0)
     -- gap from the slot box to the centered stat grid; kept tight so
     -- the slot abbreviation sits close to the first stat (the 2-letter
@@ -241,12 +241,48 @@ end
 -- Row construction
 ------------------------------------------------------------------
 
+-- Re-apply every font-size-derived measurement (row size, column
+-- positions, fixed widths, socket icon size) to an existing row. Run
+-- once at creation and again whenever the panel font size changes, so
+-- rows are re-flowed in place rather than torn down and rebuilt. The
+-- hover hit frames track their targets via SetAllPoints, and the stat
+-- underlines re-anchor to their labels in UpdateRow.
+local function ApplyRowGeometry(row)
+    row:SetSize(PANEL_W - 12, ROW_H)
+    row.slot:SetWidth(SLOT_W)
+
+    for i = 1, #STAT_ORDER do
+        local fs = row.stats[i]
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", row, "LEFT", STAT_X + (i - 1) * STAT_STEP, 0)
+    end
+
+    row.ilvl:ClearAllPoints()
+    row.ilvl:SetPoint("LEFT", row, "LEFT", ILVL_X, 0)
+    row.ilvl:SetWidth(ILVL_W)
+
+    row.name:ClearAllPoints()
+    row.name:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
+    row.name:SetWidth(NAME_W)
+
+    row.tert:ClearAllPoints()
+    row.tert:SetPoint("RIGHT", row, "LEFT", TERT_RIGHT, 0)
+
+    row.ench:ClearAllPoints()
+    row.ench:SetPoint("LEFT", row, "LEFT", ENCH_X, 0)
+
+    for i = 1, MAX_SOCKETS do
+        local tex = row.sockets[i]
+        tex:SetSize(SOCKET_SIZE, SOCKET_SIZE)
+        tex:ClearAllPoints()
+        tex:SetPoint("LEFT", row, "LEFT", SOCKET_X + (i - 1) * SOCKET_STEP, 0)
+    end
+end
+
 local function CreateRow(parent, slotInfo)
-    local cfg = ns.Config
     local row = CreateFrame("Frame", nil, parent)
     row.slotID = slotInfo.id
     row.slotKey = slotInfo.key
-    row:SetSize(PANEL_W - 12, ROW_H)
 
     local function NewText(justify)
         local fs = row:CreateFontString(nil, "OVERLAY")
@@ -266,10 +302,9 @@ local function CreateRow(parent, slotInfo)
         return hit
     end
 
-    -- slot abbreviation
+    -- slot abbreviation (left edge of the row; width set by geometry)
     row.slot = NewText("LEFT")
     row.slot:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.slot:SetWidth(SLOT_W)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
     -- four-column secondary stat grid; center-anchored with natural
@@ -279,7 +314,6 @@ local function CreateRow(parent, slotInfo)
     row.statLines = {}
     for i = 1, #STAT_ORDER do
         local fs = NewText("CENTER")
-        fs:SetPoint("CENTER", row, "LEFT", STAT_X + (i - 1) * STAT_STEP, 0)
         row.stats[i] = fs
 
         local line = row:CreateTexture(nil, "OVERLAY")
@@ -292,13 +326,9 @@ local function CreateRow(parent, slotInfo)
 
     -- item level
     row.ilvl = NewText("RIGHT")
-    row.ilvl:SetPoint("LEFT", row, "LEFT", ILVL_X, 0)
-    row.ilvl:SetWidth(ILVL_W)
 
     -- item name, fixed width, clipped to a single line
     row.name = NewText("LEFT")
-    row.name:SetPoint("LEFT", row, "LEFT", NAME_X, 0)
-    row.name:SetWidth(NAME_W)
     if row.name.SetWordWrap then row.name:SetWordWrap(false) end
     if row.name.SetMaxLines then row.name:SetMaxLines(1) end
 
@@ -308,12 +338,10 @@ local function CreateRow(parent, slotInfo)
     -- tertiary stat tags (speed / leech / avoidance), right-aligned
     -- against the enchant column so a single tag sits snug next to it
     row.tert = NewText("RIGHT")
-    row.tert:SetPoint("RIGHT", row, "LEFT", TERT_RIGHT, 0)
     if row.tert.SetWordWrap then row.tert:SetWordWrap(false) end
 
     -- enchant tag, fixed column
     row.ench = NewText("LEFT")
-    row.ench:SetPoint("LEFT", row, "LEFT", ENCH_X, 0)
 
     row.enchHit = NewHit(OnEnchantEnter)
     row.enchHit:SetAllPoints(row.ench)
@@ -323,8 +351,6 @@ local function CreateRow(parent, slotInfo)
     row.socketHits = {}
     for i = 1, MAX_SOCKETS do
         local tex = row:CreateTexture(nil, "OVERLAY")
-        tex:SetSize(SOCKET_SIZE, SOCKET_SIZE)
-        tex:SetPoint("LEFT", row, "LEFT", SOCKET_X + (i - 1) * SOCKET_STEP, 0)
         row.sockets[i] = tex
 
         local hit = NewHit(OnSocketEnter)
@@ -332,6 +358,7 @@ local function CreateRow(parent, slotInfo)
         row.socketHits[i] = hit
     end
 
+    ApplyRowGeometry(row)
     return row
 end
 
@@ -601,6 +628,24 @@ function ns.ApplySidePanelEnabled()
     elseif panel then
         panel:Hide()
     end
+end
+
+-- Apply a changed panel font size live: recompute the geometry and
+-- re-flow the existing rows in place (no teardown, so it stays smooth
+-- while dragging the option slider). Builds the panel first if the font
+-- was changed before the character frame was ever opened.
+function ns.RebuildSidePanel()
+    if not panel then
+        ns.ApplySidePanelEnabled()
+        return
+    end
+    ComputeGeometry()
+    panel:SetWidth(PANEL_W)
+    for _, row in ipairs(rows) do
+        ApplyRowGeometry(row)
+    end
+    LayoutRows()
+    ns.UpdateSidePanel()
 end
 
 function ns.UpdateSidePanel()

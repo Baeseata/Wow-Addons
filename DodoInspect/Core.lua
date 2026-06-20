@@ -12,6 +12,28 @@ function ns.IsEnabled(flag)
     return not db or db[flag] ~= false
 end
 
+-- Per-panel font size, read from SavedVariables with the Config default
+-- as the fallback, clamped to the configured bounds. The character side
+-- panel (SidePanel) and the inspect side panel (InspectPanel) each have
+-- their own override so they can be sized independently from the options
+-- panel; both default to Config.PANEL_FONT_SIZE when unset.
+local function PanelFontSize(dbKey)
+    local cfg = ns.Config
+    local db = DodoInspectDB
+    local size = (db and tonumber(db[dbKey])) or cfg.PANEL_FONT_SIZE
+    if size < cfg.PANEL_FONT_MIN then size = cfg.PANEL_FONT_MIN end
+    if size > cfg.PANEL_FONT_MAX then size = cfg.PANEL_FONT_MAX end
+    return size
+end
+
+function ns.SidePanelFontSize()
+    return PanelFontSize("sidePanelFontSize")
+end
+
+function ns.InspectPanelFontSize()
+    return PanelFontSize("inspectPanelFontSize")
+end
+
 -- Everything anchored to the character frame: the equipment slot
 -- overlays and the gear summary side panel.
 function ns.UpdateCharacterViews()

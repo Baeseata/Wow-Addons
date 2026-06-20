@@ -3,11 +3,13 @@
 
 local _, ns = ...
 
-local function UpdateItemButton(itemButton, frame)
-    local bagID = (itemButton.GetBagID and itemButton:GetBagID())
-        or (frame.GetID and frame:GetID())
-    local slot = (itemButton.GetID and itemButton:GetID()) or nil
-
+-- Draw (or clear) every overlay on a single container item button from
+-- its resolved bag/slot. Shared by the Blizzard bags and the player
+-- bank (the new bank tabs are ordinary C_Container containers, so the
+-- whole bag treatment -- item level, slot label, BOE/set and type tags
+-- -- applies unchanged). The guild bank is link-only and uses its own
+-- path in Bank.lua.
+function ns.ApplyItemOverlay(itemButton, bagID, slot)
     if type(bagID) ~= "number" or type(slot) ~= "number" or slot <= 0 then
         ns.ClearAllOverlays(itemButton)
         return
@@ -39,7 +41,14 @@ local function UpdateItemButton(itemButton, frame)
     ns.SetTypeText(itemButton, nil)
 
     local itemLoc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
-    ns.SetItemLevelText(itemButton, ns.GetItemLevel(itemLoc))
+    local ilvl = ns.GetItemLevel(itemLoc)
+    -- bags and the character bank resolve through ItemLocation; some
+    -- account (warband) bank containers do not, so fall back to the
+    -- link's effective level there. Never triggers for the bags.
+    if not ilvl and ns.GetLinkItemLevel then
+        ilvl = ns.GetLinkItemLevel(itemLink)
+    end
+    ns.SetItemLevelText(itemButton, ilvl)
 
     ns.SetSlotText(itemButton, ns.GetSlotLabel(itemLink))
 
@@ -54,6 +63,13 @@ local function UpdateItemButton(itemButton, frame)
             ns.SetTagText(itemButton, nil)
         end
     end
+end
+
+local function UpdateItemButton(itemButton, frame)
+    local bagID = (itemButton.GetBagID and itemButton:GetBagID())
+        or (frame.GetID and frame:GetID())
+    local slot = (itemButton.GetID and itemButton:GetID()) or nil
+    ns.ApplyItemOverlay(itemButton, bagID, slot)
 end
 
 function ns.UpdateBagFrame(frame)

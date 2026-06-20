@@ -25,7 +25,7 @@ local FS
 local SLOT_W, ILVL_X, ILVL_W, STAT_X, STAT_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
-    FS        = ns.Config.PANEL_FONT_SIZE
+    FS        = ns.InspectPanelFontSize()
     SLOT_W    = math.floor(FS * 2.0)
     -- item level column, between the slot box and the stat grid
     ILVL_X    = SLOT_W + math.floor(FS * 0.3)
@@ -44,11 +44,30 @@ local panel, rows
 -- Row construction
 ------------------------------------------------------------------
 
+-- Re-apply every font-size-derived measurement (row size, column
+-- positions, fixed widths) to an existing row. Run at creation and again
+-- whenever the panel font size changes, so rows re-flow in place instead
+-- of being torn down. The stat underlines re-anchor to their labels in
+-- UpdateRow.
+local function ApplyRowGeometry(row)
+    row:SetSize(PANEL_W - 12, ROW_H)
+    row.slot:SetWidth(SLOT_W)
+
+    row.ilvl:ClearAllPoints()
+    row.ilvl:SetPoint("LEFT", row, "LEFT", ILVL_X, 0)
+    row.ilvl:SetWidth(ILVL_W)
+
+    for i = 1, #ns.STAT_ORDER do
+        local fs = row.stats[i]
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", row, "LEFT", STAT_X + (i - 1) * STAT_STEP, 0)
+    end
+end
+
 local function CreateRow(parent, slotInfo)
     local row = CreateFrame("Frame", nil, parent)
     row.slotID = slotInfo.id
     row.slotKey = slotInfo.key
-    row:SetSize(PANEL_W - 12, ROW_H)
 
     local function NewText(justify)
         local fs = row:CreateFontString(nil, "OVERLAY")
@@ -59,23 +78,19 @@ local function CreateRow(parent, slotInfo)
         return fs
     end
 
-    -- slot abbreviation
+    -- slot abbreviation (left edge of the row; width set by geometry)
     row.slot = NewText("LEFT")
     row.slot:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.slot:SetWidth(SLOT_W)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
     -- item level (gradient colored), between the slot and the stats
     row.ilvl = NewText("RIGHT")
-    row.ilvl:SetPoint("LEFT", row, "LEFT", ILVL_X, 0)
-    row.ilvl:SetWidth(ILVL_W)
 
     -- four-column secondary stat grid with dominant-stat underline
     row.stats = {}
     row.statLines = {}
     for i = 1, #ns.STAT_ORDER do
         local fs = NewText("CENTER")
-        fs:SetPoint("CENTER", row, "LEFT", STAT_X + (i - 1) * STAT_STEP, 0)
         row.stats[i] = fs
 
         local line = row:CreateTexture(nil, "OVERLAY")
@@ -86,6 +101,7 @@ local function CreateRow(parent, slotInfo)
         row.statLines[i] = line
     end
 
+    ApplyRowGeometry(row)
     return row
 end
 
@@ -260,6 +276,24 @@ function ns.ApplyInspectPanelEnabled()
     elseif panel then
         panel:Hide()
     end
+end
+
+-- Apply a changed panel font size live: recompute the geometry and
+-- re-flow the existing rows in place. Builds the panel first if it does
+-- not exist yet (the inspect UI is load-on-demand, so the font may be
+-- changed before anyone is ever inspected).
+function ns.RebuildInspectPanel()
+    if not panel then
+        ns.ApplyInspectPanelEnabled()
+        return
+    end
+    ComputeGeometry()
+    panel:SetWidth(PANEL_W)
+    for _, row in ipairs(rows) do
+        ApplyRowGeometry(row)
+    end
+    LayoutRows()
+    ns.UpdateInspectPanel()
 end
 
 function ns.UpdateInspectPanel()

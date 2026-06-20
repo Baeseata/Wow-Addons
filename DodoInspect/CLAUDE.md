@@ -7,7 +7,8 @@
 背包物品覆盖层 + 角色装备栏侧面板 + 目标信息行,Raider.IO 风格装等渐变。
 文件:Config(可调参数)/ Locales(本地化,唯一含非 ASCII)/ Gradient / ItemInfo /
 Overlay(物品按钮字串/图标覆盖层 + 共享 `SetEnchantAndGems`)/ Equipment(角色面板:装等+附魔+宝石)/
-Inspect(检视框装备覆盖层:装等+附魔+宝石)/ Bags / SidePanel(角色装备侧栏)/
+Inspect(检视框装备覆盖层:装等+附魔+宝石)/ Bags(背包覆盖 + 共享 `ns.ApplyItemOverlay`)/
+Bank(玩家银行复用 ApplyItemOverlay + 公会银行链接版覆盖)/ SidePanel(角色装备侧栏)/
 InspectPanel(检视简化侧栏)/ Durability(角色属性栏底部平均耐久)/
 StatRatings(强化属性栏:百分比+评级三列 + 装等渐变/小数)/
 TargetInfo(目标信息行)/ Options(ESC 设置 + `/dins`)/ Core。
@@ -39,13 +40,42 @@ tainted by 'DodoInspect'`。
 **Secret 审计结论(2026-06-13)**:secret value 只来自**敌对单位身份**(战场/竞技场)+
 **战斗中属性**。`TargetInfo` 读**敌对目标**(高危,已全面加固);`Inspect`/`InspectPanel`
 读**被检视单位**(只能检视友方/同阵营 → 装备链接可读、非 secret),但仍 `issecretvalue`
-先挡(链接/装等/属性)做防御,与全局姿态一致。`Bags`/`Equipment`/`SidePanel`/`ItemInfo`
-只读**你自己的**物品(永不 secret)。**🆕 1.5.0 起 `StatRatings` 是唯一读战斗属性 API 的文件**
+先挡(链接/装等/属性)做防御,与全局姿态一致。`Bags`/`Bank`/`Equipment`/`SidePanel`/`ItemInfo`
+只读**你自己的**物品(玩家银行=自己的容器;公会银行=公会物品链接,均**永不 secret**)。**🆕 1.5.0 起 `StatRatings` 是唯一读战斗属性 API 的文件**
 (`GetCombatRating`;玩家自己的属性**仅战斗中 secret**)—— 进战斗直接 bail(根本不调用)+ `issecretvalue` 兜底
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.5.0(2026-06-19 发布)
+## 当前状态:1.6.0(2026-06-20,本机开发,**未发布/未打 tag**)
+1.5.0 → **1.6.0**,两个新功能:
+1. 🆕 **两个侧栏字号可调**(选项里):角色侧栏(SidePanel)与检视侧栏(InspectPanel)以前
+   共用 `Config.PANEL_FONT_SIZE`,现在各有一个 px 滑条(ESC 选项面板,`Settings.CreateSlider`,
+   范围 `Config.PANEL_FONT_MIN`..`MAX` = 8..36)。存 `DodoInspectDB.sidePanelFontSize` /
+   `inspectPanelFontSize`,未设=Config 默认。读取走 `ns.SidePanelFontSize()` /
+   `ns.InspectPanelFontSize()`(Core.lua,带 clamp),两个面板 `ComputeGeometry` 改用它们。
+   **实时预览不重建帧**:把行的几何(SetPoint/SetWidth/SetSize)抽到 `ApplyRowGeometry(row)`,
+   CreateRow 末尾调一次;滑条变化触发 `ns.RebuildSidePanel` / `ns.RebuildInspectPanel`,
+   重算几何 + 对**现有行**逐个 ApplyRowGeometry(命中框 `SetAllPoints` 自动跟随,下划线在
+   UpdateRow 重锚)——拖动时零帧创建,不泄漏。Settings API 无文本输入控件,故用滑条带 " px" 标签
+   (`MinimalSliderWithSteppersMixin.Label.Right` + formatter,带存在性兜底)。
+2. 🆕 **银行覆盖层**(Bank.lua,开关 `showBankOverlays`,默认开):
+   - **玩家银行**(TWW 新银行 `BankPanel` / `AccountBankPanel`):每件物品 button 有
+     `GetBankTabID()`+`GetContainerSlotID()`=合法 C_Container 容器坐标 → **直接复用** Bags 抽出的
+     `ns.ApplyItemOverlay`,装等/部位/BOE/套装/类型标签全套和背包一致。刷新靠 hook 面板的
+     `GenerateItemSlotsForSelectedTab`+`RefreshAllItemsForSelectedTab`(切页/移动跟随)+
+     `BANKFRAME_OPENED` 兜底重画。Hook 幂等(本地 `bankHooked` 表)。
+   - **公会银行**(LoD `Blizzard_GuildBankUI`,`GuildBankFrame`):**不是** C_Container,只能按
+     **链接**做 → 装等(`ns.GetLinkItemLevel`)+部位(`ns.GetSlotLabel`)+类型标签;BOE/套装跳过
+     (公会银行不暴露 per-instance 绑定态)。遍历 `GuildBankFrame.Columns[c].Buttons[r]`(回退老
+     全局名 `GuildBankColumn{c}Button{r}`),button `:GetID()` = 1..98 slot index,
+     `GetGuildBankItemLink(GetCurrentGuildBankTab(), index)`。只在 `frame.mode=="bank"`(物品页,
+     非记账页)画。Hook `GuildBankFrame:Update`(回退老全局 `GuildBankFrame_Update`)+
+     `GUILDBANKBAGSLOTS_CHANGED`(异步查询回来重画)。
+   - **配套抽取**:`ns.ApplyItemOverlay`(Bags.lua,背包/玩家银行共用,内含 ItemLocation 失败时
+     回退链接装等——只在仓库容器触发,背包永不触发);`ns.GetLinkQuality`(ItemInfo.lua);
+     `IsQuestItem` 加 nil-safe(公会银行无 bag/slot,传 nil 时只靠 classID)。
+
+## 历史:1.5.0(2026-06-19 发布)
 1.4.1 → **1.5.0**,三个新功能(都在角色面板):
 1. 🆕 **平均耐久度**(Durability.lua):属性栏底部一行 `耐久度 XX%`,红→黄→绿渐变。锚
    `CharacterStatsPane` 底部,`Config.DURABILITY_*` 可调。开关 `showDurability`,四国语言
@@ -96,7 +126,9 @@ Inspect 导出 `ns.GetLinkItemLevel`(检视装等按**链接**读,`ItemLocation`
 - 背包标签 & 格子缩写字号 = `*_FONT_SIZE + ns.L.sizeBump`(per-locale:cn **+2**、
   其它 **−2**)。这是 CJK-only 字号调整的范式。tag 最多 4 拉丁 / 2 CJK 字符。
 - 侧栏布局 = `ComputeGeometry` 里的**累加链**(全是 FS 倍数);改一个间距,它右边所有列
-  整体平移、`PANEL_W` 跟着变。
+  整体平移、`PANEL_W` 跟着变。`FS` 现在来自 `ns.SidePanelFontSize()` / `ns.InspectPanelFontSize()`
+  (DB 覆盖 `Config.PANEL_FONT_SIZE`,clamp 到 `PANEL_FONT_MIN/MAX`),不再直接读 Config。
+  字号变了走 `RebuildSidePanel`/`RebuildInspectPanel`(重算几何 + ApplyRowGeometry 复用现有行)。
 - 目标信息行的文字跟**客户端语言**(种族/职业/专精来自游戏本地化),addon locale
   只决定字体 + 背包标签翻译。
 

@@ -45,6 +45,35 @@ local function AddFeatureCheckbox(category, variable, dbKey, label, tooltip, onC
     Settings.CreateCheckbox(category, setting, tooltip)
 end
 
+-- One px-value slider per panel font size, stored in DodoInspectDB[dbKey]
+-- (absent = the Config default). The value is in font pixels, bounded by
+-- Config.PANEL_FONT_MIN/MAX; onChanged re-flows the affected panel live.
+local function AddFontSlider(category, variable, dbKey, label, tooltip, onChanged)
+    local default = ns.Config.PANEL_FONT_SIZE
+    local setting = Settings.RegisterProxySetting(
+        category,
+        variable,
+        Settings.VarType.Number,
+        label,
+        default,
+        function()
+            local db = DodoInspectDB
+            return (db and tonumber(db[dbKey])) or default
+        end,
+        function(value)
+            DodoInspectDB[dbKey] = math.floor((tonumber(value) or default) + 0.5)
+            onChanged()
+        end
+    )
+    local options = Settings.CreateSliderOptions(
+        ns.Config.PANEL_FONT_MIN, ns.Config.PANEL_FONT_MAX, 1)
+    if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right,
+            function(value) return tostring(math.floor(value + 0.5)) .. " px" end)
+    end
+    Settings.CreateSlider(category, setting, options, tooltip)
+end
+
 -- Register the addon category in the modern Settings UI. Wrapped in
 -- pcall so a Settings API change can never break the addon itself;
 -- the slash command below keeps working either way.
@@ -93,10 +122,22 @@ function ns.RegisterOptions()
             ns.UpdateAllVisible)
 
         AddFeatureCheckbox(category,
+            "DODO_INSPECT_BANK_OVERLAYS", "showBankOverlays",
+            "Bank overlays",
+            "Show the same overlays on the player bank and the guild bank. The guild bank shows item level, slot label and type tags (it does not expose the per-item data needed for BOE / equipment-set tags).",
+            ns.ApplyBankEnabled)
+
+        AddFeatureCheckbox(category,
             "DODO_INSPECT_SIDE_PANEL", "showSidePanel",
             "Gear summary side panel",
             "Show the gear list panel docked to the right of the character frame.",
             ns.ApplySidePanelEnabled)
+
+        AddFontSlider(category,
+            "DODO_INSPECT_SIDE_PANEL_FONT", "sidePanelFontSize",
+            "Side panel font size",
+            "Font size, in pixels, of the gear summary side panel on the character frame. The panel layout scales to match.",
+            ns.RebuildSidePanel)
 
         AddFeatureCheckbox(category,
             "DODO_INSPECT_DURABILITY", "showDurability",
@@ -115,6 +156,12 @@ function ns.RegisterOptions()
             "Inspect window gear panel",
             "Show a simplified gear panel (stats, enchants, gems) docked to the right of the inspect window.",
             ns.ApplyInspectPanelEnabled)
+
+        AddFontSlider(category,
+            "DODO_INSPECT_INSPECT_PANEL_FONT", "inspectPanelFontSize",
+            "Inspect panel font size",
+            "Font size, in pixels, of the gear panel docked to the right of the inspect window. The panel layout scales to match.",
+            ns.RebuildInspectPanel)
 
         AddFeatureCheckbox(category,
             "DODO_INSPECT_TARGET_INFO", "showTargetInfo",
