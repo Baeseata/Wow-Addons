@@ -117,17 +117,28 @@ ns.Config = {
     GEM_OVL_STEP        = 13, -- spacing between gem icons (grows left)
 
     ------------------------------------------------------------------
-    -- Average durability readout (bottom of the stats pane)
+    -- Average durability readout (merged into the item-level row)
     ------------------------------------------------------------------
     -- Mean durability across equipped items that have it (armor and
-    -- weapons), colored red (low) -> yellow -> green (full). Anchored
-    -- to the bottom of the character stats pane (the middle column),
-    -- in the gap below the enhancement stats; nudge with the offsets.
-    DURABILITY_FONT_SIZE  = 16,
-    DURABILITY_FONT_FLAGS = "OUTLINE",
-    DURABILITY_POINT      = "BOTTOM",
-    DURABILITY_X          = 0,
-    DURABILITY_Y          = 14,
+    -- weapons). Blizzard's separate item level number is hidden and
+    -- replaced by one centered line on the same row, "286.1 | 88%", so
+    -- the item level and the durability share a single size. The item
+    -- level is gold; the durability percent is colored red (low) ->
+    -- yellow -> green (full). The line auto-shrinks (down to
+    -- _MIN_FONT_SIZE) only if it would ever exceed the row width.
+    DURABILITY_FONT_SIZE      = 16,
+    DURABILITY_MIN_FONT_SIZE  = 9,
+    DURABILITY_FONT_FLAGS     = "OUTLINE",
+    DURABILITY_MAX_WIDTH      = 110, -- fallback width if the row can't be measured
+    DURABILITY_X              = 0,   -- horizontal nudge from center
+    DURABILITY_Y              = 0,   -- vertical nudge
+    -- Separator between the item level and the durability percent. Kept
+    -- as a byte-escape so this file stays ASCII-only (raw non-ASCII lives
+    -- only in Locales.lua). Current = U+FF5C fullwidth vertical, which is
+    -- centered, unlike a plain "|" pipe which renders low. Other options:
+    -- U+2502 light "\226\148\130", U+2503 heavy "\226\148\131",
+    -- U+2016 double "\226\128\150".
+    DURABILITY_SEPARATOR      = "\239\189\156",
 
     ------------------------------------------------------------------
     -- Secondary stat ratings (extra column in the stats pane)

@@ -44,9 +44,10 @@ empty) and gem icons (bottom-right).
 
 **Character stats pane** (the middle column of the character frame):
 
-- **Average durability** of your equipped gear at the bottom of the
-  pane, colored red (low) through yellow to green (full) for an
-  at-a-glance repair check.
+- **Average durability** of your equipped gear, merged onto the item
+  level row as a single centered line, `286.1 | 88%` (item level in
+  gold, durability colored red through yellow to green for an
+  at-a-glance repair check).
 - The **Enhancement** rows become three aligned columns — label,
   percentage and the underlying **rating** — with the rating colored to
   match the side panel stats, and percentages shown to one decimal.
@@ -128,8 +129,8 @@ All options live under **Esc > Options > AddOns > DodoInspect**:
 - **Language** for the slot labels and type tags (see Languages below).
 - **Equipment slot overlays**: item level, enchant and gem markers on
   the character frame equipment slots.
-- **Average durability**: the equipped durability readout at the bottom
-  of the character stats pane.
+- **Average durability**: the durability readout merged onto the item
+  level row of the character stats pane.
 - **Secondary stat ratings**: the percentage + rating columns and the
   item level recolor in the character stats pane.
 - **Inspect window gear overlays**: item level, enchant and gem markers
@@ -214,8 +215,8 @@ Beyond the options panel, everything else is constants in `Config.lua`
 - `STAT_RATING_COL_W`: width reserved for the rating column in the
   character stats pane (raise it if very large ratings touch the
   percentage, lower it to pull the two columns together).
-- `DURABILITY_*`: font size, anchor point and offset of the average
-  durability readout.
+- `DURABILITY_*`: font size, separator character and offsets of the
+  durability readout merged onto the item level row.
 - Font sizes, anchor corners and colors for each overlay text.
 
 Edit, save, then `/reload` in game.
@@ -236,7 +237,7 @@ Copy the `DodoInspect` folder into
 | `ItemInfo.lua` | Item data helpers (item level, bind state, quality, type) |
 | `Overlay.lua` | FontString management on item buttons |
 | `Equipment.lua` | Character frame equipment slots (item level, enchant, gems) |
-| `Durability.lua` | Average equipped durability in the character stats pane |
+| `Durability.lua` | Average durability merged onto the item level row |
 | `StatRatings.lua` | Stat rating columns + item level recolor in the stats pane |
 | `Inspect.lua` | Inspect window gear overlays (item level, enchant, gems) |
 | `Bags.lua` | Blizzard bag frames |

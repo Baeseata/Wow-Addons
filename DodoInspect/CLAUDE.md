@@ -9,7 +9,7 @@
 Overlay(物品按钮字串/图标覆盖层 + 共享 `SetEnchantAndGems`)/ Equipment(角色面板:装等+附魔+宝石)/
 Inspect(检视框装备覆盖层:装等+附魔+宝石)/ Bags(背包覆盖 + 共享 `ns.ApplyItemOverlay`)/
 Bank(玩家银行复用 ApplyItemOverlay + 公会银行链接版覆盖)/ SidePanel(角色装备侧栏)/
-InspectPanel(检视简化侧栏)/ Durability(角色属性栏底部平均耐久)/
+InspectPanel(检视简化侧栏)/ Durability(平均耐久并入物品等级行 `286.1 ｜ 88%`)/
 StatRatings(强化属性栏:百分比+评级三列 + 装等渐变/小数)/
 TargetInfo(目标信息行)/ Options(ESC 设置 + `/dins`)/ Core。
 
@@ -46,7 +46,25 @@ tainted by 'DodoInspect'`。
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.6.0(2026-06-20 本机发布:main `1544146`,tag `DodoInspect-v1.6.0`,CF workflow 绿、产物 `DodoInspect-1.6.0.zip`)
+## 当前状态:1.6.1(2026-06-21 本机发布)
+1.6.0 → **1.6.1**:**平均耐久度并入物品等级行**(用户要求,更美观)。
+- 不再单独占属性栏底部一行;改成把暴雪的物品等级数字**藏掉**,在**同一行**
+  (`CharacterStatsPane.ItemLevelFrame`)用一个**居中**的合并字串替代:`286.1 ｜ 88%`
+  (物品等级金色 `|cffffd200` + 耐久百分比红→黄→绿 `|cffRRGGBB`,中间**全角竖线 U+FF5C**)。
+- 单一 FontString → 物品等级与耐久**字号一致**(修了之前"装等偏小")。分隔符在字串自身白色,
+  可改 `Config.DURABILITY_SEPARATOR`(**字节转义**存,Config.lua 仍纯 ASCII;默认 `\239\189\156`=U+FF5C)。
+- 实现:`hooksecurefunc("PaperDollFrame_SetItemLevel", …)`(仅 `unit=="player"` 且 statFrame==本 pane 的
+  ItemLevelFrame)里重渲染;读暴雪 `ItemLevelFrame.Value:GetText()` 拿装等文本 → `Value:Hide()` 藏原数字 →
+  自己的居中 FontString 显示合并行。耐久变化(repair)仍走原 `UPDATE_INVENTORY_DURABILITY` →
+  `UpdateAllVisible` → `UpdateDurability` 路径刷新。关 `showDurability` 时 `Value:Show()` 还原、隐藏合并行。
+- Config 耐久段重写:**去掉** `DURABILITY_POINT`;**新增** `DURABILITY_MIN_FONT_SIZE` / `MAX_WIDTH` /
+  `SEPARATOR`;`X/Y` 改为相对居中的微调。安全:仍只读自己装备 + 自己的物品等级文本,**永不 secret**。
+- 走位踩坑(留给后人):一开始想塞进**两把武器格中间**的空隙——结果 12.0 主手/副手是**紧贴的**
+  (实测 gap=5px),字被压成 1px 宽=隐形。教训:角色面板底部那俩武器格没有宽空隙;别往那放。
+  (定位手段:临时 `Debug.lua` 丢几条带标签彩条 + 打印 slot 坐标/gap/`ItemLevelFrame.Value` 状态,
+  一次 reload 截图就看清,定位完即删。)
+
+## 历史:1.6.0(2026-06-20 发布:main `1544146`,tag `DodoInspect-v1.6.0`,CF 产物 `DodoInspect-1.6.0.zip`)
 1.5.0 → **1.6.0**,两个新功能:
 1. 🆕 **两个侧栏字号可调**(选项里):角色侧栏(SidePanel)与检视侧栏(InspectPanel)以前
    共用 `Config.PANEL_FONT_SIZE`,现在各有一个 px 滑条(ESC 选项面板,`Settings.CreateSlider`,
