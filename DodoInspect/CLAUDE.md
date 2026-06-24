@@ -9,6 +9,7 @@
 Overlay(物品按钮字串/图标覆盖层 + 共享 `SetEnchantAndGems`)/ Equipment(角色面板:装等+附魔+宝石)/
 Inspect(检视框装备覆盖层:装等+附魔+宝石)/ Bags(背包覆盖 + 共享 `ns.ApplyItemOverlay`)/
 Bank(玩家银行复用 ApplyItemOverlay + 公会银行链接版覆盖)/ SidePanel(角色装备侧栏)/
+StatPriority(属性优先级行 + 英雄天赋检测; 数据在 Data/StatPriority.lua)/
 InspectPanel(检视简化侧栏)/ Durability(平均耐久并入物品等级行 `286.1 ｜ 88%`)/
 StatRatings(强化属性栏:百分比+评级三列 + 装等渐变/小数)/
 TargetInfo(目标信息行)/ Options(ESC 设置 + `/dins`)/ Core。
@@ -46,7 +47,33 @@ tainted by 'DodoInspect'`。
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.6.1(2026-06-21 本机发布)
+## 当前状态:1.7.0(2026-06-24 本机发布)
+1.6.1 → **1.7.0**:新增 **PvE 属性优先级行**(角色侧栏 + 检视侧栏顶部),按**英雄天赋**(build)区分。
+- **显示**:侧栏最上方一行,用和下面属性格子**同一套缩写 + 颜色**(`ns.L.stats` + `Config.STAT_COLORS`),
+  `>` 分隔、`=` 表示约等价(tie group)。团本=大米合一行;不同则分两行带 `团`/`米` 标签。顶部预留区高度
+  写进 `panel.dodoPriorityHeight`,行块**紧贴 header 顶对齐**(SidePanel/InspectPanel 的 LayoutRows 都改;
+  无 header 时仍居中)。开关 `showStatPriority`。header 字号跟 `FS`。
+- **tooltip**:全名(游戏全局 `STAT_CRITICAL_STRIKE` 等,四语免费)+ 软上限(结构化 `softcap={haste=20}` 套
+  本地化模板)+ `构建: <英雄天赋名>` + 来源 + 免责声明。**无逐专精散文**,只 8 个模板串进 Locales
+  (`priTitle/priRaid/priMythic/priSame/priSoftcap/priSource/priDisclaimer/priBuild`,fr/es 无重音)。
+- **数据**:`Data/StatPriority.lua` 按 **specID** 索引,**40 专精全覆盖**。order = stat key 数组,子数组 =
+  tie group;`mythic` 与 raid 相同则省略;`softcap` 仅在有具体数字时写。来源/日期是全局
+  `ns.STAT_PRIORITY_SOURCE/_DATE`(换季只改一处)。文件**纯 ASCII**(非 ASCII 只在 Locales)。
+- **build-aware(英雄天赋)**:专精条目可带 `builds = { [subTreeID] = { raid=…, mythic=…, softcap=… } }`,
+  `Resolve(specID, subTreeID)` 命中 build 用其(自包含,不继承默认 mythic/softcap),否则用默认。目前 6 个:
+  血DK(Deathbringer 33 / San'layn 31)、生存猎(Sentinel 42 / Pack Leader 43)、暗牧(Voidweaver 18 /
+  Archon 19)、增强萨(Totemic 54 / Stormbringer 55)、噬灭DH(Annihilator 124 / Void-Scarred 126)、
+  奶骑(Herald 50 / Lightsmith 49)。subTreeID 取自 wago.tools `db2/TraitSubTree`,已游戏内验证(DK+奶骑)。
+- **英雄天赋 API**(都 `AllowedWhenUntainted`,非 secret):
+  - 自己:`C_ClassTalents.GetActiveHeroTalentSpec()` → subTreeID;名字 `C_Traits.GetSubTreeInfo(
+    C_ClassTalents.GetActiveConfigID(), subTreeID).name`。刷新事件 `TRAIT_CONFIG_UPDATED`(Core 已注册)。
+  - 检视别人:检视配置 `configID = -1`,遍历 `GetConfigInfo(-1).treeIDs` → `GetTreeNodes` →
+    `GetNodeInfo(-1, node)` 找 `subTreeActive` 节点取 `subTreeID`(`ns.InspectHeroSubTree`)。友方非 secret。
+- **12.0 新专精**:恶魔猎手第三专精 **Devourer(噬灭, specID 1480)** —— 虚空系**智力**远程 DPS,吃法系装备。
+  全游戏现为 **40 专精**(39+1),其它职业无增改。`ns.PlayerSpecID`/`ns.InspectSpecID` 走 specID。
+- **换季维护**:重抓各专精 order(团/米/tie)+ 校验 `subTreeID`(若 Blizzard 重排)+ bump `STAT_PRIORITY_DATE`。
+
+## 历史:1.6.1(2026-06-21 本机发布)
 1.6.0 → **1.6.1**:**平均耐久度并入物品等级行**(用户要求,更美观)。
 - 不再单独占属性栏底部一行;改成把暴雪的物品等级数字**藏掉**,在**同一行**
   (`CharacterStatsPane.ItemLevelFrame`)用一个**居中**的合并字串替代:`286.1 ｜ 88%`

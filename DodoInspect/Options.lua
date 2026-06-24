@@ -140,6 +140,12 @@ function ns.RegisterOptions()
             ns.RebuildSidePanel)
 
         AddFeatureCheckbox(category,
+            "DODO_INSPECT_STAT_PRIORITY", "showStatPriority",
+            "Stat priority line",
+            "Show the current spec's PvE secondary-stat priority (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. Hover it for soft caps and the source. Only specs with data show a line.",
+            ns.ApplyStatPriorityEnabled)
+
+        AddFeatureCheckbox(category,
             "DODO_INSPECT_DURABILITY", "showDurability",
             "Average durability",
             "Show the average durability of your equipped gear at the bottom of the character stats pane.",

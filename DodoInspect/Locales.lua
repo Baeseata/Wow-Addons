@@ -78,6 +78,15 @@ ns.Locales = {
             avoidance = "AV",
         },
         enchant = "EN",
+        -- stat priority (top of the gear side panel)
+        priTitle   = "Stat Priority",
+        priRaid    = "Raid",
+        priMythic  = "M+",
+        priSame    = "Raid and M+ are identical",
+        priSoftcap = "%s soft cap ~%d%%",
+        priSource  = "Source: %s, %s",
+        priDisclaimer = "Aggregated from public guides; for reference only, not a personal opinion, and not guaranteed accurate.",
+        priBuild      = "Build: %s",
     },
 
     cn = {
@@ -132,6 +141,14 @@ ns.Locales = {
             avoidance = "避",
         },
         enchant = "附",
+        priTitle   = "属性优先级",
+        priRaid    = "团",
+        priMythic  = "米",
+        priSame    = "团本与大米相同",
+        priSoftcap = "%s软上限~%d%%",
+        priSource  = "来源: %s, %s",
+        priDisclaimer = "整理自公开攻略，仅供参考，不代表个人观点，不保证完全准确。",
+        priBuild      = "构建: %s",
     },
 
     fr = {
@@ -186,6 +203,14 @@ ns.Locales = {
             avoidance = "EV", -- evitement
         },
         enchant = "EN", -- enchantement
+        priTitle   = "Priorite des stats",
+        priRaid    = "Raid",
+        priMythic  = "M+",
+        priSame    = "Raid et M+ identiques",
+        priSoftcap = "%s plafond ~%d%%",
+        priSource  = "Source : %s, %s",
+        priDisclaimer = "Compile depuis des guides publics; a titre indicatif, ne reflete pas un avis personnel, exactitude non garantie.",
+        priBuild      = "Build : %s",
     },
 
     es = {
@@ -240,6 +265,14 @@ ns.Locales = {
             avoidance = "EV", -- evasion
         },
         enchant = "EN", -- encantamiento
+        priTitle   = "Prioridad de stats",
+        priRaid    = "Banda",
+        priMythic  = "M+",
+        priSame    = "Banda y M+ identicas",
+        priSoftcap = "%s tope ~%d%%",
+        priSource  = "Fuente: %s, %s",
+        priDisclaimer = "Recopilado de guias publicas; solo orientativo, no refleja una opinion personal, exactitud no garantizada.",
+        priBuild      = "Build: %s",
     },
 }
 

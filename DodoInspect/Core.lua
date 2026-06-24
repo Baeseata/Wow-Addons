@@ -109,6 +109,8 @@ frame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED") -- combat end: re-add stat ratings
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 frame:RegisterEvent("EQUIPMENT_SETS_CHANGED")
+frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED") -- refresh the stat priority line
+frame:RegisterEvent("TRAIT_CONFIG_UPDATED") -- hero talent / loadout change: re-pick the build
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED") -- uncached item info arriving
 frame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player") -- enchant / gem changes
 

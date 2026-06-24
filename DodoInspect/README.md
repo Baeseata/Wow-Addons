@@ -91,6 +91,23 @@ helm, shoulder, chest, legs via spellthread/armor kit, boots, rings and
 weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
+**Stat priority line**, at the top of the gear summary side panel (and
+the inspect panel): the current spec's PvE secondary-stat priority for
+the season, in the same colored abbreviations the stat grid below uses
+(e.g. `Mastery = Crit > Haste > Versatility`, with `=` for stats that
+are roughly equal). When the raid and Mythic+ priorities differ it shows
+two labeled lines. The line follows your **hero talent** — specs whose
+priority changes by hero talent (Blood Death Knight, Survival, Shadow,
+Enhancement, Devourer, Holy Paladin) switch automatically when you do,
+and inspecting another player reads theirs. Mouse over the line for the
+full stat names, any soft caps, the active build, and the data source.
+All 40 specs are covered.
+
+Stat priorities are aggregated from public theorycrafting guides for
+reference only and are not guaranteed accurate — sim your own character
+for the final word. The data lives in `Data/StatPriority.lua` and is
+updated each season.
+
 **Inspect window**: when you inspect another player the same idea
 applies to their gear. On each inspected slot: **item level** (top-left,
 same gradient), the **enchant** state (bottom-left, green when
@@ -139,6 +156,8 @@ All options live under **Esc > Options > AddOns > DodoInspect**:
   Blizzard bags.
 - **Gear summary side panel**: the gear list next to the character
   frame.
+- **Stat priority line**: the season PvE stat priority shown at the top
+  of the gear summary side panels.
 - **Inspect window gear panel**: the slot / item level / stat panel
   next to the inspect window.
 - **Target info**: the player summary line above the target frame.
@@ -241,7 +260,10 @@ Copy the `DodoInspect` folder into
 | `StatRatings.lua` | Stat rating columns + item level recolor in the stats pane |
 | `Inspect.lua` | Inspect window gear overlays (item level, enchant, gems) |
 | `Bags.lua` | Blizzard bag frames |
+| `Bank.lua` | Player bank and guild bank overlays |
 | `SidePanel.lua` | Gear summary panel beside the character frame |
+| `StatPriority.lua` | Stat priority line + hero-talent detection |
+| `Data/StatPriority.lua` | Per-spec stat priority data (per season) |
 | `InspectPanel.lua` | Compact gear panel beside the inspect window |
 | `TargetInfo.lua` | Player summary line above the target frame |
 | `Options.lua` | Settings panel (language, feature toggles) and slash command |

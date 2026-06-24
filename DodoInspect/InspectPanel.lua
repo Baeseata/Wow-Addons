@@ -118,9 +118,19 @@ local function LayoutRows()
     local count = #shownRows
     if count == 0 then return end
 
+    -- reserve the top strip the stat priority header occupies (0 when
+    -- it is disabled or the spec has no data)
     local pad = 8
-    local rowHeight = math.min((height - pad * 2) / count, ROW_H)
-    local top = (height - rowHeight * count) / 2
+    local headerH = panel.dodoPriorityHeight or 0
+    local rowHeight = math.min((height - headerH - pad * 2) / count, ROW_H)
+    -- with a header, keep the rows snug right under it (any slack falls
+    -- to the bottom); without one, center the block in the panel
+    local top
+    if headerH > 0 then
+        top = headerH
+    else
+        top = (height - rowHeight * count) / 2
+    end
     for i, row in ipairs(shownRows) do
         row:SetHeight(rowHeight)
         row:ClearAllPoints()
@@ -251,6 +261,8 @@ function ns.SetupInspectPanel()
         rows[index] = CreateRow(panel, slotInfo)
     end
 
+    ns.SetupStatPriorityHeader(panel)
+
     LayoutRows()
     panel:SetScript("OnSizeChanged", LayoutRows)
     panel:SetScript("OnShow", function()
@@ -300,6 +312,9 @@ function ns.UpdateInspectPanel()
     if not panel or not panel:IsShown() then return end
     local unit = InspectFrame and InspectFrame.unit or "target"
     if not UnitExists(unit) then return end
+
+    local heroSub, heroName = ns.InspectHeroSubTree()
+    ns.UpdateStatPriorityHeader(panel, ns.InspectSpecID(unit), heroSub, heroName, FS, PANEL_W)
 
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped there
