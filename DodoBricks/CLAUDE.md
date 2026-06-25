@@ -1,272 +1,117 @@
 # DodoBricks - 开发简报 (read me first)
 
-> 单人**数字打砖块**(Ballz / Bricks n Balls 类)小游戏,World of Warcraft 插件,Dodo 系列之一。
-> 仓库: `github.com/Baeseata/Wow-Addons` (public)。本插件在 `DodoBricks/`。
-> **跨机协作**: 换机器先 `git pull`,Claude 先读本文件接上进度。**UI 文案用英文**(0.2.x 起已全英文,
-> 原"中文惯例"作废;中文是 Jerry 跟 Claude 的设计沟通语言)。
+> 单人数字打砖块 (Ballz/Bricks n Balls 类),WoW 插件,Dodo 系列之一。仓库: `Baeseata/Wow-Addons` (public),插件在 `DodoBricks/`。
+> 换机器先 `git pull` + 读本文件。**UI 文案用英文**(中文是 Jerry 跟 Claude 的设计沟通语言)。
 > 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
-> 姊妹项目 DodoPool(九球)有自己的 `DodoPool/CLAUDE.md`,很多套路(音效/窗口/小地图按钮)同源。
+> 姊妹项目 DodoPool(九球)有自己的 `DodoPool/CLAUDE.md`,音效/窗口/小地图按钮套路同源。
 
 ---
 
-## 1. 玩法规则(设计定稿,与用户讨论确认)
+## 1. 玩法规则(设计定稿)
 
-**核心循环**:
-- 底边发射台,回合开始把**一串球**(数量 = 当前球数)按同一角度依次射出(间隔 0.07s),
-  匀速 900px/s、无重力无摩擦,碰墙(左右顶)/砖完全弹性反弹,**球与球不互撞**。
-- 砖上数字 = 血量,被球碰一下 -1(变色反馈),归零消失。棋盘 **8 列 × 12 行**(0.3.0,原 7×9)。
-- 球落回底线即回收;**第一颗落地球的 X = 下回合发射点**(虚影标记),其余球落地后滑过去集合。
-- 全部球回收后:砖整体**下压一行**(0.28s 动画),顶部刷新一行(关数+1),新砖血量 = 当前关数基准,
-  ~20% 三角形(直角朝向随机四选一,斜边 45° 反弹)。
-- 刷新行**每行必有一个 "+1 球" 圆环道具**(球穿过即吃,不反弹;被压到底线下前自动吃掉)。
-- 砖在最底行(row 1)时再下压 = **游戏结束**(双压回合判定 row ≤ 2)。无胜利条件,打到死为止。
-- **操控(定稿)**: 按住左键瞄准(直接指向),虚线 = 首段 + 反弹短段;松开发射;右键/低于 8° 仰角取消。
-- **存档**: 回到可瞄准状态自动存档(1 档);游戏结束清档。0.1/0.2 旧存档兼容(缺 score/kind 按缺省读)。
-- 用户明确**不做**: 手动加速 / 提前回收按钮;回血脉冲事件(2026-06-11 拍板,治疗砖替代);分数发聊天框(暂缓)。
+**核心循环**: 底边发射台,每回合把一串球(数量=当前球数)依次射出(间隔 0.07s),匀速 900px/s,无重力无摩擦,碰墙/砖弹性反弹,球球不互撞。砖数字=血量,被球碰-1,归零消失。棋盘 **8 列 x 12 行**(0.3.0,原 7x9)。球落底回收,**首颗落地 X = 下回合发射点**。全部回收后砖整体下压一行(0.28s 动画),顶部刷新一行(关数+1)。**游戏结束**: 砖在 row 1 时再下压(判定 row<=2)。无胜利条件。
 
-**难度曲线(0.3.0,治"球多必清屏"的结构性失衡)**:
-- 出砖率 0.45 → 每关 +0.0045,封顶 0.68(~52 关);双倍硬砖率 0.12 → 每关 +0.0032,封顶 0.28;
-  **三倍砖**从 35 关淡入(每关 +0.5%,封顶 15%)。三角率 0.20 不变。
-- 设计依据: 输出 ∝ 球数×命中数 超线性,旧版供给线性 → ~50 关后数学上不可输。供给侧爬坡对冲。
+**刷新行规则**: 必有一个 "+1 球" 圆环道具(吃到即收,压到底前自动吃);22% 概率出特殊道具(见道具节)。~20% 三角砖(45deg 斜边,四朝向随机)。
 
-**计分系统(0.3.0,sinfulness 反馈)**:
-- 每打掉 1 滴血 = 1 分;**最底 2 行命中 ×2**(险区分,鼓励玩火);全部 × **全清连锁倍率**。
-- **全清连锁**: 连续全清 ×1→×2→…×10(封顶);某回合没清干净 → 归 ×1。全清仍 +2 球(0.2.0 既有,保留)。
-- 碎砖飘金色 "+N"(N = 该砖累计贡献分,池限流 10 条,超了静默);HUD 金色分数 + "xN" 倍率后缀;
-  `bestScore` 与 `bestLevel` 并列(实时落 DB),开始界面 + 结束面板都显示,任一破纪录 = "New record!" + 钟声。
-- 杂项加分: 宝箱碎 +25×倍率;boss 击杀 +maxHp。
+**操控(定稿)**: 按住左键瞄准(直接指向),虚线=首段+反弹短段;松开发射;右键或仰角<8deg 取消。
 
-**道具(0.3.0 扩到 7 种,圆环 glyph = 效果微缩预览,零文字)**:
-- 刷新行 22% 概率出特殊道具,加权池: 横激光 22 / 竖激光 22 / 炸弹 20 / 斜激光"/"9 / 斜激光"\"9 / 分裂 12 / **十字激光 4(稀有)**。
-- **斜激光**: 沿 45° 对角双向扫(glyph 斜线方向 = 实际扫向,诚实预览);**十字** = 整行+整列同时。
-- **分裂球**: 真球碰到 → 该球分裂 1 颗**临时球**(方向偏 18-36°)。临时球铁律: 不进 ballTotal、落地即蒸发、
-  **不能触发任何道具**(防指数);全场活动球上限 140 保帧率。
-- 特殊道具整回合常驻、每颗真球各触发一次(球多 = 威力大),回合结束消失。
-- **每种道具第一次触发 → 0.45s 慢动作**(无文字教学,DB.seen 记账号级)。
+**存档**: 回到 AIM 状态自动存档(1档),游戏结束清档。旧版存档兼容(缺字段按缺省读)。
 
-**特殊砖(0.3.0)**:
-- **宝箱砖**(8 关起 6%/行): 金色 "?",固定 2 血,碎了原地变一个随机道具圆环(加权偏 +1 球)+25×倍率分。
-- **治疗砖**(30 关起 8%/行): 绿色十字角标,血量 = ceil(关数/5),**每回合结束给周围 8 格普通砖 +1 血**
-  (不奶治疗砖/宝箱/boss),绿圈脉冲特效。"快打奶妈"——优先点杀目标,跟宝箱形成赏/罚镜像。
-- 受击反馈: 固定色砖(治疗/宝箱)不变色,改用白闪。
+**不做**: 手动加速 / 提前回收按钮;回血脉冲事件(治疗砖替代)。
 
-**事件系统(0.3.0,框架可扩)**:
-- 30 关起,每回合 18% 概率排一个事件(冷却 ≥4 回合),**提前一回合预告**: 顶行红光呼吸闪烁(Jerry 拍板,无文字)。
-- 池内目前唯一事件 = **双压**: 执行回合一次压 2 行 + 顶部刷 2 行(两行都全规则: 各带 +1 球、各 roll 特殊道具),
-  动画 0.40s。boss 关 / boss 在场不排(3×3 身位会撞第二行)。
-- 死亡判定相应变 row ≤ 2 —— 预告闪烁就是给玩家一回合清底排的窗口,体验 = 有读条的 boss 大招。
+**难度曲线(0.3.0)**: 出砖率 0.45->每关+0.0045,封顶 0.68(~52关);双倍硬砖率 0.12->每关+0.0032,封顶 0.28;三倍砖 35关起(每关+0.5%,封顶15%)。三角率 0.20 不变。
 
-**Boss(0.3.0,0.4.0 重平衡)**:
-- 每 25 关,顶部 3×3 巨砖**替代**普通刷新行(落点随机,**吞掉**所辖格的旧砖,其血量并入 boss;道具直接消失)。
-- 血量(0.4.0): `500 + (关数-25)×14 + 吞掉量×0.5`(25 关 ≈600 / 50 关 ≈1100 / 75 关 ≈1550)。
-  旧版 `关数×35 + 吞掉全额` Jerry 实测第一轮勉强过、第二轮打不动——后期砖肥,吞掉量自身爆炸,双重失控。
-- 固定深红、大数字;正常随场下压,压到底照样死你。
-- 击杀: 底+1 行原地掉 3 个随机道具圆环 + maxHp 分 + "BOSS DOWN!" 大字 + 爆圈 + 0.6s 慢动作 + 钟声。
-- **75 关起的 boss 带治疗光环**: 每回合结束全场普通砖 +1 血(早期 boss 是节日,后期 boss 是考试)。
+**计分(0.3.0)**: 每滴血=1分;最底2行命中 x2(险区);全部 x 全清连锁倍率(连续全清 x1->x2->..x10,没清干净归x1)。全清仍+2球。碎砖飘金"+N";HUD金色分数+倍率后缀;bestScore+bestLevel 并列,破纪录="New record!"+钟声。宝箱+25x倍率;boss击杀+maxHp。
 
-**基岩砖(0.4.0,Jerry 提需求)**:
-- 12 关起淡入的**不可击碎**石板灰砖(四角铆钉、无血量数字): 球正常反弹但不掉血不给分,激光/炸弹同样无效
-  (HitBrick 开头守门一处覆盖所有伤害来源);治疗砖不奶它(kind 守门天然排除)。
-- 正常随场下压;**压过底线不算输**,直接滑出棋盘消失(StartDescend lose 判定特判 + 移除)。
-- **防封禁**: 每行最多 1 块 + 不与上一行同列(`G.lastBedrockCol`)——围死一个口袋至少要同行 2 块,结构上不可能。
-- **全清判定全部改走 `AnyBreakableBrick()`**(Fire 的 turnHadBricks / StartDescend 全清 / last-brick 慢动作三处)——
-  否则基岩在场永远"没清干净",全清链(+2 球 + 倍率)从此断光。
-- **防永动死弹**: 球撞基岩反弹角 ±3° 微扰(Physics 内 kind 特判)。不然球会卡在顶墙和基岩之间垂直弹到天荒地老
-  (vx≈0、|vy| 大,防水平死弹的 anti-stall 不触发;普通砖弹几下就破所以从没暴露)——harness 59 关实抓。
-- Boss 登场吞格子时把基岩一并碾掉(hp=1 只并入 1 点,无感);boss 关不刷新行所以不出基岩。
+**道具(0.3.0,7种,圆环 glyph=效果微缩预览)**: 刷新行 22% 概率出,加权池: 横激光22/竖激光22/炸弹20/斜激光"/"9/斜激光"\"9/分裂12/十字激光4(稀有)。斜激光沿45deg双向扫;十字=整行+整列。**分裂球**: 真球碰到->分裂1颗临时球(偏18-36deg)。临时球铁律: 不进ballTotal,落地蒸发,**不触发任何道具**(防指数);全场活动球上限140保帧率。特殊道具整回合常驻、每颗真球各触发一次,回合结束消失。每种道具首次触发->0.45s慢动作(DB.seen记账号级)。
 
-**Juice(0.3.0)**:
-- **卡缝连击音阶**: 同一颗球 0.30s 内连续命中,第 4 跳起音效走 5 档爬升音表(SoundKit 无变调,音表纯赌听感待迭代)。
-- **最后一砖慢动作**: 全清最后一击 0.35s slow-mo(复用 dt 缩放管线,SLOWMO_RATE=0.25,慢动作压过球速快进)。
-- **色板轮换**: 每 10 关职业色板偏移 1 位("换季"推进感);存量砖下次受击换色,自然过渡。
-- 球速渐变(0.2.3 简化定稿): 纯回合内快进——飞行 3s 起 smoothstep,15s 拉满 ×3.0;无关数提速、无 HUD 指示
-  (0.2.2 的关数提速 + HUD"速 ×N"已删,本文件旧描述作废)。
-- 多球散布(0.2.0): 首颗严格按瞄准线,第 2 颗起 ±1.5°。全清奖励 +2 球(0.2.0)。
+**特殊砖(0.3.0)**: 宝箱砖(8关起6%/行): 金"?",固定2血,碎了变随机道具圆环+25x倍率分。治疗砖(30关起8%/行): 绿十字角标,血量=ceil(关/5),**每回合结束给周围8格普通砖+1血**(不奶治疗砖/宝箱/boss),绿圈脉冲。固定色砖受击白闪不变色。
+
+**事件(0.3.0)**: 30关起,每回合18%概率排事件(冷却>=4回合),**提前一回合预告**(顶行红光呼吸)。唯一事件=**双压**: 一次压2行+刷2行(各带+1球/各roll道具),动画0.40s。boss关/boss在场不排。死亡判定row<=2。
+
+**Boss(0.3.0/0.4.0重平衡)**: 每25关,顶部3x3巨砖替代普通刷新行(吞掉所辖格旧砖并入hp)。血量(0.4.0): `500+(关-25)x14+吞掉量x0.5`(25关~600/50关~1100)。固定深红大数字,正常随场下压。击杀: 底+1行掉3个随机道具圆环+maxHp分+"BOSS DOWN!"+0.6s慢动作+钟声。75关起boss带治疗光环(每回合全场普通砖+1血)。
+
+**基岩砖(0.4.0)**: 12关起淡入,石板灰四角铆钉,**不可击碎**,球/激光/炸弹无效,治疗砖不奶;压底不算输(滑出消失)。每行最多1块+不与上行同列(防封口袋)。**全清判定三处改`AnyBreakableBrick()`**(否则基岩在场全清链永断)。球撞基岩反弹角**+/-3deg微扰**防顶墙缝永动死弹(harness 59关实抓)。Boss吞格时把基岩碾掉(hp并入1点)。
+
+**Juice(0.3.0)**: 卡缝连击音阶(0.30s内连续命中,第4跳起5档爬升音表);最后一砖0.35s慢动作;每10关色板偏移1位;球速回合内快进(3s起step,15s拉满x3.0)。多球散布首颗严格按瞄准线,第2颗起+/-1.5deg。
 
 ---
 
-## 2. 怎么跑 / 开发环境
+## 2. 开发环境
 
-- 放进 `World of Warcraft\_retail_\Interface\AddOns\DodoBricks\`;**依赖父插件 `Dodo`**(共享库 + 图标)。
-- 本机(主力机)AddOns 目录就是工作目录,直接改;另一台机器建议 junction(见 DodoPool/CLAUDE.md §1)。
-- **全新插件首次出现要完全重启魔兽**(/reload 不认新文件夹);之后改代码 `/reload` 即可。
-- 打开: 小地图粉色 D 图标(默认角度 235,错开 DodoPool 的 205)或 `/bricks`(亦 `/dodobricks`)。
+放入 `WoW\_retail_\Interface\AddOns\DodoBricks\`,**依赖父插件 `Dodo`**。AddOns 目录与 repo 是 junction(改repo=改游戏目录,无需同步)。**全新插件完全重启魔兽**,之后 `/reload`。打开: 小地图粉色D图标(角度235)或 `/bricks`。
 
 ---
 
-## 3. 文件结构(加载顺序见 DodoBricks.toc)
+## 3. 文件结构
 
 | 文件 | 职责 |
 |------|------|
-| `DodoBricks.toc` | TOC;`## Group: Dodo`、`## OptionalDeps: Dodo`、SavedVariables `DodoBricksDB` |
-| `Geometry.lua` | 棋盘常量: 7 列 × 9 行 × 56px 格,FLOOR=30 发射条,board 392×534,原点左下;格子坐标换算 |
-| `Sound.lua` | SoundKit 选音表 + 同类节流 + 勾选框(带紧凑版)+ 音量滑条(同帧叠播);抄 DodoPool 验证过的套路 |
-| `Render.lua` | 砖(方/三角)/球/道具/虚线点/棋盘;**三角 = SetVertexOffset 顶点折叠**,无自定义贴图;职业色板按血量循环 |
-| `Physics.lua` | 弹球物理: 子步进 + **最近点法**碰撞(方=AABB clamp,三角=三边最近点,角点自然正确)+ 网格 3×3 邻域查找 + 防水平死弹 + 瞄准 Raycast |
-| `Game.lua` | 状态机(AIM/FLY/DESCEND/OVER)、发射/回收/下压回合循环、刷砖、道具、HUD、自动存档、进战暂停、游戏结束面板 |
-| `Core.lua` | 主窗口(竖版 436×624)、开始界面、小地图按钮、斜杠命令、初始化 |
+| `DodoBricks.toc` | TOC; `## Group: Dodo`; `## OptionalDeps: Dodo`; SavedVariables `DodoBricksDB` |
+| `Geometry.lua` | 棋盘常量: 8 列 x 12 行 x 56px 格,FLOOR=30 发射条,board 448x702,原点左下;格子坐标换算 |
+| `Sound.lua` | SoundKit 选音表 + 节流 + 勾选框 + 音量滑条 |
+| `Render.lua` | 砖(方/三角)/球/道具/虚线点/棋盘;三角=SetVertexOffset 顶点折叠;职业色板按血量循环 |
+| `Physics.lua` | 弹球: 子步进 + 最近点法碰撞(方=AABB clamp,三角=三边最近点) + 3x3邻域查找 + 防水平死弹 + 瞄准Raycast |
+| `Game.lua` | 状态机(AIM/FLY/DESCEND/OVER)、发射/回收/下压、刷砖、道具、HUD、存档、进战暂停、结束面板 |
+| `Core.lua` | 主窗口(竖版 492x792)、开始界面、小地图按钮、斜杠命令、初始化 |
 
-模块经全局表 `_G.DodoBricks`(代码里 `DBR`)串联: `DBR.geo / Sound / Render / Physics / Game`。
-
----
-
-## 4. 当前进度 (state)
-
-**0.1.0 已实机首跑通过(2026-06-10)**: 加载无报错,用户上手即玩,反馈"太好玩了"。
-三角砖 SetVertexOffset 折叠渲染实机成立。细项(三角全部四朝向/存读档/新纪录/进战暂停/选音听感)
-未逐条确认,默认 OK,发现问题再记。
-
-**0.2.0 已实机验证通过(同日,用户"可以可以")**: ① 碎砖闪光(同形状 ADD 白闪 pop)② 全清奖励 +2 球
-③ 激光(横/竖)+ 炸弹道具(常驻整回合、每球各触发一次、光束/爆圈特效)④ 多球 ±1.5° 散布。
-特效用"锚点占位帧 + 缩放视觉子帧"结构(SetScale 会连锚点偏移一起缩放,直接缩放会漂移——写时就防了)。
-核心玩法至此完整;剩余皆为可选润色(危险警告/统计/0.3 新道具,见 §5)。选音听感一直没专门确认,默认 OK。
-
-**0.2.1 已写完,⚠️ 未实机验证(同日)**: **球彗星尾迹**(参考图同款)——每球后面 1~3 节发光余像
-(前几帧位置,越远越小越淡,ADD 混合);全场尾迹节数预算 `TRAIL_BUDGET=240`,球多自动缩短
-(≤80 球 3 节 / ≤120 球 2 节 / 再多 1 节),落地滑行不带尾。顺手加了 `Render.MoveAt` 热路径移动
-(同名 CENTER 锚直接替换,省 ClearAllPoints;球+尾迹每帧几百次 SetPoint)。
-
-**0.2.3(代码现状,曾记作 0.2.2)**: 球速渐变最终落地为**简化版**——纯回合内快进(3s 起步 / 15s 拉满 ×3.0),
-无关数提速、无 HUD 速度指示(Game.lua 顶部注释自称 0.2.3)。本文件旧的 0.2.2 描述(关数提速 ×1.6 / HUD"速 ×N.N")
-与代码不符,以代码为准。⚠️ 0.2.1 尾迹 + 0.2.3 快进至今未实机验证,这次随 0.3.0 一起验。
-
-**0.4.0 = 插件版本 1.2.0,已 push + CurseForge 已上线(2026-06-12,tag 自动发版首战;headless 烟测
-ALL PASS,⚠️ 实机未验,Jerry 边玩边验)**。发版连环踩坑 2 个(tag `--cleanup=verbatim` 保 `##` 标题 /
-curl -F 分号截断 metadata JSON),修法 + 留档全在 `PUBLISHING.md` §7(local-only)。
-Jerry 实测反馈驱动——"boss 血太厚,第一轮很费劲,第二轮打不掉" + 提需求要不可击碎的基岩砖。
-① **Boss 重平衡**: `关数×35+吞掉全额` 改 `500+(关-25)×14+吞掉×0.5`(25 关 ≈600 / 50 关 ≈1100,约砍半)
-② **基岩砖**: 12 关起淡入,不可击碎、随场推、压底不算输、每行 ≤1 块防封禁;全清判定三处改
-`AnyBreakableBrick()`;球撞基岩 ±3° 反弹微扰防顶墙夹缝永动死弹(harness 59 关实抓的坑)。
-harness 同步加 bedrock 覆盖(神仙手跳过 + 打不动断言 + Phase D victim 排除)。详见 §1 玩法规则。
-
-**0.3.0 = 插件版本 1.1.0,已实机首验通过(2026-06-11,Jerry"行,不错"),已 push,
-CurseForge 已上线(同日,更新免审几分钟过;display name + changelog 是事后 Edit file 补的)**:
-**sinfulness(多伦多玩家)实测反馈驱动的大版本**——
-她 68 关"太简单,球多直接清屏;一轮一排不够用;要计分和最高分;道具看不懂"。全部回应:
-① **8×12 棋盘**(窗口 ~492×792)② **难度曲线**(出砖率/双倍率爬坡 + 35 关起三倍砖)③ **计分系统**
-(血量分 + 险区 ×2 + 全清连锁 ×1~×10 + bestScore + 金色飘分 + HUD)④ **道具直观化**(圆环内 glyph =
-效果微缩预览,CreateLine 画;首次触发 0.45s 慢动作教学)⑤ **新道具**(斜激光 ×2 方向 / 十字激光稀有 /
-分裂球-临时球铁律)⑥ **宝箱砖**(金"?",碎出道具)⑦ **治疗砖**("快打奶妈",周围 8 格回血)
-⑧ **事件框架 + 双压**(顶行红光预告一回合,Jerry 拍板闪烁形式)⑨ **Boss**(25 关周期 3×3 巨砖,
-吞砖登场、掉落道具雨,75+ 带全场治疗光环)⑩ **Juice**(卡缝连击音阶 / 最后一砖+boss 慢动作 / 每 10 关
-色板轮换 / HUD 脏标记合并刷新)。
-**Headless 烟测已过**(mock WoW API + LuaJIT 跑真实代码 110 关): 状态机/曲线/事件×11 次双压/4 个 boss/
-治疗/宝箱/存读档往返/旧档兼容/死亡重置/每回合 grid 一致性校验,ALL PASS。harness 已入库
-`DodoBricks/test/harness.lua`(toc 不引用,游戏不加载;跑法 `luajit test/harness.lua .`,
-LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`,winget DEVCOM.LuaJIT 装的)。
-神仙手数据: 110 关全清链 → 真球 ~316 颗(发射队列 ~22s,ramp ×3 后体感 ~7s)——实机注意后期球数体感。
-
-0.1.0 实现清单:
-- 棋盘渲染(深底/细壁/发射条/地线)+ 方砖(渐变+边框)+ 三角砖(四朝向)+ 数字 + 血量变色
-- 瞄准虚线(行进点阵,首段+反弹短段)+ 发射 + 弹球物理 + 砖/墙/道具碰撞
-- 回合循环: 依次发射 → 落地回收 → 首球定下回合发射点 → 下压动画 + 刷新行 → 游戏结束判定
-- "+1 球"道具(呼吸脉冲、吃到飘字 +1、压到底前自动吃)
-- HUD(第 N 关 / 球 ×N / 紧凑音效开关 / 返回开始)+ 游戏结束面板(再来一局/返回开始)
-- 自动存档/继续、最高关卡记录、进战暂停、ESC 关窗、窗口拖动记忆、小地图按钮
-- 音效 8 种(发球/碰砖/碎砖/吃道具/落地/下压/结束/新纪录)+ 开关 + 音量滑条
+模块经 `_G.DodoBricks`(代码里 `DBR`)串联: `DBR.geo / Sound / Render / Physics / Game`。
 
 ---
 
-## 5. 待办 / 下一步 (TODO)
+## 4. 当前进度
 
-0. **0.4.0 实机验证**(已发版,headless 已过,实机没跑):
-   - boss 新血量手感(25 关 ≈600 / 50 关 ≈1100)——Jerry 上轮卡死在第二个 boss,这次能不能过;
-   - 基岩观感(石板灰+四角铆钉认不认得出"打不动")、压底滑出、球在基岩缝里弹跳是否自然(±3° 微扰)。
-1. **0.3.0 深关数实机细项**(首验已过,以下多在 25+ 关才出现,Jerry 平时玩 + sinfulness 复测时留意):
-   - **新棋盘**: 窗口 ~492×792 在你的分辨率/UI scale 下挤不挤;8 列瞄准手感。
-   - **计分**: HUD 金色分数 + 倍率后缀;碎砖飘分密度(刷屏就减飘字/只飘大额);全清链 BigFloat;
-     结束面板/开始界面双纪录显示。
-   - **道具 glyph**: 7 种圆环一眼能不能分清(尤其斜激光方向跟实际扫向一致性);首次触发慢动作够不够"教学"。
-   - **双压事件**(30 关后): 顶行红光呼吸够不够醒目(调 Driver 内 0.10+0.13 系数);双压动画/死亡判定体感。
-   - **治疗砖/宝箱砖**(30+/8+ 关): "快打奶妈"的优先级压力成不成立;宝箱掉落爽不爽。
-   - **Boss**(25 关): 登场吞砖观感、3×3 碰撞手感、击杀道具雨;75+ 光环是否过分。
-   - **难度曲线**: 40~70 关是否回归"会死的游戏"——sinfulness 复测最好。
-   - **性能**: 后期 200+ 球帧率(物理 0.2.3 有 MAX_DT 上界,渲染看实机);球 300+ 时发射队列时长体感。
-   - **慢动作**: 全清/首次道具/boss 击杀三处,0.25 倍率够不够戏剧性。
-2. **音效听感**(从未专门确认): 既有 hit/launch/brk + 新 split(862)/heal(844)/连击音阶 5 档
-   (857/856/3175/8960/875 纯赌)。不行按 DodoPool 迭代路径换 `KITS`/`COMBO_KITS`(终极方案 media/ 自带 ogg)。
-3. **暂缓项(用户拍板)**: 回血脉冲事件(治疗砖替代)、分数发聊天框、种子挑战、挑战模式、底行危险警告、
-   开始界面统计。事件池后续可加: 硬化行(下行全双倍,铁灰入场)等。
-4. **手感调参**按用户反馈(见 §6)。加速/回收按钮用户已两次说不要,提需求再做。
+**v0.1.0 实机通过(2026-06-10)**: 基础弹球循环跑通,三角砖SetVertexOffset实机成立。
+**v0.2.0 实机通过(同日)**: 碎砖闪光/全清+2球/激光+炸弹道具/多球散布。
+**v0.2.1 写完未实机**: 球彗星尾迹(1-3节余像,ADD混合,TRAIL_BUDGET=240)。
+**v0.2.3(代码现状)**: 球速渐变最终=纯回合内快进(3s起/15s拉满x3.0),无关数提速/无HUD指示。0.2.1尾迹+0.2.3快进随0.3.0一起验。
+**v0.3.0 = 插件 1.1.0,实机通过(2026-06-11),已push+CurseForge上线**: sinfulness实测反馈驱动——68关"太简单/球多清屏/看不懂道具"。8x12棋盘/难度曲线/计分/道具glyph/7种道具/宝箱+治疗砖/事件框架+双压/Boss/Juice全部实现。Headless harness 110关 ALL PASS(`test/harness.lua`,LuaJIT)。
+**v0.4.0 = 插件 1.2.0,已push+CurseForge上线(2026-06-12),headless ALL PASS,实机未验**: boss重平衡(x14+0.5吞掉约砍半)+基岩砖(详§1)。Jerry实测反馈驱动。
+
+**harness**: `luajit test/harness.lua .` (LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`; toc不引用不进游戏)。`luajit -bl *.lua` 纯语法检查。
 
 ---
 
-## 6. 可调参数 (tunables)
+## 5. 待办 / TODO
 
-**Physics.lua**(顶部): `SPEED=900` 球速 · `SUBSTEP_LEN=6` 子步长(< 球半径)·
-`FLAT_VY=35 / FLAT_T=3.5 / FLAT_EXIT=140 / FLAT_KICK=220` 防水平死弹(横弹 3.5s 后渐拐)。
-
-**Game.lua**(顶部): `LAUNCH_GAP=0.07` 发球间隔 · `MIN_ANGLE=8` 最低仰角 · `MIN_AIM_DIST=16` 瞄准死区 ·
-`AIM_MAX_LEN=900 / STUB_LEN=70 / DOT_GAP=18 / DOT_SPEED=60` 瞄准线 · `DESCEND_T=0.28 / DESCEND_T2=0.40` 下压动画(单/双行)·
-`SLIDE_SPEED=1500` 回收滑行 · `BRICK_CHANCE=0.45` 出砖率基准 · `TRI_CHANCE=0.20` 三角率 · `DOUBLE_CHANCE=0.12` 硬砖率基准 ·
-`SPREAD_DEG=3` 多球散布整锥角(首颗不散)· `SPECIAL_CHANCE=0.22` 特殊道具率 · `CLEAR_BONUS=2` 全清奖励球 ·
-`TRAIL_MAX=3 / TRAIL_BUDGET=240` 尾迹节数与全场预算(Render.lua `GHOST_SIZE/GHOST_ALPHA` 调每节大小/亮度)·
-**球速快进(0.2.3)**: `RAMP_START=3 / RAMP_FULL=15 / RAMP_MAX=3.0`(回合内飞行几秒起步/拉满/上限;`RAMP_MAX=1` 关闭)·
-**难度曲线**: `CHANCE_GAIN=0.0045 / CHANCE_CAP=0.68` 出砖率爬坡 · `DBL_GAIN=0.0032 / DBL_CAP=0.28` 硬砖爬坡 ·
-`TRIPLE_FROM=35 / TRIPLE_GAIN=0.005 / TRIPLE_CAP=0.15` 三倍砖 ·
-**道具**: `SPECIAL_W` 出现权重表 · `CHEST_DROP` 宝箱掉落权重表 · `SPLIT_CAP=140` 活动球上限 ·
-**特殊砖**: `CHEST_FROM=8 / CHEST_CHANCE=0.06 / CHEST_HP=2 / CHEST_BONUS=25` · `HEALER_FROM=30 / HEALER_CHANCE=0.08`
-(治疗砖血量 = ceil(关/5),在 SpawnRow 里)·
-**事件**: `EVENT_FROM=30 / EVENT_CHANCE=0.18 / EVENT_CD=4`(预告闪烁亮度在 Driver 内 `0.10+0.13*sin`)·
-**Boss(0.4.0)**: `BOSS_EVERY=25 / BOSS_BASE=500 / BOSS_HP_GAIN=14 / BOSS_EAT_RATE=0.5 / BOSS_AURA_FROM=75` ·
-**基岩**: `BEDROCK_FROM=12 / BEDROCK_CHANCE=0.10 / BEDROCK_GAIN=0.004 / BEDROCK_CAP=0.32`(~67 关到顶,
-稳态场上 ~3-4 块;反弹微扰 ±3° 在 Physics.lua StepBall 内 `math.rad(6)`)·
-**计分**: `DANGER_ROWS=2 / DANGER_MULT=2` 险区 · `MULT_CAP=10` 全清链上限 · `COMBO_WINDOW=0.30` 卡缝连击窗口 ·
-`SLOWMO_RATE=0.25` 慢动作倍率(全清 0.35s / 首见道具 0.45s / boss 击杀 0.6s,在各触发点)。
-
-**Geometry.lua**: `COLS=8 ROWS=12 CELL=56 FLOOR=30 BALL_R=7 ITEM_R=10 BRICK_PAD=3`(碰撞按整格,PAD 只是视觉缝;
-0.3.0 起 8×12,board 448×702,窗口 = board + 44/90)。
-
-**配色**(Render.lua `TIER_CLASS`): 血量 `(hp-1+colorShift)%9+1` → 职业色 黄/蓝/红/淡紫/橙/玉绿/棕/粉/青
-(与 DodoPool 球色同源),每掉血换色;`colorShift` 每 10 关 +1(色板轮换)。特殊砖固定色 `KIND_COLOR`
-(治疗绿/宝箱金/基岩石板灰),boss 固定深红(NewBossBrick 内)。
+0. **v0.4.0 实机验证**(已发版未跑): boss新血量手感/基岩观感(石板灰能认出"打不动"?)/球在基岩缝弹跳(+/-3deg微扰够不够自然)。
+1. **v0.3.0 深关数细项**(25+关才出,玩时留意): 新棋盘492x792在你的UI scale下挤不挤;碎砖飘分密度;双压顶行红光够不够醒目;治疗/宝箱"快打奶妈"压力成不成立;boss 75+光环是否过分;40-70关难度曲线是否"会死";200+球帧率。
+2. **音效听感**(从未专门确认): 既有hit/launch/brk+新split(862)/heal(844)/连击音阶5档(857/856/3175/8960/875)。不行按DodoPool迭代路径换ogg。
+3. **暂缓**: 分数发聊天框/种子挑战/底行危险警告/开始界面统计/事件池扩充(硬化行等)。
+4. 手感调参按用户反馈(见§6)。加速/回收按钮用户已两次说不要。
 
 ---
 
-## 7. 设计/实现要点 + 踩坑预警
+## 6. 可调参数
 
-- **三角砖渲染**: 方块 texture 用 `SetVertexOffset` 把一个角折叠到相邻角 → 实心直角三角形。
-  顶点序号 1=左上 2=左下 3=右上 4=右下,y 正向上;BL 折 3(-S,0) / BR 折 1(0,-S) / TL 折 4(-S,0) / TR 折 2(S,0)。
-  两种内部三角剖分下都成立(推导过);**但没实机见过**,首跑重点看。边框 = 外层深色三角 + 内层缩 2~3px 同向三角。
-- **碰撞统一"最近点法"**: 球心到形状最近点距离 < r 即碰,法线 = 球心-最近点 → 镜像反射 + 推出。
-  方 = AABB clamp;三角 = 三条边段最近点 + 内部判定(AABB 内 + 斜边实心侧 u/v 不等式)。角点反弹自然正确。
-- **性能设计**: 砖在网格 `grid[row][col]`,每子步只查球所在格 3×3 邻域;球与球不互撞;百球无压力。
-- **下压动画**: 砖/道具都挂 `gridLayer`,逻辑行号先减一并重摆,动画只把 gridLayer 锚点偏移从 +CELL 平滑到 0;
-  playArea `SetClipsChildren(true)` 裁掉从顶上滑入的新行(也顺手裁了虚线点/球,别画出板外)。
-- **已知小毛边(可接受,实机看情况)**: 发射台正上方贴着砖时,球出膛即在砖底边上,法线退化用"来向反推",
-  表现为立即弹回落地(扣血正常)——真实 Ballz 同样会立即弹回,但若观感怪再细修(给 (0,-1) 面法线特判)。
-- **圆形遮罩**: `TempPortraitAlphaMask` + 两个 CLAMPTOBLACKADDITIVE;**贴图必须 SetPoint 否则不渲染**(DodoPool 踩过)。
-- **PlaySound**: 无音量参数 → 同帧叠播 N 次加响;第三参 forceNoDuplicates 必须显式 `false`;节流自做(Sound.lua GAP)。
-- **12.0 注意**: 不碰 UIDropDownMenu(已删)/ 战斗属性 API(机密值),本插件均不涉及;键盘完全不用,进战只暂停 OnUpdate。
-- **存档一致性**: 只在回到 AIM 时落盘 → 飞行中关窗/下线 = 回到本回合开始,符合直觉,不存飞行中状态。
+**Physics.lua**: `SPEED=900` 球速; `SUBSTEP_LEN=6`; `FLAT_VY/FLAT_T/FLAT_EXIT/FLAT_KICK` 防水平死弹。
+**Game.lua**: `LAUNCH_GAP=0.07`; `MIN_ANGLE=8`; `DESCEND_T=0.28 / DESCEND_T2=0.40`(单/双行下压); `BRICK_CHANCE=0.45`; `TRI_CHANCE=0.20`; `DOUBLE_CHANCE=0.12`; `SPREAD_DEG=3`(首颗不散); `SPECIAL_CHANCE=0.22`; `CLEAR_BONUS=2`; `TRAIL_MAX=3 / TRAIL_BUDGET=240`(Render.lua `GHOST_SIZE/GHOST_ALPHA`调每节); 快进 `RAMP_START=3/RAMP_FULL=15/RAMP_MAX=3.0`(`RAMP_MAX=1`关闭); 难度曲线 `CHANCE_GAIN=0.0045/CHANCE_CAP=0.68/DBL_GAIN=0.0032/DBL_CAP=0.28/TRIPLE_FROM=35/TRIPLE_GAIN=0.005/TRIPLE_CAP=0.15`; 道具 `SPECIAL_W` 权重表/`SPLIT_CAP=140`; 宝箱 `CHEST_FROM=8/CHEST_CHANCE=0.06/CHEST_BONUS=25`; 治疗砖 `HEALER_FROM=30/HEALER_CHANCE=0.08`; 事件 `EVENT_FROM=30/EVENT_CHANCE=0.18/EVENT_CD=4`; boss `BOSS_EVERY=25/BOSS_BASE=500/BOSS_HP_GAIN=14/BOSS_EAT_RATE=0.5/BOSS_AURA_FROM=75`; 基岩 `BEDROCK_FROM=12/BEDROCK_CHANCE=0.10/BEDROCK_GAIN=0.004/BEDROCK_CAP=0.32`(~67关顶); 计分 `DANGER_ROWS=2/DANGER_MULT=2/MULT_CAP=10/COMBO_WINDOW=0.30/SLOWMO_RATE=0.25`。
+**Geometry.lua**: `COLS=8 ROWS=12 CELL=56 FLOOR=30 BALL_R=7 ITEM_R=10 BRICK_PAD=3`(碰撞按整格,PAD仅视觉缝)。
+**配色(Render.lua `TIER_CLASS`)**: 血量`(hp-1+colorShift)%9+1`->职业色9色循环;`colorShift`每10关+1。特殊砖固定色`KIND_COLOR`;boss固定深红。
 
-**0.3.0 新增要点**:
-- **Boss = 多格砖**: `{w=3,h=3}`,grid 9 格全登记同一对象(`GridSet` helper 统一管 1×1 和多格);
-  Physics `ClosestOnBrick` 见 `brick.w` 就把 AABB 拉大到右上格。激光/炸弹穿 boss 多格 = 收集多次 = 吃满 AOE
-  (故意,大目标该吃满);HitBrick 开头 `if not G.bricks[brick]` 防碎后链上重复结算。
-- **临时球(分裂)实现**: 复用 `G.balls` 池 `ballsInPlay+1..+tempCount` 段,`b.temp=true`;Physics 零改动
-  (遍历整池,flying 才动)。所有遍历(SyncBalls/CheckTurnEnd)范围 = `ballsInPlay + tempCount`;
-  **Fire 必须重置整池**(`#G.balls`,不止 ballTotal)清旧 temp 标记。temp 不触发道具 = HitItem 第一行守门。
-- **道具 glyph 用 `frame:CreateLine()`**: 纯色 Texture `SetRotation` 只转 UV 不转形状(画不了斜线),
-  CreateLine(SetStartPoint/SetEndPoint/SetThickness)才是画任意角度线段的正解;斜激光束特效同理。
-- **local 函数前向引用**: Lua local 词法序——AddBrick/AddItem/AddFloat/SpawnTempBall 都因被 HitBrick 调用
-  而**定义在它之前**(改 Game.lua 注意保持这个顺序,否则解析成 nil global 运行时炸)。
-- **HUD 脏标记**: HitBrick 百球时每秒几百次,不能每次 SetText → `G.hudDirty=true`,Driver 帧末统一刷一次。
-- **事件时序**: roll 在 StartDescend **尾部**(为下一回合排),执行在**头部**(消费 pendingDouble);
-  排除条件三件套 = 下关是 boss 关 / boss 在场(身位撞第二刷新行)/ 冷却未到。预告 = `G.warnBar` 顶行红条,
-  Driver 里呼吸,GameOver/New/Load(无 pending)都要 Hide。
-- **治疗结算窗口**: StartDescend 里 used 道具清理之后、lose 判定之前(HealerPulse,boss 光环同处),
-  只奶 `kind==nil` 普通砖——奶治疗砖会互奶永动,奶宝箱语义怪,都排除。
-- **测试 harness**: `test/harness.lua`(mock WoW API,LuaJIT 跑真代码 110 关 + 存读档 + 死亡;toc 不引用,
-  不进游戏),改完大逻辑跑一遍比 /reload 快得多;`luajit -bl *.lua` 是纯语法检查。
-- **目录是 junction**: 游戏 AddOns 的 `DodoBricks` 跟 `Code\Wow-Addons\DodoBricks` 是同一物理位置
-  (cp 报 "same file" 实锤)——改 repo 即改游戏目录,无需手动同步;git 操作直接在 repo 做。
+---
+
+## 7. 实现要点 + 踩坑
+
+- **三角砖渲染**: `SetVertexOffset` 把一角折叠到相邻角->实心直角三角形。顶点序 1=左上2=左下3=右上4=右下,y正向上;BL折3(-S,0)/BR折1(0,-S)/TL折4(-S,0)/TR折2(S,0)。边框=外层深色+内层缩2-3px同向三角。
+- **碰撞统一最近点法**: 球心到形状最近点距离<r即碰,法线=球心-最近点->镜像反射+推出。方=AABB clamp;三角=三边段最近点+内部判定(斜边实心侧u/v不等式)。
+- **性能**: 砖在网格`grid[row][col]`,每子步只查3x3邻域;球球不互撞;百球无压力。
+- **下压动画**: 砖/道具挂`gridLayer`,逻辑行号先减一并重摆,动画把gridLayer锚点从+CELL平滑到0;`playArea SetClipsChildren(true)`裁新行和虚线/球。
+- **Boss多格砖**: `GridSet`统一管1x1和多格;Physics`ClosestOnBrick`见`brick.w`拉大AABB;激光/炸弹穿boss多格收集多次=吃满AOE(故意);`HitBrick`开头防碎后重复结算。
+- **临时球(分裂)**: 复用`G.balls`池`ballsInPlay+1..+tempCount`段,`b.temp=true`;Physics零改动。所有遍历范围=`ballsInPlay+tempCount`; Fire必须重置整池清旧temp标记。temp不触发道具=HitItem第一行守门。
+- **道具glyph用`CreateLine()`**: Texture SetRotation只转UV不转形状(画不了斜线);CreateLine(SetStartPoint/SetEndPoint/SetThickness)才是任意角度线段正解。
+- **local函数前向引用**: AddBrick/AddItem/AddFloat/SpawnTempBall 都被 HitBrick 调用,定义必须在 HitBrick **之前**(否则解析成nil global)。
+- **HUD脏标记**: HitBrick百球时每秒几百次,不能每次SetText->`G.hudDirty=true`,Driver帧末统一刷。
+- **事件时序**: roll 在 StartDescend 尾部(为下回合排),执行在头部(消费pendingDouble);排除=下关是boss关/boss在场/冷却未到。预告=`G.warnBar`顶行红条,GameOver/New/Load(无pending)都Hide。
+- **治疗结算**: StartDescend里道具清理后、lose判定前(HealerPulse+boss光环同处),只奶`kind==nil`普通砖。
+- **存档一致性**: 只在AIM时落盘,飞行中关窗=回本回合开始。
+- **12.0注意**: 不碰UIDropDownMenu/战斗属性API,本插件均不涉及。
+- **圆形遮罩**: `TempPortraitAlphaMask`+两个CLAMPTOBLACKADDITIVE;贴图必须SetPoint否则不渲染。
 
 ---
 
 ## 8. 跨机 / git
 
-- 仓库 `github.com/Baeseata/Wow-Addons`(public)。本机 AddOns 不是 git clone:
-  推送 = 临时目录 clone → 拷贝 DodoBricks/ 进去 → commit + push(沙箱禁 `Remove-Item` D: 路径,用 .NET Delete 或 Copy-Item 覆盖)。
-- 另一台机器开工 checklist: ① `git pull` ② 读本文件 ③ 确认 `DodoBricks` + `Dodo` 都进 AddOns ④ 完全重启魔兽 ⑤ 跑 §5.1 ⑥ 报错记下来修。
-- **发版到 CurseForge(2026-06-11 起全自动)**: 提 TOC Version -> push -> 打 annotated tag `DodoBricks-vX.Y.Z`(tag message = changelog)-> GitHub Action 自动打包上传几分钟上线;dry-run 与细节见 `PUBLISHING.md` §7(local-only)。
+仓库 `Baeseata/Wow-Addons`(public)。本机AddOns=junction到repo(改repo即改游戏目录)。另一台机器开工: `git pull`->读本文件->确认DodoBricks+Dodo都进AddOns->完全重启魔兽。
+
+**发版**: 提TOC Version->push->打annotated tag `DodoBricks-vX.Y.Z`(tag message=changelog)->GitHub Action自动打包上传;dry-run与细节见`PUBLISHING.md`(local-only)。2026-06-12起全自动(首战踩坑:tag `--cleanup=verbatim`保`##`标题/curl -F分号截断metadata JSON,修法在PUBLISHING.md §7)。
