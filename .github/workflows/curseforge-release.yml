@@ -24,6 +24,7 @@ on:
         options:
           - DodoBricks
           - DodoInspect
+          - DodoLura
       dry_run:
         description: Build and validate everything but skip the upload
         type: boolean
@@ -81,6 +82,7 @@ jobs:
           case "$ADDON" in
             DodoBricks)  PROJECT_ID=1571430 ;;
             DodoInspect) PROJECT_ID=1572493 ;;
+            DodoLura)    PROJECT_ID=1602130 ;;
             *) echo "No CurseForge project id registered for $ADDON. Add it to this workflow."; exit 1 ;;
           esac
 
