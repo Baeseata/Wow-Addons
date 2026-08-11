@@ -47,7 +47,18 @@ tainted by 'DodoInspect'`。
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.7.0(2026-06-24 本机发布)
+## 当前状态:1.8.0(2026-08-11 待发布)
+1.7.0 → **1.8.0**:12.1 `Curse of Ula'tek` / Season 2 兼容更新。
+- **属性优先级暂时隐藏**:`Config.STAT_PRIORITY_DATA_CURRENT=false` 是总闸门;
+  `Resolve` 在数据入口 fail-closed,Options 也不注册开关。旧 `showStatPriority` SavedVariable
+  和 `Data/StatPriority.lua` 都保留;拿到 12.1 确切资料后更新全表 + source/date,再把闸门改回 true。
+- **装等渐变**:12.1 S2 标准轨道 Adventurer 266 起、Myth 6/6=334;
+  Ascendant Venomstone 上限 341,末两名史诗团本首领/Very Rare 的 Myth-9 等效上限 344。
+  Blizzard 确认 S2 相对 S1 整体 +46,故三个旧锚 216/280/298 同步平移为
+  **262/326/344**,保留原有白→冷色→橙→暖色→红的视觉语义。
+- **元数据**:TOC Interface 加 120100、保留既有 12.0 接口号,版本升 1.8.0。
+
+## 历史:1.7.0(2026-06-24 本机发布)
 1.6.1 → **1.7.0**:新增 **PvE 属性优先级行**(角色侧栏 + 检视侧栏顶部),按**英雄天赋**(build)区分。
 - **显示**:侧栏最上方一行,用和下面属性格子**同一套缩写 + 颜色**(`ns.L.stats` + `Config.STAT_COLORS`),
   `>` 分隔、`=` 表示约等价(tie group)。团本=大米合一行;不同则分两行带 `团`/`米` 标签。顶部预留区高度
@@ -167,7 +178,9 @@ Inspect 导出 `ns.GetLinkItemLevel`(检视装等按**链接**读,`ItemLocation`
 (回退 `"target"`)。装等/附魔/宝石都共用 `showInspectIlvl` 一个开关。
 
 ## 关键约定 / 可调参数
-- 渐变三阈值在 Config(MIN 216 / ORANGE 280 / MAX 298,每季调)。
+- 渐变三阈值在 Config(MIN 262 / ORANGE 326 / MAX 344,每季调;当前为12.1 S2)。
+- 属性优先级总闸门=`Config.STAT_PRIORITY_DATA_CURRENT`;false 时显示和 Options 开关都必须消失,
+  不要删旧数据/用户 SavedVariable。更新全季数据与来源日期后才可改回 true。
 - 背包标签 & 格子缩写字号 = `*_FONT_SIZE + ns.L.sizeBump`(per-locale:cn **+2**、
   其它 **−2**)。这是 CJK-only 字号调整的范式。tag 最多 4 拉丁 / 2 CJK 字符。
 - 侧栏布局 = `ComputeGeometry` 里的**累加链**(全是 FS 倍数);改一个间距,它右边所有列

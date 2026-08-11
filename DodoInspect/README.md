@@ -101,6 +101,11 @@ priority changes by hero talent (Blood Death Knight, Survival, Shadow,
 Enhancement, Devourer, Holy Paladin) switch automatically when you do,
 and inspecting another player reads theirs. Mouse over the line for the
 full stat names, any soft caps, the active build, and the data source.
+
+> **Patch 12.1:** the stat-priority line and its settings toggle are
+> temporarily hidden while the Season 2 recommendations are re-verified.
+> The renderer, saved preference and data remain in place for reactivation.
+
 All 40 specs are covered.
 
 Stat priorities are aggregated from public theorycrafting guides for
@@ -157,7 +162,7 @@ All options live under **Esc > Options > AddOns > DodoInspect**:
 - **Gear summary side panel**: the gear list next to the character
   frame.
 - **Stat priority line**: the season PvE stat priority shown at the top
-  of the gear summary side panels.
+  of the gear summary side panels when the bundled season data is current.
 - **Inspect window gear panel**: the slot / item level / stat panel
   next to the inspect window.
 - **Target info**: the player summary line above the target frame.
@@ -228,7 +233,8 @@ Beyond the options panel, everything else is constants in `Config.lua`
   the colors climb through amber and gold into hot red at MAX. Tune
   per season: MAX at the best-in-slot ceiling, ORANGE where "good
   gear" begins, MIN below which gear is leveling fodder. Each number
-  moves independently.
+  moves independently. The 12.1 Season 2 anchors are 262 / 326 / 344,
+  preserving the previous curve after Blizzard's +46 item-level shift.
 - `HIDE_JUNK_QUALITY`: set to `false` to treat white gear as normal gear
   (gear overlays shown, no junk tag). Gray items are always tagged junk.
 - `STAT_RATING_COL_W`: width reserved for the rating column in the

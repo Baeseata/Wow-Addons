@@ -18,10 +18,14 @@ ns.Config = {
     --           MIN and here
     --   MAX     the season ceiling, hot red; between ORANGE and MAX
     --           the ramp climbs through amber and gold
+    -- Midnight 12.1 Season 2 raises rewards by 46 item levels. Keep
+    -- the 12.0 color semantics by shifting the whole window by 46:
+    -- Season 2 starts at 266, regular Myth tops at 334, Ascendant
+    -- Venomstones reach 341, and Myth-9-equivalent loot caps at 344.
     -- Tune the three numbers per season, each moves independently.
-    GRADIENT_MIN_ILVL    = 216,
-    GRADIENT_ORANGE_ILVL = 280,
-    GRADIENT_MAX_ILVL    = 298,
+    GRADIENT_MIN_ILVL    = 262,
+    GRADIENT_ORANGE_ILVL = 326,
+    GRADIENT_MAX_ILVL    = 344,
 
     ------------------------------------------------------------------
     -- Junk filter
@@ -168,6 +172,12 @@ ns.Config = {
     -- Width of the item name column; names longer than this clip
     -- (the mouseover tooltip always has the full name).
     PANEL_NAME_WIDTH = 150,
+
+    -- The priority table is season-specific. Keep the renderer and the
+    -- saved user preference intact, but hide both the line and its option
+    -- until the 12.1 priorities have been re-verified. Flip this back to
+    -- true only after Data/StatPriority.lua and its source date are current.
+    STAT_PRIORITY_DATA_CURRENT = false,
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)

@@ -173,6 +173,7 @@ end
 -- (raid + optional mythic + optional softcap), so a matched build is
 -- returned as-is and never inherits the default's mythic / softcap.
 local function Resolve(specID, subTreeID)
+    if ns.Config.STAT_PRIORITY_DATA_CURRENT ~= true then return nil end
     local data = specID and ns.StatPriority and ns.StatPriority[specID]
     if not data then return nil end
     if subTreeID and data.builds and data.builds[subTreeID] then

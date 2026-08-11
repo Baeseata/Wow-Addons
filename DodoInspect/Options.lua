@@ -139,11 +139,16 @@ function ns.RegisterOptions()
             "Font size, in pixels, of the gear summary side panel on the character frame. The panel layout scales to match.",
             ns.RebuildSidePanel)
 
-        AddFeatureCheckbox(category,
-            "DODO_INSPECT_STAT_PRIORITY", "showStatPriority",
-            "Stat priority line",
-            "Show the current spec's PvE secondary-stat priority (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. Hover it for soft caps and the source. Only specs with data show a line.",
-            ns.ApplyStatPriorityEnabled)
+        -- Season-specific advice must not be exposed while its data is
+        -- stale. The SavedVariables key is deliberately left untouched,
+        -- so restoring current data also restores the user's preference.
+        if ns.Config.STAT_PRIORITY_DATA_CURRENT == true then
+            AddFeatureCheckbox(category,
+                "DODO_INSPECT_STAT_PRIORITY", "showStatPriority",
+                "Stat priority line",
+                "Show the current spec's PvE secondary-stat priority (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. Hover it for soft caps and the source. Only specs with data show a line.",
+                ns.ApplyStatPriorityEnabled)
+        end
 
         AddFeatureCheckbox(category,
             "DODO_INSPECT_DURABILITY", "showDurability",
