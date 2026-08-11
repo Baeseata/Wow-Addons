@@ -1,0 +1,138 @@
+name: Publish 12.1 releases (one shot)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-12-1-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - addon: DodoBricks
+            version: 1.2.1
+            tag: DodoBricks-v1.2.1
+            commit: d4d26904a15093e7ef69d7d800e1efce1c42dea7
+            project_id: 1571430
+            changelog: Updated Retail interface metadata for World of Warcraft 12.1.0. No gameplay or API changes were required.
+          - addon: DodoLura
+            version: 1.1.0
+            tag: DodoLura-v1.1.0
+            commit: 155acd708bf915c22f7e4c61dade257659ee8b16
+            project_id: 1602130
+            changelog: Updated for the World of Warcraft 12.1 aura-sound API, with zone pre-registration, restriction-state retry, and a 12.0.x fallback.
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      ADDON: ${{ matrix.addon }}
+      VERSION: ${{ matrix.version }}
+      TAG: ${{ matrix.tag }}
+      TARGET_COMMIT: ${{ matrix.commit }}
+      PROJECT_ID: ${{ matrix.project_id }}
+      CHANGELOG: ${{ matrix.changelog }}
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ matrix.commit }}
+
+      - name: Validate release metadata
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; refusing a duplicate upload."
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
+          TOC="$ADDON/$ADDON.toc"
+          test -f "$TOC"
+          ACTUAL_VERSION=$(grep -i '^## Version:' "$TOC" | head -n1 | cut -d: -f2- | tr -d ' \r')
+          test "$ACTUAL_VERSION" = "$VERSION"
+
+      - name: Build addon zip
+        id: zip
+        run: |
+          set -euo pipefail
+          STAGE=$(mktemp -d)
+          mkdir -p "$STAGE/$ADDON"
+          cd "$ADDON"
+          find . -type f \
+            \( -name '*.lua' -o -name '*.toc' -o -name 'README.md' -o -name '*.tga' -o -name '*.blp' -o -name '*.png' -o -name '*.ttf' -o -name '*.xml' -o -name '*.mp3' -o -name '*.ogg' \) \
+            -not -path './test/*' -not -name 'CLAUDE.md' \
+            -print | while read -r file; do
+              install -D "$file" "$STAGE/$ADDON/$file"
+            done
+          cd "$GITHUB_WORKSPACE"
+          ZIP="$GITHUB_WORKSPACE/$ADDON-$VERSION.zip"
+          cd "$STAGE"
+          zip -r "$ZIP" "$ADDON"
+          cd "$GITHUB_WORKSPACE"
+          unzip -l "$ZIP"
+          if unzip -l "$ZIP" | grep -E 'CLAUDE\.md|/test/'; then
+            echo "Forbidden files leaked into the zip."
+            exit 1
+          fi
+          echo "path=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "name=$ADDON-$VERSION.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve CurseForge game versions
+        id: game_versions
+        run: |
+          set -euo pipefail
+          test -n "$CF_API_KEY"
+          TOC="$ADDON/$ADDON.toc"
+          INTERFACES=$(grep -i '^## Interface:' "$TOC" | head -n1 | cut -d: -f2- | tr -d ' \r')
+          curl -fsS -H "X-Api-Token: $CF_API_KEY" -o versions.json https://wow.curseforge.com/api/game/versions
+          IDS='[]'
+          for n in $(echo "$INTERFACES" | tr ',' ' '); do
+            major=$((10#${n:0:2}))
+            minor=$((10#${n:2:2}))
+            patch=$((10#${n:4:2}))
+            version_name="$major.$minor.$patch"
+            hit=$(jq -c --arg name "$version_name" '[.[] | select(.name == $name and .gameVersionTypeID == 517) | .id]' versions.json)
+            if [ "$hit" = '[]' ]; then
+              hit=$(jq -c --arg name "$version_name" '[.[] | select(.name == $name) | .id]' versions.json)
+            fi
+            test "$hit" != '[]'
+            IDS=$(jq -cn --argjson a "$IDS" --argjson b "$hit" '$a + $b | unique')
+          done
+          echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+
+      - name: Keep release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: ${{ steps.zip.outputs.path }}
+
+      - name: Upload to CurseForge
+        run: |
+          set -euo pipefail
+          jq -cn \
+            --arg changelog "$CHANGELOG" \
+            --arg display "$ADDON $VERSION" \
+            --argjson game_versions '${{ steps.game_versions.outputs.ids }}' \
+            '{changelog: $changelog, changelogType: "markdown", displayName: $display, gameVersions: $game_versions, releaseType: "release"}' \
+            > metadata.json
+          HTTP=$(curl -sS -o response.json -w '%{http_code}' \
+            -H "X-Api-Token: $CF_API_KEY" \
+            -F 'metadata=<metadata.json' \
+            -F "file=@${{ steps.zip.outputs.path }}" \
+            "https://wow.curseforge.com/api/projects/$PROJECT_ID/upload-file")
+          cat response.json
+          test "$HTTP" = '200'
+
+      - name: Create release tag after successful upload
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" "$TARGET_COMMIT" -m "$CHANGELOG"
+          git push origin "refs/tags/$TAG"
