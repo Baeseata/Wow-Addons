@@ -2,7 +2,7 @@
 
 > 单人数字打砖块 (Ballz/Bricks n Balls 类),WoW 插件,Dodo 系列之一。仓库: `Baeseata/Wow-Addons` (public),插件在 `DodoBricks/`。
 > 换机器先 `git pull` + 读本文件。**UI 文案用英文**(中文是 Jerry 跟 Claude 的设计沟通语言)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
+> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.1.0,Interface 120100。
 > 姊妹项目 DodoPool(九球)有自己的 `DodoPool/CLAUDE.md`,音效/窗口/小地图按钮套路同源。
 
 ---

@@ -1,10 +1,10 @@
-## Interface: 120005, 120007
+## Interface: 120005, 120007, 120100
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoBricks
 ## Notes: A numbered brick-breaker minigame. A stream of bouncing balls chips away at HP-bearing bricks; the bricks drop one row each round.
 ## Author: Doodo
-## Version: 1.2.0
+## Version: 1.2.1
 ## SavedVariables: DodoBricksDB
 ## IconTexture: Interface\Icons\ability_mage_arcanebarrage
 
