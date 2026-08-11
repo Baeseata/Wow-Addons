@@ -15,16 +15,18 @@
 
 ## 为什么只做声音、不做图标(API 硬限制)
 
-- PA 对插件完全不可读(无事件/无 UnitAura/无 CLEU)。仅有两个托管接口:
-  - `C_UnitAuras.AddPrivateAuraAppliedSound` —— **按 spellID 精确**,本插件用这个(Master 通道,开怪注册/结束注销,见 Core.lua)。
+- PA 对插件完全不可读(无事件/无 UnitAura/无 CLEU)。能安全利用的托管接口:
+  - 12.1+ `C_UnitAuras.AddAuraSound(Enum.UnitAuraSoundTrigger.Added, soundInfo)` —— **按 spellID 精确**,本插件用这个(Master 通道)。12.0.x 回退到旧名 `AddPrivateAuraAppliedSound(soundInfo)`。
   - `C_UnitAuras.AddPrivateAuraAnchor` —— 按 auraIndex 槽位**不认 spellID**,同场其他 PA(蚀变吸收/黑暗符文等)会混入 → "仅星辰裂片图标"做不到,DBM/BigWigs 同样做不到。讨论过,放弃。
+- `AddAuraSound` 在战斗/聊天限制期间不能新增注册。因此 1.1.0 起不再等 `ENCOUNTER_START`:进入 March on Quel'Danas(instanceID **2913**)时预注册,离区注销。若在战斗中 `/reload`,监听 `ADDON_RESTRICTION_STATE_CHANGED` 并在 Chat restriction(5)变为 Inactive(0)后重试,供下一把使用。
 
 ## 发布
 
 - CF project **1602130**(Wow-Addons 家族 workflow,case map 已注册);发版 = 改 TOC `## Version:` → commit → tag `DodoLura-vX.Y.Z`(annotated,tag message = changelog,`--cleanup=verbatim`)→ push。
 - zip 只收 lua/toc/README/媒体文件 —— AirHorn.ogg 能进包,本文件(CLAUDE.md)和 .txt 不进包。AirHorn.ogg = CC-BY 3.0 Mike Koenig(README 已署名,勿删)。
 - 1.0.0 于 2026-07-08 上传成功(HTTP 200),等 CF 首次人工审核后公开。
+- 1.1.0 = WoW 12.1 兼容版:Interface **120100**,迁移 `AddAuraSound/RemoveAuraSound`,保留 12.0.5/12.0.7 API 回退,并改为 zone-based 预注册。
 
 ## 未来风险(唯一的维护点)
 
-DBM 的 MidnightFalls.lua TODO 预言:玩家摸清哪个 PA 对应哪机制后,**暴雪可能直接禁用这批 PA** → 本插件会**无声失效**(注册照样成功,只是永远不响)。到时候的出路:抄 DBM 的新方案(它计划切到 Dark Rune 类 encounter event / 官方 timeline 事件 437),或者看 BigWigs 怎么改。症状 = "打鲁拉被点名但没喇叭",先查 DBM 更新日志。
+12.1 的 `AddAuraSound` 对普通 aura 也有效,所以仅仅把 Starsplinter 从 private aura 改成普通 aura 不一定会弄坏插件。真正的风险是暴雪移除/替换 **1279512 / 1285510**、不再施加 aura,或再次改动声音 API;这些情况会让注册看似成功但永远不响。症状 = "打鲁拉被点名但没喇叭",先查 DBM/BigWigs 的 MidnightFalls 更新和最新 Blizzard API;若机制改成 encounter event / 官方 timeline 事件,跟随它们的新方案。

@@ -1,4 +1,4 @@
-## Interface: 120005, 120007
+## Interface: 120100, 120005, 120007
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoLura
@@ -6,7 +6,7 @@
 ## Notes-zhCN: 鲁拉(至暗之夜)星辰裂片点名气喇叭 —— 零设置,载入即生效
 ## X-License: AirHorn.ogg by Mike Koenig, CC-BY 3.0
 ## Author: Doodo
-## Version: 1.0.0
+## Version: 1.1.0
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
 Core.lua
