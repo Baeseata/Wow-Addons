@@ -47,11 +47,14 @@ tainted by 'DodoInspect'`。
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.8.0(2026-08-11 待发布)
+## 当前状态:1.8.0(2026-08-11 已发布,tag `DodoInspect-v1.8.0`)
 1.7.0 → **1.8.0**:12.1 `Curse of Ula'tek` / Season 2 兼容更新。
 - **属性优先级暂时隐藏**:`Config.STAT_PRIORITY_DATA_CURRENT=false` 是总闸门;
   `Resolve` 在数据入口 fail-closed,Options 也不注册开关。旧 `showStatPriority` SavedVariable
   和 `Data/StatPriority.lua` 都保留;拿到 12.1 确切资料后更新全表 + source/date,再把闸门改回 true。
+- **12.1 属性研究档案**:见 [`STAT_PRIORITY_RESEARCH_2026-08-11.md`](STAT_PRIORITY_RESEARCH_2026-08-11.md)。
+  本轮未跑模拟,审计公开攻略、职业社区文档和论坛后只有 5/40 个粗粒度候选,但 **0/40**
+  达到“独立社区确认 + 场景/英雄树无冲突”的重新开放标准,所以总闸门继续保持 false。
 - **装等渐变**:12.1 S2 标准轨道 Adventurer 266 起、Myth 6/6=334;
   Ascendant Venomstone 上限 341,末两名史诗团本首领/Very Rare 的 Myth-9 等效上限 344。
   Blizzard 确认 S2 相对 S1 整体 +46,故三个旧锚 216/280/298 同步平移为
