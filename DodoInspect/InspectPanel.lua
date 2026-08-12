@@ -310,17 +310,44 @@ end
 
 function ns.UpdateInspectPanel()
     if not panel or not panel:IsShown() then return end
-    local unit = InspectFrame and InspectFrame.unit or "target"
-    if not UnitExists(unit) then return end
+    -- The panel describes the INSPECTED player. Blizzard leaves .unit nil
+    -- in some refresh timings, and "target" has always been the fallback
+    -- because an inspect is nearly always aimed at your target -- but the
+    -- unqualified fallback pointed this friendly-only path at whatever
+    -- happens to be targeted, hostile players included, and their fields
+    -- are secret values. Only accept a target you could actually inspect;
+    -- ns.InspectSpecID guards the read regardless.
+    local unit = InspectFrame and InspectFrame.unit
+    if not unit and UnitExists("target") then unit = "target" end
+    if not unit or not UnitExists(unit) then return end
 
-    local heroSub, heroName = ns.InspectHeroSubTree()
-    ns.UpdateStatPriorityHeader(panel, ns.InspectSpecID(unit), heroSub, heroName, FS, PANEL_W)
+    -- CanInspect qualifies the UNIT, not just the fallback. .unit holds a
+    -- unit TOKEN (usually "target" -- which is why "target" works as a
+    -- fallback at all), so it follows whatever you target: an open inspect
+    -- window plus a new hostile target aims this friendly-only panel at a
+    -- player whose fields are secret. That is the 12x crash scenario, and
+    -- qualifying only the nil branch would have missed it entirely.
+    if type(CanInspect) == "function" and not CanInspect(unit) then return end
+
+    -- Gate BEFORE the spec lookup, not inside the header update: the
+    -- arguments would be evaluated either way. See ns.StatPriorityActive.
+    if ns.StatPriorityActive() then
+        local heroSub, heroName = ns.InspectHeroSubTree()
+        ns.UpdateStatPriorityHeader(panel, ns.InspectSpecID(unit), heroSub, heroName, FS, PANEL_W)
+    else
+        ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
+    end
 
     for _, row in ipairs(rows) do
-        -- hide the off-hand row entirely when nothing is equipped there
+        -- hide the off-hand row entirely when nothing is equipped there.
+        -- issecretvalue FIRST: "not <secret>" is itself an operation on the
+        -- value and throws. This line was copied from SidePanel, where the
+        -- unit is hardcoded "player" and can never be secret -- the guard
+        -- got dropped in the port, and UpdateRow guards the identical call.
         local visible = true
-        if row.slotID == 17 and not GetInventoryItemLink(unit, 17) then
-            visible = false
+        if row.slotID == 17 then
+            local offHand = GetInventoryItemLink(unit, 17)
+            if issecretvalue(offHand) or not offHand then visible = false end
         end
         row.shown = visible
         if visible then

@@ -663,8 +663,15 @@ end
 function ns.UpdateSidePanel()
     if not panel or not panel:IsShown() then return end
 
-    local heroSub, heroName = ns.PlayerHeroSubTree()
-    ns.UpdateStatPriorityHeader(panel, ns.PlayerSpecID(), heroSub, heroName, FS, PANEL_W)
+    -- Same gate-before-lookup shape as InspectPanel. Your own spec is
+    -- never secret, so here it only avoids pointless work while the
+    -- feature is off -- but keep the two panels reading identically.
+    if ns.StatPriorityActive() then
+        local heroSub, heroName = ns.PlayerHeroSubTree()
+        ns.UpdateStatPriorityHeader(panel, ns.PlayerSpecID(), heroSub, heroName, FS, PANEL_W)
+    else
+        ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
+    end
 
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped

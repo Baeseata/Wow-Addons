@@ -89,12 +89,11 @@ end
 -- deprecated globals still present in 12.0)
 ------------------------------------------------------------------
 
+-- Delegates to the one shared lookup (StatPriority.lua, loaded earlier
+-- per the TOC), which issecretvalue-guards the result and filters out 0.
+-- Two parallel copies of this used to exist and only one had the guard.
 local function GetInspectSpecID(unit)
-    if C_SpecializationInfo and C_SpecializationInfo.GetInspectSpecialization then
-        return C_SpecializationInfo.GetInspectSpecialization(unit)
-    end
-    if GetInspectSpecialization then return GetInspectSpecialization(unit) end
-    return nil
+    return ns.InspectSpecID and ns.InspectSpecID(unit) or nil
 end
 
 local function SpecNameByID(specID)
@@ -181,8 +180,11 @@ local function GetInspectHeroTalentName()
         return nil
     end
 
+    -- Already guarded and > 0 (or nil) -- see GetInspectSpecID above.
+    -- The old bare "specID <= 0" here was a second copy of the same
+    -- secret-value crash, shielded only by the HasValidInspectData check.
     local specID = GetInspectSpecID("target")
-    if not specID or specID <= 0 then return nil end
+    if not specID then return nil end
 
     local treeID = C_ClassTalents.GetTraitTreeForSpec
         and C_ClassTalents.GetTraitTreeForSpec(specID)

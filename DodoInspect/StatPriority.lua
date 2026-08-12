@@ -40,11 +40,23 @@ local function PlayerSpecID()
 end
 ns.PlayerSpecID = PlayerSpecID
 
--- The inspected unit's specID, or nil (0 = not yet known).
+-- The inspected unit's specID, or nil (0 = not yet known, secret = nil).
+-- This is the ONE spec lookup for non-player units -- TargetInfo calls
+-- it too, so the secret guard below can never go missing on one side.
+--
+-- !! The issecretvalue check MUST come first. A hostile player's spec is
+-- a secret value, and type() still reports "number" for one: the throw
+-- happens on the id > 0 compare, not on the type check. issecretvalue
+-- accepts anything (nil included) and never throws, so it leads.
 function ns.InspectSpecID(unit)
-    if type(GetInspectSpecialization) ~= "function" or not unit then return nil end
-    local id = GetInspectSpecialization(unit)
-    if type(id) == "number" and id > 0 then return id end
+    if not unit then return nil end
+    local id
+    if C_SpecializationInfo and C_SpecializationInfo.GetInspectSpecialization then
+        id = C_SpecializationInfo.GetInspectSpecialization(unit)
+    elseif type(GetInspectSpecialization) == "function" then
+        id = GetInspectSpecialization(unit)
+    end
+    if not issecretvalue(id) and type(id) == "number" and id > 0 then return id end
     return nil
 end
 
@@ -180,6 +192,20 @@ local function Resolve(specID, subTreeID)
         return data.builds[subTreeID]
     end
     return data
+end
+
+-- True when the header can show anything at all: the data-freshness
+-- gate plus the user toggle.
+--
+-- Callers must check this BEFORE looking a spec up. The gate inside
+-- Resolve is too late to protect the lookups: UpdateStatPriorityHeader's
+-- arguments are evaluated before the call, so ns.InspectSpecID(unit) runs
+-- (and could throw on a secret) even with the feature fully switched off.
+-- Callers still call UpdateStatPriorityHeader with a nil specID when this
+-- is false -- that is what zeroes dodoPriorityHeight and re-flows the rows.
+function ns.StatPriorityActive()
+    if ns.Config.STAT_PRIORITY_DATA_CURRENT ~= true then return false end
+    return ns.IsEnabled("showStatPriority") and true or false
 end
 
 ------------------------------------------------------------------

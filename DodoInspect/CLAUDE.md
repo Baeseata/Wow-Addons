@@ -14,7 +14,11 @@ InspectPanel(检视简化侧栏)/ Durability(平均耐久并入物品等级行 `
 StatRatings(强化属性栏:百分比+评级三列 + 装等渐变/小数)/
 TargetInfo(目标信息行)/ Options(ESC 设置 + `/dins`)/ Core。
 
-## ⚠️ 头号坑:12.0 Secret Values —— 只在 TargetInfo.lua
+## ⚠️ 头号坑:Secret Values —— ~~只在 TargetInfo.lua~~ **不只**(2026-08-11 更正)
+
+> 🔴 **这个标题以前写的是"只在 TargetInfo.lua",那句话本身就是 2026-08-11 那次崩溃的帮凶之一** ——
+> 新写 `StatPriority.lua` 的时候,读到"只在 TargetInfo"就没去想 guard。**下面第 41 行那条"审计结论"
+> 同样有过期风险:它是 2026-06-13 的快照,不是不变量。** 加任何读非玩家单位的代码,都自己重新点一遍。
 **血泪史(2026-06-13,同一个功能连踩 3 次崩溃)**:战场/竞技场里**敌对玩家的单位字段
 是 secret value**。被污染的插件代码对它做**比较 / 算术 / 拼接 / `#` / `math.floor` /
 `tostring`** 都会抛 `attempt to compare ... a secret ... value, while execution
@@ -47,7 +51,55 @@ tainted by 'DodoInspect'`。
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
 显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
 
-## 当前状态:1.8.0(2026-08-11 已发布,tag `DodoInspect-v1.8.0`)
+### 🔴 第四颗雷(2026-08-11,12.1,BugSack `12x`):`StatPriority.lua:47` 的 `id > 0`
+`ns.InspectSpecID` 少了 `issecretvalue` guard,`GetInspectSpecialization("target")` 对**敌对玩家**
+返回 secret number → `id > 0` 当场崩。**四条独立的失效原因,每条单独都够让它发生**:
+
+1. **`type(id) == "number"` 挡不住 secret** —— secret 保留原生 type,报错 locals 里那个
+   `(*temporary)="number"` 就是它顺利通过的证据。**`issecretvalue` 是唯一的闸,而且必须排第一。**
+2. **两份平行实现,只有一份有 guard** —— `TargetInfo.GetInspectSpecID` 早就写对了
+   (`SpecNameByID` 里 `issecretvalue` 打头),新写的 `ns.InspectSpecID` 没抄到。
+   **已合并成一个入口**:TargetInfo 那份现在委托 `ns.InspectSpecID`(TOC 里 StatPriority 先加载)。
+   顺带修掉 `GetInspectHeroTalentName` 里第二处裸 `specID <= 0`(它当时只被 `HasValidInspectData`
+   偶然挡着 —— 典型的"免检口没人验过")。
+3. **`InspectPanel` 的 `unit` 根本不保证是友方** —— 上面那句"检视只能对友方 → 非 secret"
+   **被 unit token 的本质破坏了**:`InspectFrame.unit` 存的是**unit token**(通常就是 `"target"`,
+   这正是 `or "target"` 那条 fallback 能成立的原因),**它跟着你的目标走**。检视窗口开着 + 目标切到
+   敌对玩家 = 这个"只对友方"的面板正指着一个满身 secret 的人。
+   ⚠ **第一版修复只给 fallback 那个分支加了 `CanInspect`,恰好漏掉主场景**(`.unit` 非 nil 时);
+   现在 `CanInspect(unit)` 无条件 qualify unit 本身。
+4. **fail-closed 闸门装错了层** —— 1.8.0 明明把整个功能关了
+   (`STAT_PRIORITY_DATA_CURRENT=false`),照崩。因为闸门在 `Resolve()` **函数体内**,而
+   `ns.UpdateStatPriorityHeader(panel, ns.InspectSpecID(unit), …)` 的**实参先于调用求值** ——
+   崩在参数上,闸门那行根本没机会跑。**新增 `ns.StatPriorityActive()`,两个面板都在查 spec 之前 gate。**
+   ⚠ 仍然要用 `nil` specID 调一次 `UpdateStatPriorityHeader`,布局靠它把 `dodoPriorityHeight` 归零。
+   🔑 **可迁移心法:"功能已关闭"不等于"那条代码不会跑" —— 闸门必须在最外层的求值之前。**
+5. 🔴 **修完上面四条,把一个从没被执行到的隐患 unshadow 了**(发版前审计抓到,**本次最值钱的一条**):
+   row 循环里 `if row.slotID == 17 and not GetInventoryItemLink(unit, 17)` —— **裸布尔测试,无 guard**。
+   而 `not <secret>` **本身就是对该值的操作、会抛**(见 `DodoNameplate/GOTCHAS.md` S1,同一条规则
+   游戏内验证过;本文件 `UpdateRow` 对**同一个 API、同一个 unit** 写的正是 `issecretvalue(x) or not x`,
+   那个短路顺序只有在这条成立时才有意义)。它一直没炸,**只因为 1.8.0 时 `StatPriority:47` 先崩、
+   执行压根走不到 row 循环**。我把前面那个修好 → 它第一次够得着 → 崩溃会原地**换个行号复活**,
+   而读起来像"根本没修好"。来源还是**抄代码丢 guard**:这行抄自 `SidePanel`,那边 unit 硬编码
+   `"player"` 永不 secret。
+   🔑 **心法:修掉一个早退型崩溃 = 把它后面所有代码第一次暴露出来。改完必须问「现在能走到哪儿了?」**
+
+`12x` = 同一行被连打 12 下:`GET_ITEM_INFO_RECEIVED` 每个未缓存物品都发一次,
+每次都 `C_Timer.After(0, ns.UpdateInspectPanel)`。
+
+**复现姿势**(修完想验就这么点):开着检视窗口 → 目标切到敌对玩家(战场最快)→ 旧版必进 BugSack。
+
+## 当前状态:1.8.1(2026-08-11 发布,tag `DodoInspect-v1.8.1`)
+1.8.0 → **1.8.1**:secret-value 崩溃 hotfix(BugSack 报 `12x`)。技术细节全在上面
+「第四颗雷」那节,这里只记做了什么:
+- `ns.InspectSpecID` 补 `issecretvalue` guard,并成为**所有**非玩家单位 spec 查询的唯一入口
+  (`TargetInfo.GetInspectSpecID` 改为委托它,顺带修掉那边第二处裸 `specID <= 0`)。
+- 新增 `ns.StatPriorityActive()`,`SidePanel` / `InspectPanel` 都在**查 spec 之前** gate ——
+  1.8.0 的 fail-closed 闸门在 `Resolve()` 函数体内,而实参先于调用求值,所以功能关着照样崩。
+- `InspectPanel` 的 `InspectFrame.unit → "target"` fallback 加 `CanInspect("target")` 前提。
+- **无功能变化**:属性优先级总闸门仍是 `false`,UI 上依旧什么都不显示。
+
+## 历史:1.8.0(2026-08-11 发布,tag `DodoInspect-v1.8.0`)
 1.7.0 → **1.8.0**:12.1 `Curse of Ula'tek` / Season 2 兼容更新。
 - **属性优先级暂时隐藏**:`Config.STAT_PRIORITY_DATA_CURRENT=false` 是总闸门;
   `Resolve` 在数据入口 fail-closed,Options 也不注册开关。旧 `showStatPriority` SavedVariable
@@ -197,3 +249,13 @@ Inspect 导出 `ns.GetLinkItemLevel`(检视装等按**链接**读,`ItemLocation`
 CF 项目 id **1572493**;tag `DodoInspect-v<版本>`(annotated,**`--cleanup=verbatim`**
 保留 `##` markdown 标题);workflow 校验 tag 版本 == TOC `## Version`,打包排除
 CLAUDE.md / test。PS 5.1 提交用 `git commit -F <文件>`(`-m` 带引号会被拆碎)。
+
+⚠️ **两个发版顺序 / 形态的坑(2026-08-11 发版前审计抓到,v1.8.0 已中过第 2 条)**:
+1. **workflow 打包的是 tag 指向的那个 commit** —— 代码必须**先 commit + push 进 repo,再打 tag**。
+   顺序反了 = 版本号是新的、包里代码是旧的,而且**全程绿灯没有任何人报错**。
+2. 🔴 **lightweight tag 会把 commit message 当 changelog 发上 CurseForge,而且完全不报错**。
+   必须 `git tag -a -F <文件> --cleanup=verbatim`。**`DodoInspect-v1.8.0` 就是 lightweight 打的**,
+   所以它在 CF 上的更新说明是那条 commit message,不是写好的 release notes。
+   **验法**(不用翻本地 tag):`git ls-remote --tags origin 'DodoInspect-*'` ——
+   annotated tag 会**多一行 `refs/tags/X^{}`**(peel 行);**没有那行 = lightweight**。
+   实测 v1.6.1 / v1.7.0 有,**v1.8.0 没有**。打完 tag 推上去后用这条自查一遍。
