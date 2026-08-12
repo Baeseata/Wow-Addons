@@ -8,8 +8,8 @@ name: CurseForge Release
 # the zip, validates the API token and resolves game version ids, but skips the
 # actual upload.
 #
-# Registering a new addon: add a line to the "case" project id map below AND to
-# the workflow_dispatch options list.
+# Registering a new addon: put "## X-Curse-Project-ID: <id>" in its TOC and add
+# the folder name to the workflow_dispatch options list below.
 
 on:
   push:
@@ -25,6 +25,7 @@ on:
           - DodoBricks
           - DodoInspect
           - DodoLura
+          - DodoNameplate
       dry_run:
         description: Build and validate everything but skip the upload
         type: boolean
@@ -78,13 +79,18 @@ jobs:
             fi
           fi
 
-          # CurseForge project id map. New addon: register here.
-          case "$ADDON" in
-            DodoBricks)  PROJECT_ID=1571430 ;;
-            DodoInspect) PROJECT_ID=1572493 ;;
-            DodoLura)    PROJECT_ID=1602130 ;;
-            *) echo "No CurseForge project id registered for $ADDON. Add it to this workflow."; exit 1 ;;
-          esac
+          # Prefer the id declared in the TOC ("## X-Curse-Project-ID"), so a new
+          # addon only needs it in one place. The case map below stays as the
+          # fallback for the addons whose TOC does not carry the id yet.
+          PROJECT_ID=$(grep -i '^## X-Curse-Project-ID:' "$TOC" | head -n1 | cut -d: -f2- | tr -d ' \r')
+          if [ -z "$PROJECT_ID" ]; then
+            case "$ADDON" in
+              DodoBricks)  PROJECT_ID=1571430 ;;
+              DodoInspect) PROJECT_ID=1572493 ;;
+              DodoLura)    PROJECT_ID=1602130 ;;
+              *) echo "No CurseForge project id for $ADDON: add '## X-Curse-Project-ID:' to its TOC."; exit 1 ;;
+            esac
+          fi
 
           # TOC interface numbers (comma separated) to version names: 120005 to 12.0.5
           VER_NAMES=""
@@ -115,9 +121,12 @@ jobs:
           mkdir -p "$STAGE/$ADDON"
 
           # Ship only addon runtime files. Excludes CLAUDE.md, dev notes, test folders.
+          # LICENSE is on the list because DodoNameplate shipped one while it still
+          # used BigWigsMods/packager: leaving it out would silently drop a file
+          # that is already in the published package.
           cd "$ADDON"
           find . -type f \
-            \( -name '*.lua' -o -name '*.toc' -o -name 'README.md' -o -name '*.tga' -o -name '*.blp' -o -name '*.png' -o -name '*.ttf' -o -name '*.xml' -o -name '*.mp3' -o -name '*.ogg' \) \
+            \( -name '*.lua' -o -name '*.toc' -o -name 'README.md' -o -name 'LICENSE' -o -name '*.tga' -o -name '*.blp' -o -name '*.png' -o -name '*.ttf' -o -name '*.xml' -o -name '*.mp3' -o -name '*.ogg' \) \
             -not -path './test/*' -not -name 'CLAUDE.md' \
             -print | while read -r f; do
               install -D "$f" "$STAGE/$ADDON/$f"
