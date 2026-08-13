@@ -91,19 +91,19 @@ tainted by 'DodoInspect'`。
 
 ## 当前状态:1.9.0(2026-08-13 本机实现,尚未发布/tag)
 1.8.1 → **1.9.0**:属性优先级改为**逐专精放行 + hero × content 矩阵**,不再等 40/40 一起开。
-- 当前 12.1 已核验 **26/40**;完整格子、来源和 14 个隐藏项见
-  [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md)。未核验专精在数据表里
-  根本没有可见 entry,绝不回退 2026-06 Season 1 数据。
+- 当前 12.1 已覆盖 **40/40**:26 个采用已基本收敛的矩阵,14 个按 Jerry 的产品口径采用
+  最新/最细来源的 `provisional=true` 最佳可用基线。完整格子和来源见
+  [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md)。不回退 2026-06 Season 1 数据。
 - 数据 entry 必须显式 `current=true` 才能 Resolve;全局只留
   `Config.STAT_PRIORITY_FEATURE_ENABLED` 作为 renderer/Options 总开关。玩家开关继续是
   `showStatPriority`,所以已有 SavedVariable 不迁移。
 - 每专精最多 hero tree × Raid/M+ 的 2×2;相同内容省略 `mythic`,相同英雄树省略 `builds`。
   build-only entry 在英雄树未知时**隐藏**,不猜默认树,避免 inspect 数据还没 ready 时短暂显示错行。
 - 新结构 `threshold` / `thresholds` 表示达到评级/百分比后**顺序真的变化**;header 加青色 `*`,tooltip
-  显示 after-order。`goals` / `contentGoals` 只表示粗略目标/区间,不是硬 cap。当前用于噬灭、增辉、
-  戒律、暗牧和元素。source/date 也从旧全局串改成每专精元数据。
+  显示 after-order。`goals` / `contentGoals` 只表示粗略评级/百分比目标或区间,不是硬 cap。当前用于
+  鲜血、噬灭、增辉、戒律、暗牧、元素、狂徒和敏锐。source/date 也从旧全局串改成每专精元数据。
 - tooltip 免责声明改为:仅供通用配装参考;装等/主属性通常优先;坦克默认生存、治疗默认治疗量;
-  最终模拟自己角色。TOC 升 1.9.0。
+  最终模拟自己角色。`provisional=true` 另显示橙色“当前来源存在分歧”提示。TOC 升 1.9.0。
 - **检视英雄树归属防串线**:`configID=-1` 是所有 addon 共用的全局 inspect config;另一插件对玩家 B
   `NotifyInspect` 时,不能让当前面板玩家 A 误读 B 的英雄树。`InspectPanel` hook 每次请求先 invalidate,
   只在 `INSPECT_READY` 的可读 GUID 与当前可检视 unit GUID 一致后重新信任;读取前还要求
@@ -144,7 +144,7 @@ tainted by 'DodoInspect'`。
   无 header 时仍居中)。开关 `showStatPriority`。header 字号跟 `FS`。
 - **tooltip**:全名(游戏全局 `STAT_CRITICAL_STRIKE` 等,四语免费)+ 软上限(结构化 `softcap={haste=20}` 套
   本地化模板)+ `构建: <英雄天赋名>` + 来源 + 免责声明。**无逐专精散文**,只 8 个模板串进 Locales
-  (`priTitle/priRaid/priMythic/priSame/priSoftcap/priSource/priDisclaimer/priBuild`,fr/es 无重音)。
+  (`priTitle/priRaid/priMythic/priSame/priSoftcap/priGoal*/priProvisional/priSource/priDisclaimer/priBuild`,fr/es 无重音)。
 - **数据**:`Data/StatPriority.lua` 按 **specID** 索引,**40 专精全覆盖**。order = stat key 数组,子数组 =
   tie group;`mythic` 与 raid 相同则省略;`softcap` 仅在有具体数字时写。来源/日期是全局
   `ns.STAT_PRIORITY_SOURCE/_DATE`(换季只改一处)。文件**纯 ASCII**(非 ASCII 只在 Locales)。
@@ -258,7 +258,8 @@ Inspect 导出 `ns.GetLinkItemLevel`(检视装等按**链接**读,`ItemLocation`
 ## 关键约定 / 可调参数
 - 渐变三阈值在 Config(MIN 262 / ORANGE 326 / MAX 344,每季调;当前为12.1 S2)。
 - 属性优先级全局功能闸门=`Config.STAT_PRIORITY_FEATURE_ENABLED`;数据新鲜度由每个 entry 的
-  `current=true` 控制。未核验专精不写 entry/不显示;不要恢复全局“全表一起 current”的设计。
+  `current=true` 控制。来源仍有分歧但获准显示的 entry 加 `provisional=true`;不要恢复全局
+  “全表一起 current”的设计,也不要把暂定行伪装成已收敛行。
   `showStatPriority` SavedVariable 保持不变。build-only entry 不得设置臆测 fallback。
 - 背包标签 & 格子缩写字号 = `*_FONT_SIZE + ns.L.sizeBump`(per-locale:cn **+2**、
   其它 **−2**)。这是 CJK-only 字号调整的范式。tag 最多 4 拉丁 / 2 CJK 字符。

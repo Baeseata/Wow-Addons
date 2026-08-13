@@ -92,7 +92,7 @@ weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
 **Stat priority line**, at the top of the gear summary side panel (and
-the inspect panel): verified Patch 12.1 PvE secondary-stat guidance in the
+the inspect panel): current Patch 12.1 PvE secondary-stat guidance in the
 same colored abbreviations the stat grid below uses (e.g.
 `Mastery = Crit > Haste > Versatility`, with `=` for stats that are roughly
 equal). Raid and Mythic+ form the columns and the two hero talents form the
@@ -100,13 +100,15 @@ rows of a compact data matrix. Identical hero rows are stored once, while
 identical Raid/M+ columns render as one line; a spec therefore uses anything
 from one shared line to a full 2-by-2 data matrix.
 
-The initial Patch 12.1 set covers **26 of 40 specs**. Availability is
-per-spec: verified specs display normally and the other 14 stay completely
-hidden, with no fallback to old Season 1 advice. The line switches when you
-change hero talents, and inspecting another player follows theirs. A cyan
-`*` marks a rating target or a point where the priority changes; hover for
-the before/after order, rough target ranges, active build, per-spec source
-and review date. See the complete
+The Patch 12.1 set covers **all 40 specs**: 26 use guidance that has largely
+converged, while 14 use a best-effort baseline selected from the newest and
+most specific current source. Those provisional rows show an orange warning
+in the tooltip instead of pretending the sources agree. There is no fallback
+to old Season 1 advice. The line switches when you change hero talents, and
+inspecting another player follows theirs. A cyan `*` marks a rating target or
+a point where the priority changes; hover for the before/after order, rough
+target ranges, active build, provisional status, per-spec source and review
+date. See the complete
 [`2026-08-13 release matrix`](STAT_PRIORITY_RELEASE_2026-08-13.md).
 
 The guidance is only a general gearing reference. Item level and primary

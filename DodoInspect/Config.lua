@@ -175,7 +175,8 @@ ns.Config = {
 
     -- Global renderer / option gate. Data freshness is enforced per spec
     -- in Data/StatPriority.lua: only entries marked current=true resolve,
-    -- so verified specs can ship without exposing stale rows for the rest.
+    -- so current specs can ship independently; provisional rows label
+    -- disagreements explicitly instead of exposing stale Season 1 data.
     STAT_PRIORITY_FEATURE_ENABLED = true,
 
     -- secondary stat grid colors (fixed column order: vers, haste,

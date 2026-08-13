@@ -233,8 +233,9 @@ local function RulesEqual(data)
 end
 
 -- Resolve the effective priority for a spec given the active hero
--- talent sub-tree. Freshness is per spec: stale / unverified entries do
--- not resolve. A build-specific matrix row wins. A build-only entry has
+-- talent sub-tree. Freshness is per spec: stale entries do not resolve;
+-- provisional entries resolve but are labeled in the tooltip. A
+-- build-specific matrix row wins. A build-only entry has
 -- no arbitrary fallback while the hero tree is unknown, so it hides
 -- instead of showing the other tree's advice during inspect loading.
 local function Resolve(specID, subTreeID)
@@ -351,7 +352,10 @@ local function OnHeaderEnter(self)
     local function AddGoal(contentLabel, goal)
         local stat = FullLabel(goal.stat)
         local label
-        if goal.min and goal.max then
+        if goal.unit == "percent" then
+            label = string.format(L.priGoalPercent or "%s target ~%d%%",
+                stat, goal.value)
+        elseif goal.min and goal.max then
             label = string.format(L.priGoalRange or "%s target %d-%d rating",
                 stat, goal.min, goal.max)
         elseif goal.max then
@@ -378,6 +382,13 @@ local function OnHeaderEnter(self)
         for _, goal in ipairs(data.contentGoals.mythic or {}) do
             AddGoal(L.priMythic or "M+", goal)
         end
+    end
+
+    if data.provisional == true
+        or (specData and specData.provisional == true) then
+        GameTooltip:AddLine(L.priProvisional
+            or "Provisional: current sources disagree; this is a best-effort baseline.",
+            1.00, 0.62, 0.20, true)
     end
 
     local source = data.source or (specData and specData.source)

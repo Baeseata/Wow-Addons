@@ -4,17 +4,18 @@
 
 实现版本：1.9.0（本机，尚未发布）
 
-当前结果：**26/40 个专精可显示，14/40 个专精继续隐藏**
+当前结果：**40/40 个专精可显示：26 个已基本收敛，14 个暂定基线**
 
 ## 发布规则
 
 - 审核单位从“整张 40 专精表”改为单个 `spec × hero tree × content` 格子。
 - 两棵英雄树相同就压成一行；团本与 M+ 相同就压成一列。最简单是 1×1，最复杂是 2×2。
-- 同一个格子里仍有实质相反的当前资料时，该专精不显示；不能用 `=` 掩盖来源冲突。
+- 同一个格子里仍有实质相反的当前资料时，选更新时间最新、拆分最细且最符合默认场景的一份
+  作为 source-of-record，并给 entry 标记 `provisional=true`；tooltip 必须明示来源仍有分歧。
 - `=` 只用于攻略明确表示相近、可互换或经常翻转的属性。
 - 明确的评级目标、目标区间和“达到阈值后换序”进入结构化 tooltip；目标不是硬 cap。
 - 所有提示统一带免责声明：仅供通用配装参考，通常先看装等和主属性；坦克默认生存，治疗默认治疗量；最终模拟自己的角色。
-- 每个生产 entry 必须显式 `current=true`。没有当前 entry 的专精完全隐藏，不回退 Season 1 数据。
+- 每个生产 entry 必须显式 `current=true`；暂定 entry 还必须显式 `provisional=true`。不回退 Season 1 数据。
 
 缩写：`C` 暴击、`H` 急速、`M` 精通、`V` 全能。
 
@@ -22,13 +23,13 @@
 
 | 最小矩阵 | 数量 | 含义 |
 |---|---:|---|
-| 1×1 | 15 | 两树相同，团本/M+相同 |
-| 1×2 | 2 | 两树相同，只分团本/M+ |
-| 2×1 | 4 | 只分英雄树，团本/M+相同 |
-| 2×2 | 5 | 英雄树和内容都需要保留 |
-| **合计** | **26** | 其余 14 个无可见 fallback |
+| 1×1 | 24 | 两树相同，团本/M+相同 |
+| 1×2 | 5 | 两树相同，只分团本/M+或内容目标 |
+| 2×1 | 5 | 只分英雄树，团本/M+相同 |
+| 2×2 | 6 | 英雄树和内容都需要保留 |
+| **合计** | **40** | 26 个已收敛 + 14 个暂定 |
 
-## 1×1：15 个
+## 已基本收敛的 1×1：15 个
 
 | specID | 专精 | 团本 = M+、两英雄树相同 | 主要依据 |
 |---:|---|---|---|
@@ -48,7 +49,7 @@
 | 263 | 增强萨满祭司 | `M=H > C > V` | [Wowhead / Wordup](https://www.wowhead.com/guide/classes/shaman/enhancement/stat-priority-pve-dps)、[Icy Veins / Wordup](https://www.icy-veins.com/wow/enhancement-shaman-pve-dps-stat-priority) |
 | 71 | 武器战士 | `C=H > M > V` | [Wowhead / Archimtiros](https://www.wowhead.com/guide/classes/warrior/arms/stat-priority-pve-dps)、[Icy Veins / Archimtiros](https://www.icy-veins.com/wow/arms-warrior-pve-dps-stat-priority) |
 
-## 1×2：2 个
+## 已基本收敛的 1×2：2 个
 
 | specID | 专精 | 团本 | M+ | 主要依据 |
 |---:|---|---|---|---|
@@ -57,7 +58,7 @@
 
 防战遇到以魔法伤害为主的战斗时，全能可能升到第一；这是战斗类型例外，不改写一般生存矩阵。
 
-## 2×1：4 个
+## 已基本收敛的 2×1：4 个
 
 | specID | 专精 | 英雄树 A（团本 = M+） | 英雄树 B（团本 = M+） | 主要依据 |
 |---:|---|---|---|---|
@@ -68,7 +69,7 @@
 
 增辉两树在约 1840 精通评级后都转为 `M=C=H > V`；这是软转折，不是硬 cap。
 
-## 2×2：5 个
+## 已基本收敛的 2×2：5 个
 
 ### 噬灭恶魔猎手（1480）
 
@@ -124,24 +125,27 @@ tooltip 同时显示无增益的粗略评级目标：
 
 来源：[Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)、[Icy Veins / Publik](https://www.icy-veins.com/wow/shadow-priest-pve-dps-stat-priority)、[Method / Jaerv](https://www.method.gg/guides/shadow-priest/stats-races-and-consumables)。这些是目标区间，不是硬上限。
 
-## 继续隐藏：14 个
+## 暂定基线：14 个
 
-| specID | 专精 | 当前阻碍 |
-|---:|---|---|
-| 250 | 鲜血死亡骑士 | Deathbringer 的 M+生存权重在当前来源中实质冲突 |
-| 252 | 邪恶死亡骑士 | 同一作者相隔一天把第一属性从暴击改为精通，且缺明确 AoE确认 |
-| 1467 | 湮灭唤魔师 | 三位当前作者分别给出三套前三属性顺序 |
-| 62 | 奥术法师 | 英雄树分表与同期通用资料在中后位实质冲突 |
-| 270 | 织雾武僧 | M+同一治疗目标下，精通从第二到末位均有当前资料支持 |
-| 66 | 防护圣骑士 | 团本生存格的精通/全能/暴击顺序没有收敛 |
-| 257 | 神圣牧师 | M+资料混合治疗、伤害与生存目标，当前无法形成同口径格子 |
-| 260 | 狂徒潜行者 | 第一属性与急速 23%/25–30%目标冲突 |
-| 261 | 敏锐潜行者 | 团本第一属性反转，M+急速目标 650–700/1100 评级冲突 |
-| 264 | 恢复萨满祭司 | 急速/全能顺序随吞吐、法力与生存目标翻转 |
-| 265 | 痛苦术士 | 精通与全能的末两位仍反转 |
-| 266 | 恶魔学识术士 | 三套同格口径和 22%急速转折没有互相确认 |
-| 267 | 毁灭术士 | 连第一属性是精通还是急速都未收敛 |
-| 72 | 狂怒战士 | 同一作者两个当前页面在第一位和末两位互相冲突 |
+这些专精不再隐藏。插件选定下表的 source-of-record 作为默认参考，并在 tooltip 用橙色提示
+“当前来源存在分歧”。这是产品允许的有依据近似值，不表示其他当前作者一定错误。
+
+| specID | 专精 | 最小矩阵 | 插件采用的暂定答案 | source-of-record / 取舍 |
+|---:|---|:---:|---|---|
+| 250 | 鲜血死亡骑士 | 2×2 | San'layn `31` 团本 `H > M=C=V`；M+ `V > H > M > C`，1620 全能评级后 `H > M > C > V`。Deathbringer `33` 团本 `C > M=V > H`；M+ `V > M > C=H` | 团本：[Wowhead / Mandl](https://www.wowhead.com/guide/classes/death-knight/blood/stat-priority-pve-tank)；M+：[Kyrasis 12.1 Advanced BDK](https://docs.google.com/document/d/1FJlB1T8ijaQLjY_cihyoyhLoi6lYRnT-N-ipVFCLidE/edit?usp=sharing)。按内容分别采用更细的生存模型 |
+| 252 | 邪恶死亡骑士 | 1×1 | 两树、团本/M+：`M > C > H > V` | [Wowhead / Taeznak](https://www.wowhead.com/guide/classes/death-knight/unholy/stat-priority-pve-dps)：最新逐树完整表 |
+| 1467 | 湮灭唤魔师 | 1×1 | 两树、团本/M+：`C > M > H > V` | [Wowhead / Preheat](https://www.wowhead.com/guide/classes/evoker/devastation/stat-priority-pve-dps)：最新逐树表；不混入 Method 的另一顺序 |
+| 62 | 奥术法师 | 2×1 | Spellslinger `40`：`H > M > C > V`；Sunfury `39`：`H > V > C > M` | [Wowhead / Porom](https://www.wowhead.com/guide/classes/mage/arcane/stat-priority-pve-dps)：当前资料中拆英雄树最细 |
+| 270 | 织雾武僧 | 1×2 | 团本治疗 `H > C > V > M`；M+治疗 `H > M > C > V` | [Wowhead / Swirl](https://www.wowhead.com/guide/classes/monk/mistweaver/stat-priority-pve-healer)：明确分 Raid/M+，并解释 M+精通联动 |
+| 66 | 防护圣骑士 | 1×1 | 两树、团本/M+默认生存：`H > M > C > V` | [Wowhead / Pumps](https://www.wowhead.com/guide/classes/paladin/protection/stat-priority-pve-tank)：采用 survivability 完整序，不混 DPS 序 |
+| 257 | 神圣牧师 | 1×2 | 团本治疗 `C > M > V > H`；M+治疗吞吐 `C > V > H > M` | [Icy Veins / Niphyr](https://www.icy-veins.com/wow/holy-priest-pve-healing-stat-priority)：选择纯治疗吞吐口径，不混伤害/生存目标 |
+| 260 | 狂徒潜行者 | 1×1 | 两树、团本/M+：`H > C > V > M`；急速目标约 23% | [Wowhead / JustGuy](https://www.wowhead.com/guide/classes/rogue/outlaw/stat-priority-pve-dps)：采用专门属性页，不混同作者 overview 的不同目标 |
+| 261 | 敏锐潜行者 | 1×2 | 两树均 `M > H > C > V`；团本急速目标约 1100 评级，M+约 650–700 | [Wowhead / fuu1](https://www.wowhead.com/guide/classes/rogue/subtlety/stat-priority-pve-dps)：8 月 13 日更新且明确分内容目标 |
+| 264 | 恢复萨满祭司 | 1×1 | 两树、团本/M+默认治疗：`C > H > V > M` | [Wowhead / Harreks](https://www.wowhead.com/guide/classes/shaman/restoration/stat-priority-pve-healer)：最新且明确称两树/各场景同序 |
+| 265 | 痛苦术士 | 1×1 | 两树、团本/M+：`H > C > V > M` | [Wowhead / Kalamazi](https://www.wowhead.com/guide/classes/warlock/affliction/stat-priority-pve-dps)：采用更新较晚的职业作者页 |
+| 266 | 恶魔学识术士 | 1×1 | 两树、团本/M+：`H=C > M > V` | [Wowhead / NotWarlock](https://www.wowhead.com/guide/classes/warlock/demonology/stat-priority-pve-dps)：保留作者明确的 Haste/Crit 接近关系 |
+| 267 | 毁灭术士 | 1×1 | 两树、团本/M+：`H > M=C > V` | [Wowhead / Loozy](https://www.wowhead.com/guide/classes/warlock/destruction/stat-priority-pve-dps)：采用最新专门属性页，不混其他作者的精通第一模型 |
+| 72 | 狂怒战士 | 1×1 | 两树、团本/M+：`H > M > C > V` | [Wowhead / Archimtiros](https://www.wowhead.com/guide/classes/warrior/fury/stat-priority-pve-dps)：采用更新较晚的专门属性页 |
 
 ## 复查时点
 

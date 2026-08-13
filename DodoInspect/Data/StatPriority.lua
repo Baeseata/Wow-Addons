@@ -1,9 +1,10 @@
 -- DodoInspect - Data/StatPriority.lua
--- Verified Patch 12.1 PvE secondary-stat guidance, keyed by specID.
+-- Current Patch 12.1 PvE secondary-stat guidance, keyed by specID.
 --
 -- DATA ONLY, ASCII ONLY. Only entries with current=true are visible.
--- Missing specs are deliberately hidden instead of falling back to the
--- retained Season 1 research. The primary stat is intentionally omitted.
+-- provisional=true marks a best-effort source-of-record where current
+-- authors still disagree. There is no fallback to retained Season 1
+-- research. The primary stat is intentionally omitted.
 --
 -- Matrix compression:
 --   raid       : Raid / single-target order
@@ -14,8 +15,8 @@
 --   { "mastery", { "crit", "haste" }, "versatility" }
 --
 -- Structured guidance:
---   goals         : shared rough rating targets (not hard caps)
---   contentGoals  : separate raid / mythic rough rating targets
+--   goals         : shared rough rating/percent targets (not hard caps)
+--   contentGoals  : separate raid / mythic rough targets
 --   threshold     : shared point where the order changes
 --   thresholds    : separate raid / mythic transition points
 -- A threshold has stat, value, unit="rating" or "percent", and the
@@ -28,10 +29,39 @@ ns.StatPriority = {
     ------------------------------------------------------------------
     -- Death Knight
     ------------------------------------------------------------------
+    [250] = { -- Blood; survival baseline
+        current = true,
+        provisional = true,
+        source = "Wowhead (Mandl) / Kyrasis",
+        date = "2026-08-13",
+        builds = {
+            [31] = { -- San'layn
+                raid = { "haste", { "mastery", "crit", "versatility" } },
+                mythic = { "versatility", "haste", "mastery", "crit" },
+                thresholds = {
+                    mythic = {
+                        stat = "versatility", value = 1620, unit = "rating",
+                        after = { "haste", "mastery", "crit", "versatility" },
+                    },
+                },
+            },
+            [33] = { -- Deathbringer
+                raid = { "crit", { "mastery", "versatility" }, "haste" },
+                mythic = { "versatility", "mastery", { "crit", "haste" } },
+            },
+        },
+    },
     [251] = { -- Frost
         current = true,
         raid = { "crit", "mastery", "haste", "versatility" },
         source = "Wowhead (khazakdk)",
+        date = "2026-08-13",
+    },
+    [252] = { -- Unholy
+        current = true,
+        provisional = true,
+        raid = { "mastery", "crit", "haste", "versatility" },
+        source = "Wowhead (Taeznak)",
         date = "2026-08-13",
     },
 
@@ -123,6 +153,13 @@ ns.StatPriority = {
     ------------------------------------------------------------------
     -- Evoker
     ------------------------------------------------------------------
+    [1467] = { -- Devastation
+        current = true,
+        provisional = true,
+        raid = { "crit", "mastery", "haste", "versatility" },
+        source = "Wowhead (Preheat)",
+        date = "2026-08-13",
+    },
     [1468] = { -- Preservation; healing baseline
         current = true,
         source = "Wowhead / Spiritbloom.Pro / Method",
@@ -193,6 +230,20 @@ ns.StatPriority = {
     ------------------------------------------------------------------
     -- Mage
     ------------------------------------------------------------------
+    [62] = { -- Arcane
+        current = true,
+        provisional = true,
+        source = "Wowhead (Porom)",
+        date = "2026-08-13",
+        builds = {
+            [40] = { -- Spellslinger
+                raid = { "haste", "mastery", "crit", "versatility" },
+            },
+            [39] = { -- Sunfury
+                raid = { "haste", "versatility", "crit", "mastery" },
+            },
+        },
+    },
     [63] = { -- Fire
         current = true,
         raid = { "haste", "mastery", "versatility", "crit" },
@@ -222,6 +273,14 @@ ns.StatPriority = {
         source = "Peak of Serenity / Wowhead",
         date = "2026-08-13",
     },
+    [270] = { -- Mistweaver; healing throughput baseline
+        current = true,
+        provisional = true,
+        raid = { "haste", "crit", "versatility", "mastery" },
+        mythic = { "haste", "mastery", "crit", "versatility" },
+        source = "Wowhead (Swirl)",
+        date = "2026-08-13",
+    },
 
     ------------------------------------------------------------------
     -- Paladin
@@ -239,6 +298,13 @@ ns.StatPriority = {
                 mythic = { "mastery", "haste", "crit", "versatility" },
             },
         },
+    },
+    [66] = { -- Protection; survival baseline
+        current = true,
+        provisional = true,
+        raid = { "haste", "mastery", "crit", "versatility" },
+        source = "Wowhead (Pumps)",
+        date = "2026-08-13",
     },
     [70] = { -- Retribution
         current = true,
@@ -265,6 +331,14 @@ ns.StatPriority = {
                 raid = { "haste", "mastery", "crit", "versatility" },
             },
         },
+    },
+    [257] = { -- Holy; healing throughput baseline
+        current = true,
+        provisional = true,
+        raid = { "crit", "mastery", "versatility", "haste" },
+        mythic = { "crit", "versatility", "haste", "mastery" },
+        source = "Icy Veins (Niphyr)",
+        date = "2026-08-13",
     },
     [258] = { -- Shadow
         current = true,
@@ -319,6 +393,31 @@ ns.StatPriority = {
         source = "Wowhead / Icy Veins",
         date = "2026-08-13",
     },
+    [260] = { -- Outlaw
+        current = true,
+        provisional = true,
+        raid = { "haste", "crit", "versatility", "mastery" },
+        goals = {
+            { stat = "haste", value = 23, unit = "percent" },
+        },
+        source = "Wowhead (JustGuy)",
+        date = "2026-08-13",
+    },
+    [261] = { -- Subtlety
+        current = true,
+        provisional = true,
+        raid = { "mastery", "haste", "crit", "versatility" },
+        contentGoals = {
+            raid = {
+                { stat = "haste", value = 1100, unit = "rating" },
+            },
+            mythic = {
+                { stat = "haste", min = 650, max = 700, unit = "rating" },
+            },
+        },
+        source = "Wowhead (fuu1)",
+        date = "2026-08-13",
+    },
 
     ------------------------------------------------------------------
     -- Shaman
@@ -338,6 +437,38 @@ ns.StatPriority = {
         source = "Wowhead / Icy Veins (Wordup)",
         date = "2026-08-13",
     },
+    [264] = { -- Restoration; healing throughput baseline
+        current = true,
+        provisional = true,
+        raid = { "crit", "haste", "versatility", "mastery" },
+        source = "Wowhead (Harreks)",
+        date = "2026-08-13",
+    },
+
+    ------------------------------------------------------------------
+    -- Warlock
+    ------------------------------------------------------------------
+    [265] = { -- Affliction
+        current = true,
+        provisional = true,
+        raid = { "haste", "crit", "versatility", "mastery" },
+        source = "Wowhead (Kalamazi)",
+        date = "2026-08-13",
+    },
+    [266] = { -- Demonology
+        current = true,
+        provisional = true,
+        raid = { { "haste", "crit" }, "mastery", "versatility" },
+        source = "Wowhead (NotWarlock)",
+        date = "2026-08-13",
+    },
+    [267] = { -- Destruction
+        current = true,
+        provisional = true,
+        raid = { "haste", { "mastery", "crit" }, "versatility" },
+        source = "Wowhead (Loozy)",
+        date = "2026-08-13",
+    },
 
     ------------------------------------------------------------------
     -- Warrior
@@ -346,6 +477,13 @@ ns.StatPriority = {
         current = true,
         raid = { { "crit", "haste" }, "mastery", "versatility" },
         source = "Wowhead / Icy Veins (Archimtiros)",
+        date = "2026-08-13",
+    },
+    [72] = { -- Fury
+        current = true,
+        provisional = true,
+        raid = { "haste", "mastery", "crit", "versatility" },
+        source = "Wowhead (Archimtiros)",
         date = "2026-08-13",
     },
     [73] = { -- Protection; general survival baseline

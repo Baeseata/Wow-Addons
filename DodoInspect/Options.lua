@@ -142,12 +142,12 @@ function ns.RegisterOptions()
             ns.RebuildSidePanel)
 
         -- Only per-spec entries marked current=true can resolve. The
-        -- SavedVariables key remains stable as the verified set grows.
+        -- SavedVariables key remains stable as the current set changes.
         if ns.Config.STAT_PRIORITY_FEATURE_ENABLED == true then
             AddFeatureCheckbox(category,
                 "DODO_INSPECT_STAT_PRIORITY", "showStatPriority",
                 "Stat priority line",
-                "Show verified PvE secondary-stat guidance (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. It follows hero talents and Raid/M+ when they differ. Hover for thresholds, review date, sources and the disclaimer. Unverified specs stay hidden.",
+                "Show current PvE secondary-stat guidance (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. It follows hero talents and Raid/M+ when they differ. Hover for targets, provisional status, review date, sources and the disclaimer.",
                 ns.ApplyStatPriorityEnabled)
         end
 
