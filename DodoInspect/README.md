@@ -111,6 +111,12 @@ target ranges, active build, provisional status, per-spec source and review
 date. See the complete
 [`2026-08-13 release matrix`](STAT_PRIORITY_RELEASE_2026-08-13.md).
 
+Tooltip stat names follow the addon's language setting even when the game
+client uses another language; hero-talent build names still come from the
+game client. For a rating target, compare the unbuffed number shown in
+parentheses on the character sheet; it is not a percentage, item level or
+hard cap.
+
 The guidance is only a general gearing reference. Item level and primary
 stat normally come first; tank rows use a survival baseline and healer rows
 use healing throughput. Sim your character for final choices. The data

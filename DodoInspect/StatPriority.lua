@@ -11,8 +11,8 @@
 -- disclaimer live in the hover tooltip (structured and translated).
 --
 -- This file stays ASCII: the separators are plain ">" and "=", the
--- labels come from ns.L (Locales.lua) and the tooltip full names come
--- from the game's own localized STAT_* globals.
+-- labels and tooltip full names come from ns.L (Locales.lua). The
+-- game's localized STAT_* globals are only a compatibility fallback.
 
 local _, ns = ...
 
@@ -131,6 +131,10 @@ local function AbbrevLabel(statKey)
 end
 
 local function FullLabel(statKey)
+    local localized = ns.L and ns.L.statNames and ns.L.statNames[statKey]
+    if type(localized) == "string" and localized ~= "" then
+        return localized
+    end
     local g = _G[STAT_FULL[statKey] or ""]
     if type(g) == "string" and g ~= "" then return g end
     return AbbrevLabel(statKey)
@@ -313,8 +317,11 @@ local function OnHeaderEnter(self)
         end
     end
 
+    local hasRatingGuidance = false
+
     local function AddTransition(contentLabel, transition)
         if not transition or not transition.after then return end
+        if transition.unit ~= "percent" then hasRatingGuidance = true end
         local stat = FullLabel(transition.stat)
         local template
         if transition.unit == "percent" then
@@ -350,6 +357,7 @@ local function OnHeaderEnter(self)
     end
 
     local function AddGoal(contentLabel, goal)
+        if goal.unit ~= "percent" then hasRatingGuidance = true end
         local stat = FullLabel(goal.stat)
         local label
         if goal.unit == "percent" then
@@ -382,6 +390,10 @@ local function OnHeaderEnter(self)
         for _, goal in ipairs(data.contentGoals.mythic or {}) do
             AddGoal(L.priMythic or "M+", goal)
         end
+    end
+
+    if hasRatingGuidance and L.priRatingHelp then
+        GameTooltip:AddLine(L.priRatingHelp, 0.65, 0.65, 0.65, true)
     end
 
     if data.provisional == true

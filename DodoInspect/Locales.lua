@@ -71,6 +71,12 @@ ns.Locales = {
             mastery     = "MA",
             crit        = "CR",
         },
+        statNames = {
+            versatility = "Versatility",
+            haste       = "Haste",
+            mastery     = "Mastery",
+            crit        = "Critical Strike",
+        },
         -- tertiary stats, 2 letters max (1 CJK char)
         terts = {
             speed     = "SP",
@@ -92,6 +98,7 @@ ns.Locales = {
         priGoalRatingPercent = "%s target ~%d rating (~%d%%)",
         priGoalRange = "%s target %d-%d rating",
         priGoalMax = "%s target at most ~%d rating",
+        priRatingHelp = "For rating targets, use the unbuffed number in parentheses on the character sheet; it is not a percentage or hard cap.",
         priSource  = "Sources: %s | Reviewed: %s",
         priProvisional = "Provisional: current sources disagree; this is a best-effort baseline.",
         priDisclaimer = "General gearing reference only. Item level and primary stat usually come first; tank priorities assume survival and healer priorities assume healing. Sim your character for final choices.",
@@ -144,6 +151,12 @@ ns.Locales = {
             mastery     = "精",
             crit        = "爆",
         },
+        statNames = {
+            versatility = "全能",
+            haste       = "急速",
+            mastery     = "精通",
+            crit        = "暴击",
+        },
         terts = {
             speed     = "速",
             leech     = "吸",
@@ -163,6 +176,7 @@ ns.Locales = {
         priGoalRatingPercent = "%s目标约%d评级（约%d%%）",
         priGoalRange = "%s目标约%d-%d评级",
         priGoalMax = "%s目标不高于约%d评级",
+        priRatingHelp = "评级目标请对照角色面板括号内的未加增益绿字点数；它不是百分比或硬上限。",
         priSource  = "来源: %s｜复核: %s",
         priProvisional = "暂定建议：当前资料存在分歧，本条采用最佳可用的通用基线。",
         priDisclaimer = "仅供通用配装参考。通常先看装等和主属性；坦克按生存、治疗按治疗量排序，最终请模拟自己的角色。",
@@ -215,6 +229,12 @@ ns.Locales = {
             mastery     = "MA", -- maitrise
             crit        = "CR", -- critique
         },
+        statNames = {
+            versatility = "Polyvalence",
+            haste       = "Hate",
+            mastery     = "Maitrise",
+            crit        = "Coup critique",
+        },
         terts = {
             speed     = "VI", -- vitesse
             leech     = "PO", -- ponction
@@ -234,6 +254,7 @@ ns.Locales = {
         priGoalRatingPercent = "Objectif %s : ~%d score (~%d%%)",
         priGoalRange = "Objectif %s : %d-%d score",
         priGoalMax = "Objectif %s : au plus ~%d score",
+        priRatingHelp = "Pour les objectifs, utilisez le score sans bonus entre parentheses sur la fiche; ce n'est ni un pourcentage ni un plafond.",
         priSource  = "Sources : %s | Verifie : %s",
         priProvisional = "Provisoire : les sources actuelles divergent; cette ligne est une base indicative.",
         priDisclaimer = "Reference generale uniquement. Le niveau d'objet et la statistique principale priment souvent; tanks = survie, soigneurs = soins. Simulez votre personnage.",
@@ -286,6 +307,12 @@ ns.Locales = {
             mastery     = "MA", -- maestria
             crit        = "CR", -- critico
         },
+        statNames = {
+            versatility = "Versatilidad",
+            haste       = "Celeridad",
+            mastery     = "Maestria",
+            crit        = "Golpe critico",
+        },
         terts = {
             speed     = "VE", -- velocidad
             leech     = "SU", -- sustraccion de vida
@@ -305,6 +332,7 @@ ns.Locales = {
         priGoalRatingPercent = "Objetivo de %s: ~%d de indice (~%d%%)",
         priGoalRange = "Objetivo de %s: %d-%d de indice",
         priGoalMax = "Objetivo de %s: como maximo ~%d de indice",
+        priRatingHelp = "Para los objetivos, usa el indice sin beneficios entre parentesis en la hoja; no es un porcentaje ni un limite.",
         priSource  = "Fuentes: %s | Revisado: %s",
         priProvisional = "Provisional: las fuentes actuales difieren; esta linea es una referencia aproximada.",
         priDisclaimer = "Solo referencia general. El nivel de objeto y la estadistica principal suelen primar; tanques = supervivencia, sanadores = sanacion. Simula tu personaje.",
