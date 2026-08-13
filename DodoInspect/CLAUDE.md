@@ -98,6 +98,11 @@ tainted by 'DodoInspect'`。
   1.8.0 的 fail-closed 闸门在 `Resolve()` 函数体内,而实参先于调用求值,所以功能关着照样崩。
 - `InspectPanel` 的 `InspectFrame.unit → "target"` fallback 加 `CanInspect("target")` 前提。
 - **无功能变化**:属性优先级总闸门仍是 `false`,UI 上依旧什么都不显示。
+- **2026-08-13 属性增量复核**:见
+  [`STAT_PRIORITY_RESEARCH_2026-08-13.md`](STAT_PRIORITY_RESEARCH_2026-08-13.md)。40 专精再次全审计;
+  浩劫(577)与惩戒(70)达到“资料层面就绪”,但 Blizzard 已公告开季及 8/26、9/2、9/23
+  继续职业调优,而 S2 团本/M+ 尚未开放,故严格生产结论仍是 **0/40**。另留 14 个候选、
+  24 个冲突/不确定项。不要因此打开全局闸门;若要提前放出少数专精,先实现逐专精有效期。
 
 ## 历史:1.8.0(2026-08-11 发布,tag `DodoInspect-v1.8.0`)
 1.7.0 → **1.8.0**:12.1 `Curse of Ula'tek` / Season 2 兼容更新。

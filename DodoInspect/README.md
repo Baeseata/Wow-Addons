@@ -104,9 +104,13 @@ full stat names, any soft caps, the active build, and the data source.
 
 > **Patch 12.1:** the stat-priority line and its settings toggle are
 > temporarily hidden while the Season 2 recommendations are re-verified.
-> The renderer, saved preference and data remain in place for reactivation.
+> The renderer, saved preference and legacy data remain in place for
+> reactivation. A second full review on August 13 still found 0/40 specs safe
+> to publish before the announced Season 2 tuning pass; see
+> [`STAT_PRIORITY_RESEARCH_2026-08-13.md`](STAT_PRIORITY_RESEARCH_2026-08-13.md).
 
-All 40 specs are covered.
+The retained Season 1 table covers all 40 specs, but it is not presented as
+current Patch 12.1 guidance.
 
 Stat priorities are aggregated from public theorycrafting guides for
 reference only and are not guaranteed accurate — sim your own character
