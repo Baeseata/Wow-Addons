@@ -173,11 +173,10 @@ ns.Config = {
     -- (the mouseover tooltip always has the full name).
     PANEL_NAME_WIDTH = 150,
 
-    -- The priority table is season-specific. Keep the renderer and the
-    -- saved user preference intact, but hide both the line and its option
-    -- until the 12.1 priorities have been re-verified. Flip this back to
-    -- true only after Data/StatPriority.lua and its source date are current.
-    STAT_PRIORITY_DATA_CURRENT = false,
+    -- Global renderer / option gate. Data freshness is enforced per spec
+    -- in Data/StatPriority.lua: only entries marked current=true resolve,
+    -- so verified specs can ship without exposing stale rows for the rest.
+    STAT_PRIORITY_FEATURE_ENABLED = true,
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)

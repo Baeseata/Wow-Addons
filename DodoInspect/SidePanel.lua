@@ -667,8 +667,13 @@ function ns.UpdateSidePanel()
     -- never secret, so here it only avoids pointless work while the
     -- feature is off -- but keep the two panels reading identically.
     if ns.StatPriorityActive() then
-        local heroSub, heroName = ns.PlayerHeroSubTree()
-        ns.UpdateStatPriorityHeader(panel, ns.PlayerSpecID(), heroSub, heroName, FS, PANEL_W)
+        local specID = ns.PlayerSpecID()
+        if ns.StatPrioritySpecCurrent(specID) then
+            local heroSub, heroName = ns.PlayerHeroSubTree()
+            ns.UpdateStatPriorityHeader(panel, specID, heroSub, heroName, FS, PANEL_W)
+        else
+            ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
+        end
     else
         ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
     end

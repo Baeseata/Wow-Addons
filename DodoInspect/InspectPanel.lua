@@ -40,6 +40,31 @@ end
 
 local panel, rows
 
+-- The inspect trait config is process-global (configID -1), not tied to
+-- InspectFrame. Other addons may call NotifyInspect for another unit while
+-- this panel stays open. Only trust hero-tree data after an INSPECT_READY
+-- whose GUID matches the unit this panel currently describes.
+local inspectReadyGUID
+
+local function ReadableUnitGUID(unit)
+    if issecretvalue(unit) or type(unit) ~= "string" then return nil end
+    local guid = UnitGUID(unit)
+    if not issecretvalue(guid) and type(guid) == "string" and guid ~= "" then
+        return guid
+    end
+    return nil
+end
+
+local function CurrentInspectableUnit()
+    local unit = InspectFrame and InspectFrame.unit
+    if not unit and UnitExists("target") then unit = "target" end
+    if issecretvalue(unit) or type(unit) ~= "string" or not UnitExists(unit) then
+        return nil
+    end
+    if type(CanInspect) == "function" and not CanInspect(unit) then return nil end
+    return unit
+end
+
 ------------------------------------------------------------------
 -- Row construction
 ------------------------------------------------------------------
@@ -317,23 +342,26 @@ function ns.UpdateInspectPanel()
     -- happens to be targeted, hostile players included, and their fields
     -- are secret values. Only accept a target you could actually inspect;
     -- ns.InspectSpecID guards the read regardless.
-    local unit = InspectFrame and InspectFrame.unit
-    if not unit and UnitExists("target") then unit = "target" end
-    if not unit or not UnitExists(unit) then return end
-
-    -- CanInspect qualifies the UNIT, not just the fallback. .unit holds a
-    -- unit TOKEN (usually "target" -- which is why "target" works as a
-    -- fallback at all), so it follows whatever you target: an open inspect
-    -- window plus a new hostile target aims this friendly-only panel at a
-    -- player whose fields are secret. That is the 12x crash scenario, and
-    -- qualifying only the nil branch would have missed it entirely.
-    if type(CanInspect) == "function" and not CanInspect(unit) then return end
+    local unit = CurrentInspectableUnit()
+    if not unit then
+        ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
+        return
+    end
 
     -- Gate BEFORE the spec lookup, not inside the header update: the
     -- arguments would be evaluated either way. See ns.StatPriorityActive.
     if ns.StatPriorityActive() then
-        local heroSub, heroName = ns.InspectHeroSubTree()
-        ns.UpdateStatPriorityHeader(panel, ns.InspectSpecID(unit), heroSub, heroName, FS, PANEL_W)
+        local specID = ns.InspectSpecID(unit)
+        if ns.StatPrioritySpecCurrent(specID) then
+            local heroSub, heroName
+            local unitGUID = ReadableUnitGUID(unit)
+            if unitGUID and unitGUID == inspectReadyGUID then
+                heroSub, heroName = ns.InspectHeroSubTree()
+            end
+            ns.UpdateStatPriorityHeader(panel, specID, heroSub, heroName, FS, PANEL_W)
+        else
+            ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
+        end
     else
         ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
     end
@@ -378,9 +406,37 @@ EVT:SetScript("OnEvent", function(_, event, arg1)
         if arg1 == "Blizzard_InspectUI" then EnsurePanel() end
         return
     end
+    if event == "INSPECT_READY" then
+        inspectReadyGUID = nil
+        if not issecretvalue(arg1) and type(arg1) == "string" then
+            local unit = CurrentInspectableUnit()
+            local currentGUID = unit and ReadableUnitGUID(unit)
+            if currentGUID and currentGUID == arg1 then
+                inspectReadyGUID = arg1
+            end
+        end
+    end
     -- INSPECT_READY / GET_ITEM_INFO_RECEIVED: inspect data or a
     -- previously uncached item just became available. Also covers a
     -- /reload while the inspect UI was already loaded (lazy build).
     EnsurePanel()
     C_Timer.After(0, ns.UpdateInspectPanel)
+    if event == "INSPECT_READY" then
+        -- TraitSubTree data can trail the base inspect payload by a frame.
+        -- The GUID generation check in UpdateInspectPanel keeps this retry
+        -- safe if another inspect request starts in the meantime.
+        C_Timer.After(0.1, ns.UpdateInspectPanel)
+    end
 end)
+
+-- Invalidate immediately when any addon starts a new inspect request.
+-- The matching INSPECT_READY event above is the only path that validates
+-- the global trait config again for this panel's current unit.
+if type(hooksecurefunc) == "function" and type(NotifyInspect) == "function" then
+    hooksecurefunc("NotifyInspect", function()
+        inspectReadyGUID = nil
+        if panel and panel:IsShown() then
+            C_Timer.After(0, ns.UpdateInspectPanel)
+        end
+    end)
+end

@@ -89,7 +89,27 @@ tainted by 'DodoInspect'`。
 
 **复现姿势**(修完想验就这么点):开着检视窗口 → 目标切到敌对玩家(战场最快)→ 旧版必进 BugSack。
 
-## 当前状态:1.8.1(2026-08-11 发布,tag `DodoInspect-v1.8.1`)
+## 当前状态:1.9.0(2026-08-13 本机实现,尚未发布/tag)
+1.8.1 → **1.9.0**:属性优先级改为**逐专精放行 + hero × content 矩阵**,不再等 40/40 一起开。
+- 当前 12.1 已核验 **26/40**;完整格子、来源和 14 个隐藏项见
+  [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md)。未核验专精在数据表里
+  根本没有可见 entry,绝不回退 2026-06 Season 1 数据。
+- 数据 entry 必须显式 `current=true` 才能 Resolve;全局只留
+  `Config.STAT_PRIORITY_FEATURE_ENABLED` 作为 renderer/Options 总开关。玩家开关继续是
+  `showStatPriority`,所以已有 SavedVariable 不迁移。
+- 每专精最多 hero tree × Raid/M+ 的 2×2;相同内容省略 `mythic`,相同英雄树省略 `builds`。
+  build-only entry 在英雄树未知时**隐藏**,不猜默认树,避免 inspect 数据还没 ready 时短暂显示错行。
+- 新结构 `threshold` / `thresholds` 表示达到评级/百分比后**顺序真的变化**;header 加青色 `*`,tooltip
+  显示 after-order。`goals` / `contentGoals` 只表示粗略目标/区间,不是硬 cap。当前用于噬灭、增辉、
+  戒律、暗牧和元素。source/date 也从旧全局串改成每专精元数据。
+- tooltip 免责声明改为:仅供通用配装参考;装等/主属性通常优先;坦克默认生存、治疗默认治疗量;
+  最终模拟自己角色。TOC 升 1.9.0。
+- **检视英雄树归属防串线**:`configID=-1` 是所有 addon 共用的全局 inspect config;另一插件对玩家 B
+  `NotifyInspect` 时,不能让当前面板玩家 A 误读 B 的英雄树。`InspectPanel` hook 每次请求先 invalidate,
+  只在 `INSPECT_READY` 的可读 GUID 与当前可检视 unit GUID 一致后重新信任;读取前还要求
+  `C_Traits.HasValidInspectData()`。不匹配时 1×1 专精仍可显示,build-only 专精 fail-closed 隐藏。
+
+## 历史:1.8.1(2026-08-11 发布,tag `DodoInspect-v1.8.1`)
 1.8.0 → **1.8.1**:secret-value 崩溃 hotfix(BugSack 报 `12x`)。技术细节全在上面
 「第四颗雷」那节,这里只记做了什么:
 - `ns.InspectSpecID` 补 `issecretvalue` guard,并成为**所有**非玩家单位 spec 查询的唯一入口
@@ -98,11 +118,9 @@ tainted by 'DodoInspect'`。
   1.8.0 的 fail-closed 闸门在 `Resolve()` 函数体内,而实参先于调用求值,所以功能关着照样崩。
 - `InspectPanel` 的 `InspectFrame.unit → "target"` fallback 加 `CanInspect("target")` 前提。
 - **无功能变化**:属性优先级总闸门仍是 `false`,UI 上依旧什么都不显示。
-- **2026-08-13 属性增量复核**:见
-  [`STAT_PRIORITY_RESEARCH_2026-08-13.md`](STAT_PRIORITY_RESEARCH_2026-08-13.md)。40 专精再次全审计;
-  浩劫(577)与惩戒(70)达到“资料层面就绪”,但 Blizzard 已公告开季及 8/26、9/2、9/23
-  继续职业调优,而 S2 团本/M+ 尚未开放,故严格生产结论仍是 **0/40**。另留 14 个候选、
-  24 个冲突/不确定项。不要因此打开全局闸门;若要提前放出少数专精,先实现逐专精有效期。
+- **2026-08-13 属性增量复核**:最初沿用“40/40 一起开”的严格门槛得出 0/40;同日 Jerry 改为
+  逐专精矩阵放行后,该产品决策被上面的 1.9.0 取代。原始审计仍保留在
+  [`STAT_PRIORITY_RESEARCH_2026-08-13.md`](STAT_PRIORITY_RESEARCH_2026-08-13.md),不要把旧结论当当前状态。
 
 ## 历史:1.8.0(2026-08-11 发布,tag `DodoInspect-v1.8.0`)
 1.7.0 → **1.8.0**:12.1 `Curse of Ula'tek` / Season 2 兼容更新。
@@ -239,8 +257,9 @@ Inspect 导出 `ns.GetLinkItemLevel`(检视装等按**链接**读,`ItemLocation`
 
 ## 关键约定 / 可调参数
 - 渐变三阈值在 Config(MIN 262 / ORANGE 326 / MAX 344,每季调;当前为12.1 S2)。
-- 属性优先级总闸门=`Config.STAT_PRIORITY_DATA_CURRENT`;false 时显示和 Options 开关都必须消失,
-  不要删旧数据/用户 SavedVariable。更新全季数据与来源日期后才可改回 true。
+- 属性优先级全局功能闸门=`Config.STAT_PRIORITY_FEATURE_ENABLED`;数据新鲜度由每个 entry 的
+  `current=true` 控制。未核验专精不写 entry/不显示;不要恢复全局“全表一起 current”的设计。
+  `showStatPriority` SavedVariable 保持不变。build-only entry 不得设置臆测 fallback。
 - 背包标签 & 格子缩写字号 = `*_FONT_SIZE + ns.L.sizeBump`(per-locale:cn **+2**、
   其它 **−2**)。这是 CJK-only 字号调整的范式。tag 最多 4 拉丁 / 2 CJK 字符。
 - 侧栏布局 = `ComputeGeometry` 里的**累加链**(全是 FS 倍数);改一个间距,它右边所有列

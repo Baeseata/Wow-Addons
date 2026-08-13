@@ -4,14 +4,19 @@
 
 版本：Midnight 12.1 / Season 2 开启前五天
 
-结论状态：暂不恢复显示，`Config.STAT_PRIORITY_DATA_CURRENT` 继续保持 `false`
+结论状态：本文件的 0/40 是“全表一起开放”旧门槛下的审计快照；同日已被逐专精放行策略取代
 
-## 本轮结论
+> **同日后续决策：**改用 `spec × hero tree × Raid/M+` 单元审核，能压缩的行列压缩，
+> 有可靠格子的专精单独显示，其他专精隐藏。按该口径已有 **26/40** 可实现；完整生产矩阵、
+> 来源和阈值见 [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md)。
+
+## 本轮结论（采用旧全局门槛时）
 
 - 重新检查全部 40 个专精，并优先复核 2026-08-10 至 2026-08-13 更新的 Blizzard、职业社区、Wowhead、Icy Veins 和 Method 资料。
 - 多数主流攻略已经换成 12.1 页面，但 Season 2 团本和 Mythic+ 尚未开放，因此还没有可用于交叉验证的正式赛季实战资料。
 - Blizzard 在 2026-08-13 公布了新的职业调优计划：开季维护时进行一轮，之后 8 月 26 日、9 月 2 日和 9 月 23 日继续调优。晚于攻略的调优会令对应数据单元自动失效。
-- 严格按 8 月 11 日制定的生产门槛，当前仍为 **0/40 可发布**。不能把旧 12.0.7 / Season 1 全表改个日期后重新展示。
+- 严格按 8 月 11 日“40/40 一起开放”的生产门槛，当时为 **0/40 可发布**。这不表示每个
+  独立矩阵都不可用；同日的新逐专精策略正是为了解除这个全局阻塞。
 - 资料本身已经较完整、但被开季调优时间阻挡的专精有 2 个：浩劫恶魔猎手和惩戒圣骑士。
 - 另保留 14 个候选；其余 24 个仍有来源、英雄树、内容类型、属性目标或阈值冲突。
 
@@ -20,18 +25,18 @@
 - [Season 2 于 2026-08-18 当周开启](https://news.blizzard.com/en-us/article/24294369/the-shadows-deepen-midnight-season-2-begins-august-18)，届时开放新团本和 Season 2 Mythic+。
 - [Season 2 职业调优计划](https://us.forums.blizzard.com/en/wow/t/season-2-class-tuning-plans/2335871)列出开季、8 月 26 日、9 月 2 日和 9 月 23 日四个计划窗口；必要时还会追加调整。
 
-## 资料层面已就绪，但暂不发布
+## 旧门槛下“资料就绪但暂不发布”的 2 个
 
-这两行的现有资料足以形成低风险静态提示；它们仍不写入生产表，因为五天内就有已公告的职业调优，而且还没有 Season 2 团本/M+实战验证。
+下面是切换策略前的判断。逐专精放行后，两者都已进入 1.9.0 生产矩阵；保留此表只为记录决策演变。
 
 | specID | 专精 | 当前一致顺序 | 英雄树与内容覆盖 | 独立证据 | 阻挡项 |
 |---:|---|---|---|---|---|
 | 577 | 浩劫恶魔猎手 | 暴击 > 精通 > 急速 > 全能 | 两棵英雄树、单体与多目标未发现实质翻转 | [Icy Veins / Wordup](https://www.icy-veins.com/wow/havoc-demon-hunter-pve-dps-stat-priority)、[Method / Hype](https://www.method.gg/guides/havoc-demon-hunter/stats-races-and-consumables)、[Wowhead / Shadarek](https://www.wowhead.com/guide/classes/demon-hunter/havoc/stat-priority-pve-dps) | 等开季调优和首批 Season 2 数据 |
 | 70 | 惩戒圣骑士 | 精通 > 急速 > 暴击 > 全能 | 两棵英雄树；AoE 仍使用同一粗粒度顺序 | [Wowhead / Bolas](https://www.wowhead.com/guide/classes/paladin/retribution/stat-priority-pve-dps)、[Icy Veins / Bolas](https://www.icy-veins.com/wow/retribution-paladin-pve-dps-stat-priority)、[Method / Seqq](https://www.method.gg/guides/retribution-paladin/stats-races-and-consumables)；前两者按作者去重 | 等开季调优和首批 Season 2 数据 |
 
-## 14 个候选
+## 旧门槛下的 14 个候选
 
-以下顺序只记录当前资料的共同部分，不能直接复制进 `Data/StatPriority.lua`。`≈` 只表示来源明确认为接近；花括号表示来源尚未解决内部次序，不得在 UI 中伪装成并列。
+以下是改用矩阵和结构化阈值以前的候选快照，不是当前生产状态。`≈` 只表示来源明确认为接近；花括号表示当时尚未解决内部次序。
 
 | specID | 专精 | 当前共同部分 | 主要阻碍 |
 |---:|---|---|---|
@@ -43,9 +48,9 @@
 | 64 | 冰霜法师 | 精通≈暴击≈急速 > 全能 | 前三项实际很接近且会随装备变化，固定顺序会过度承诺 |
 | 269 | 踏风武僧 | 急速=暴击=精通 > 全能 | [Peak of Serenity](https://www.peakofserenity.com/tww/windwalker/pve-guide/)明确要求把前三项视为动态集群；独立确认不足 |
 | 256 | 戒律牧师 | 急速 > 精通 > 暴击 > 全能 | 两棵英雄树和团本/M+大体兼容，但第二来源覆盖不足 |
-| 258 | 暗影牧师 | 按英雄树与内容拆分 | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)给出不同目标区间；现有 schema 不能表达区间 |
+| 258 | 暗影牧师 | 按英雄树与内容拆分 | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)给出不同目标区间；旧 schema 当时不能表达区间，1.9.0 已补 `contentGoals` |
 | 259 | 刺杀潜行者 | 暴击 > 急速 > 精通 > 全能 | [Icy Veins](https://www.icy-veins.com/wow/assassination-rogue-pve-dps-stat-priority)与 8 月 12 日 [Wowhead](https://www.wowhead.com/guide/classes/rogue/assassination/stat-priority-pve-dps)一致，但仍缺新鲜的独立职业社区原站确认 |
-| 262 | 元素萨满祭司 | 精通 > {急速、暴击} > 全能 | 72%/76%/86% 等精通阈值口径没有统一，现有 schema 难以准确表达 |
+| 262 | 元素萨满祭司 | 精通 > {急速、暴击} > 全能 | 72%/76%/86% 等精通阈值口径当时未统一；1.9.0 只显示来源明确的约 1200 评级/72%目标 |
 | 263 | 增强萨满祭司 | 精通≈急速 > 暴击 > 全能 | 新资料认为两棵英雄树已趋同，但 Icy Veins/Wowhead 均由 Wordup 撰写，只算一条证据链 |
 | 71 | 武器战士 | 暴击≈急速 > 精通 > 全能 | 两站均为 Archimtiros，同一作者链；静态 `>` 会夸大前两项差异 |
 | 73 | 防护战士 | 急速 > 暴击≈全能 > 精通 | 团本魔法伤、生存目标与 M+ 伤害目标会让全能/暴击换位，英雄树也未逐项确认 |
@@ -57,11 +62,11 @@
 | Archon | 精通 > 暴击 > 急速 > 全能 | 精通 > 急速 > 暴击 > 全能 |
 | Voidweaver | 精通 > 急速 > 暴击 > 全能 | 急速 > 精通 > 暴击 > 全能 |
 
-这些只是粗略顺序；FAQ 还给出了随目标数和装备变化的区间，因此当前 Lua 结构仍不足以完整发布。
+这些是旧结构下的粗略顺序。1.9.0 已新增 `contentGoals`，并把区间明确标成目标而非硬上限。
 
-## 24 个仍不确定的专精
+## 旧门槛下的 24 个不确定专精
 
-这些专精不是没有检查，而是至少有一个会使静态提示误导玩家的未解决问题：
+这是逐专精矩阵复核前的快照。其中 10 个后来通过拆分矩阵、明确 tie/目标口径而进入生产；当前仍隐藏的 14 个以发布矩阵为准：
 
 - 死亡骑士：鲜血（250）、邪恶（252）
 - 恶魔猎手：复仇（581）、吞噬（1480）
@@ -94,11 +99,11 @@
 - 增强萨满祭司：旧 Season 1 的 Stormbringer“急速第一”分支已过时；当前同一作者链倾向两树统一为精通≈急速。
 - 三系术士：8 月 12–13 日资料变新，但冲突没有消失。
 
-## 最快安全更新路线
+## 后续复查路线
 
-1. 2026-08-18/19 开季调优上线后，先复核浩劫和惩戒；若排序未变，可考虑只显示通过验证的专精，而不是等待 40/40 后一次性全开。
-2. 2026-08-20 至 2026-08-25 用首周团本/M+资料复核 14 个候选，并更新每个 `spec × hero build × content` 单元。
-3. 2026-08-26 和 2026-09-02 的计划调优后，只重审受改动的专精；资料时间早于热修时间的一律失效。
-4. 若采用“已验证专精先行”，需要把现在的全局布尔闸门改为逐专精有效期；未验证专精继续隐藏。该行为变更应单独实现和测试，不能通过打开当前全局闸门完成。
+1. 2026-08-13 已按逐专精策略实现首批 26 个专精；其余 14 个继续隐藏。
+2. 2026-08-18/19 开季调优上线后，先复核受改动职业；资料早于调优的单元自动进入待复核。
+3. 2026-08-20 至 2026-08-25 用首周团本/M+资料复核当前矩阵与 14 个隐藏专精。
+4. 2026-08-26 和 2026-09-02 的计划调优后，只重审受改动的专精；资料时间早于热修时间的一律失效。
 
-在上述复核完成前，生产数据仍是 2026-06 的 12.0.7 / Season 1 表，`Config.STAT_PRIORITY_DATA_CURRENT=false` 必须保持不变。
+生产实现不再保留可见的 Season 1 fallback：只有显式标记 `current=true` 的 12.1 专精可以显示。

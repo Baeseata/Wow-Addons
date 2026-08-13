@@ -24,6 +24,8 @@ end
 local function ApplyLocale(key)
     ns.SetLocale(key)
     ns.UpdateAllVisible()
+    if ns.UpdateInspect then ns.UpdateInspect() end
+    if ns.UpdateInspectPanel then ns.UpdateInspectPanel() end
 end
 
 -- One checkbox per feature toggle, stored in DodoInspectDB[dbKey]
@@ -139,14 +141,13 @@ function ns.RegisterOptions()
             "Font size, in pixels, of the gear summary side panel on the character frame. The panel layout scales to match.",
             ns.RebuildSidePanel)
 
-        -- Season-specific advice must not be exposed while its data is
-        -- stale. The SavedVariables key is deliberately left untouched,
-        -- so restoring current data also restores the user's preference.
-        if ns.Config.STAT_PRIORITY_DATA_CURRENT == true then
+        -- Only per-spec entries marked current=true can resolve. The
+        -- SavedVariables key remains stable as the verified set grows.
+        if ns.Config.STAT_PRIORITY_FEATURE_ENABLED == true then
             AddFeatureCheckbox(category,
                 "DODO_INSPECT_STAT_PRIORITY", "showStatPriority",
                 "Stat priority line",
-                "Show the current spec's PvE secondary-stat priority (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. Hover it for soft caps and the source. Only specs with data show a line.",
+                "Show verified PvE secondary-stat guidance (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. It follows hero talents and Raid/M+ when they differ. Hover for thresholds, review date, sources and the disclaimer. Unverified specs stay hidden.",
                 ns.ApplyStatPriorityEnabled)
         end
 

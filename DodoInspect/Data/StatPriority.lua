@@ -1,81 +1,79 @@
 -- DodoInspect - Data/StatPriority.lua
--- Per-spec PvE secondary-stat priority for the current season.
--- Keyed by specID (GetSpecializationInfo / GetInspectSpecialization).
+-- Verified Patch 12.1 PvE secondary-stat guidance, keyed by specID.
 --
--- DATA ONLY, ASCII ONLY -- no localized prose here (the renderer pulls
--- the stat labels from ns.L and the full names from the game globals,
--- so all four locales come for free). Update every season.
+-- DATA ONLY, ASCII ONLY. Only entries with current=true are visible.
+-- Missing specs are deliberately hidden instead of falling back to the
+-- retained Season 1 research. The primary stat is intentionally omitted.
 --
---   raid    : single-target / raid order
---   mythic  : AoE / Mythic+ order (omit when identical to raid; the
---             renderer collapses to a single line when they match)
---   softcap : optional { stat = percent } soft caps, shown in the
---             tooltip via a localized template ("Haste soft cap ~20%")
+-- Matrix compression:
+--   raid       : Raid / single-target order
+--   mythic     : M+ / AoE order; omit when identical to raid
+--   builds[id] : hero-tree row; omit builds when both trees are identical
 --
--- An order is an array whose elements are either a stat key
--- ("versatility" / "haste" / "mastery" / "crit" -- the same keys the
--- side panel stat grid uses) or a nested array = a tie group, rendered
--- with "=" instead of ">". The primary stat (Strength / Agility /
--- Intellect) is always best and is intentionally left out, mirroring
--- the secondary-only stat grid below it.
+-- Order elements are stat keys or nested tie groups. Example:
+--   { "mastery", { "crit", "haste" }, "versatility" }
 --
--- Sourced from Icy Veins (cross-checked vs Method.gg) for Midnight
--- patch 12.0.7, Season 1, June 2026. Several specs are build- or
--- hero-talent-dependent; where a source splits, the more common /
--- default build is used and noted in a comment. Tank specs use the
--- defensive (survival) ordering as the raid line.
+-- Structured guidance:
+--   goals         : shared rough rating targets (not hard caps)
+--   contentGoals  : separate raid / mythic rough rating targets
+--   threshold     : shared point where the order changes
+--   thresholds    : separate raid / mythic transition points
+-- A threshold has stat, value, unit="rating" or "percent", and the
+-- after-order. Optional percentMin/percentMax annotate a rating point.
 
 local _, ns = ...
-
--- Where the orders came from + when, shown on the tooltip's last line.
-ns.STAT_PRIORITY_SOURCE = "Icy Veins / Method"
-ns.STAT_PRIORITY_DATE   = "2026-06"
 
 ns.StatPriority = {
 
     ------------------------------------------------------------------
     -- Death Knight
     ------------------------------------------------------------------
-    -- Blood: hero-talent dependent. San'layn's stacking-haste buff
-    -- makes haste top; Deathbringer's burst favors crit/vers. All
-    -- secondaries are close (sim to fine-tune). Default = Deathbringer.
-    [250] = { -- Blood (tank)
-        raid = { "crit", "versatility", "mastery", "haste" },
-        builds = {
-            [33] = { raid = { "crit", "versatility", "mastery", "haste" } }, -- Deathbringer
-            [31] = { raid = { "haste", "crit", "versatility", "mastery" } }, -- San'layn
-        },
-    },
-    [251] = { -- Frost (dps)
-        raid = { "mastery", "crit", "haste", "versatility" },
-    },
-    [252] = { -- Unholy (dps): Mastery and Crit are a synergistic pair
-        raid = { { "mastery", "crit" }, "haste", "versatility" },
+    [251] = { -- Frost
+        current = true,
+        raid = { "crit", "mastery", "haste", "versatility" },
+        source = "Wowhead (khazakdk)",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Demon Hunter
     ------------------------------------------------------------------
-    [577] = { -- Havoc (dps)
-        raid = { "crit", "mastery", { "haste", "versatility" } },
+    [577] = { -- Havoc
+        current = true,
+        raid = { "crit", "mastery", "haste", "versatility" },
+        source = "Wowhead / Icy Veins / Method",
+        date = "2026-08-13",
     },
-    [581] = { -- Vengeance (tank)
-        raid = { "haste", "versatility", "crit", "mastery" },
+    [581] = { -- Vengeance; survival baseline
+        current = true,
+        raid = { "haste", { "crit", "versatility" }, "mastery" },
+        source = "Wowhead (Itamae)",
+        date = "2026-08-13",
     },
-    -- Devourer (1480): NEW third DH spec added in 12.0 (Void/Cosmic
-    -- ranged caster, Intellect-based), hero-talent dependent. Annihilator
-    -- (~99% usage) leans haste in ST and flips to mastery in AoE/M+;
-    -- Void-Scarred leads mastery in both. Default = Annihilator.
-    [1480] = { -- Devourer (dps)
-        raid   = { "haste", "mastery", "crit", "versatility" },
-        mythic = { "mastery", "haste", "crit", "versatility" },
+    [1480] = { -- Devourer
+        current = true,
+        source = "Icy Veins / Wowhead",
+        date = "2026-08-13",
         builds = {
             [124] = { -- Annihilator
-                raid   = { "haste", "mastery", "crit", "versatility" },
+                raid = { "haste", "mastery", "crit", "versatility" },
                 mythic = { "mastery", "haste", "crit", "versatility" },
             },
             [126] = { -- Void-Scarred
-                raid = { "mastery", "haste", "crit", "versatility" },
+                raid = { "haste", "crit", "mastery", "versatility" },
+                mythic = { "haste", "mastery", "crit", "versatility" },
+                thresholds = {
+                    raid = {
+                        stat = "haste", value = 800, unit = "rating",
+                        percentMin = 17, percentMax = 20,
+                        after = { "crit", "mastery", "versatility", "haste" },
+                    },
+                    mythic = {
+                        stat = "haste", value = 800, unit = "rating",
+                        percentMin = 17, percentMax = 20,
+                        after = { "mastery", "crit", "versatility", "haste" },
+                    },
+                },
             },
         },
     },
@@ -83,180 +81,278 @@ ns.StatPriority = {
     ------------------------------------------------------------------
     -- Druid
     ------------------------------------------------------------------
-    [102] = { -- Balance (dps): crit/mastery/haste relatively equal
-        raid = { { "crit", "mastery", "haste" }, "versatility" },
+    [102] = { -- Balance
+        current = true,
+        source = "Wowhead (gamz)",
+        date = "2026-08-13",
+        builds = {
+            [23] = { -- Keeper of the Grove
+                raid = { "mastery", { "haste", "crit" }, "versatility" },
+            },
+            [24] = { -- Elune's Chosen
+                raid = { "mastery", "haste", "crit", "versatility" },
+            },
+        },
     },
-    [103] = { -- Feral (dps)
-        raid = { "mastery", { "haste", "crit" }, "versatility" },
+    [103] = { -- Feral
+        current = true,
+        source = "Wowhead (Guiltyas)",
+        date = "2026-08-13",
+        builds = {
+            [21] = { -- Druid of the Claw
+                raid = { "mastery", "haste", "crit", "versatility" },
+            },
+            [22] = { -- Wildstalker
+                raid = { "mastery", "crit", "haste", "versatility" },
+            },
+        },
     },
-    [104] = { -- Guardian (tank): all four extremely close, treat evenly
-        raid = { { "haste", "versatility", "mastery", "crit" } },
+    [104] = { -- Guardian; survival baseline
+        current = true,
+        raid = { "haste", "versatility", "crit", "mastery" },
+        source = "Wowhead (Pumps)",
+        date = "2026-08-13",
     },
-    [105] = { -- Restoration (healer)
-        raid   = { "haste", "mastery", "versatility", "crit" },
-        mythic = { "mastery", "haste", "versatility", "crit" },
+    [105] = { -- Restoration; healing baseline
+        current = true,
+        raid = { "haste", "mastery", "versatility", "crit" },
+        source = "Wowhead (Voulk)",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Evoker
     ------------------------------------------------------------------
-    [1467] = { -- Devastation (dps)
-        raid = { "haste", "crit", "mastery", "versatility" },
+    [1468] = { -- Preservation; healing baseline
+        current = true,
+        source = "Wowhead / Spiritbloom.Pro / Method",
+        date = "2026-08-13",
+        builds = {
+            [37] = { -- Flameshaper
+                raid = { "mastery", "crit", "haste", "versatility" },
+            },
+            [38] = { -- Chronowarden
+                raid = { "mastery", "crit", "haste", "versatility" },
+                mythic = { "mastery", "haste", "crit", "versatility" },
+            },
+        },
     },
-    [1468] = { -- Preservation (healer)
-        raid = { "mastery", "crit", "haste", "versatility" },
-    },
-    [1473] = { -- Augmentation (dps / support)
-        raid = { { "crit", "haste" }, "mastery", "versatility" },
+    [1473] = { -- Augmentation
+        current = true,
+        source = "Icy Veins / Wowhead",
+        date = "2026-08-13",
+        builds = {
+            [38] = { -- Chronowarden
+                raid = { "mastery", "crit", "haste", "versatility" },
+                threshold = {
+                    stat = "mastery", value = 1840, unit = "rating",
+                    after = { { "mastery", "crit", "haste" }, "versatility" },
+                },
+            },
+            [36] = { -- Scalecommander
+                raid = { "mastery", { "crit", "haste" }, "versatility" },
+                threshold = {
+                    stat = "mastery", value = 1840, unit = "rating",
+                    after = { { "mastery", "crit", "haste" }, "versatility" },
+                },
+            },
+        },
     },
 
     ------------------------------------------------------------------
     -- Hunter
     ------------------------------------------------------------------
-    [253] = { -- Beast Mastery (dps)
-        raid = { "mastery", "crit", "haste", "versatility" },
-    },
-    [254] = { -- Marksmanship (dps)
-        raid = { { "crit", "mastery" }, { "versatility", "haste" } },
-    },
-    -- Survival: hero-talent dependent. Mastery leads both; Pack Leader
-    -- makes crit and haste interchangeable, Sentinel keeps crit ahead.
-    [255] = { -- Survival (dps)
-        raid = { "mastery", "crit", "haste", "versatility" },
+    [253] = { -- Beast Mastery
+        current = true,
+        source = "Wowhead / Method",
+        date = "2026-08-13",
         builds = {
-            [42] = { raid = { "mastery", "crit", "haste", "versatility" } },         -- Sentinel
-            [43] = { raid = { "mastery", { "crit", "haste" }, "versatility" } },     -- Pack Leader
+            [43] = { -- Pack Leader
+                raid = { "mastery", { "crit", "haste" }, "versatility" },
+                mythic = { "mastery", "crit", { "haste", "versatility" } },
+            },
+            [44] = { -- Dark Ranger
+                raid = { "crit", "mastery", "haste", "versatility" },
+                mythic = { "mastery", "crit", "haste", "versatility" },
+            },
         },
+    },
+    [254] = { -- Marksmanship
+        current = true,
+        raid = { "crit", "mastery", "versatility", "haste" },
+        source = "Wowhead / Method",
+        date = "2026-08-13",
+    },
+    [255] = { -- Survival
+        current = true,
+        raid = { "mastery", { "crit", "haste" }, "versatility" },
+        source = "Wowhead / Icy Veins / Method",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Mage
     ------------------------------------------------------------------
-    [62] = { -- Arcane (dps)
-        raid = { "mastery", "versatility", "crit", "haste" },
-    },
-    [63] = { -- Fire (dps)
+    [63] = { -- Fire
+        current = true,
         raid = { "haste", "mastery", "versatility", "crit" },
+        source = "Wowhead / Icy Veins",
+        date = "2026-08-13",
     },
-    [64] = { -- Frost (dps)
+    [64] = { -- Frost
+        current = true,
         raid = { "mastery", "crit", "haste", "versatility" },
+        source = "Wowhead / Icy Veins",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Monk
     ------------------------------------------------------------------
-    [268] = { -- Brewmaster (tank): raid = defensive, M+ = offensive
-        raid   = { "crit", "versatility", "mastery", "haste" },
-        mythic = { "crit", "mastery", "versatility", "haste" },
+    [268] = { -- Brewmaster; Raid survival, M+ combined damage baseline
+        current = true,
+        raid = { { "crit", "versatility", "mastery" }, "haste" },
+        mythic = { "crit", { "versatility", "mastery" }, "haste" },
+        source = "Wowhead / Method",
+        date = "2026-08-13",
     },
-    [269] = { -- Windwalker (dps)
-        raid = { "haste", "crit", "mastery", "versatility" },
-    },
-    [270] = { -- Mistweaver (healer)
-        raid = { "haste", "crit", "versatility", "mastery" },
+    [269] = { -- Windwalker
+        current = true,
+        raid = { { "haste", "crit", "mastery" }, "versatility" },
+        source = "Peak of Serenity / Wowhead",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Paladin
     ------------------------------------------------------------------
-    -- Holy: hero-talent dependent. Lightsmith pulls crit ahead of haste
-    -- (Hammer and Anvil heals on Judgment crits). Default = Herald of
-    -- the Sun (the raid/M+ go-to).
-    [65] = { -- Holy (healer)
-        raid = { "mastery", "haste", "crit", "versatility" },
+    [65] = { -- Holy; healing throughput baseline
+        current = true,
+        source = "Icy Veins / Method / WingsIsUp",
+        date = "2026-08-13",
         builds = {
-            [50] = { raid = { "mastery", "haste", "crit", "versatility" } }, -- Herald of the Sun
-            [49] = { raid = { "mastery", "crit", "haste", "versatility" } }, -- Lightsmith
+            [50] = { -- Herald of the Sun
+                raid = { "mastery", "haste", "crit", "versatility" },
+            },
+            [49] = { -- Lightsmith
+                raid = { "mastery", "crit", "haste", "versatility" },
+                mythic = { "mastery", "haste", "crit", "versatility" },
+            },
         },
     },
-    [66] = { -- Protection (tank): defensive order; ~20% haste for SotR
-        raid    = { "haste", "versatility", "mastery", "crit" },
-        softcap = { haste = 20 },
-    },
-    [70] = { -- Retribution (dps)
-        raid = { "mastery", "crit", "haste", "versatility" },
+    [70] = { -- Retribution
+        current = true,
+        raid = { "mastery", "haste", "crit", "versatility" },
+        source = "Wowhead / Method",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Priest
     ------------------------------------------------------------------
-    [256] = { -- Discipline (healer)
-        raid = { "haste", "crit", "mastery", "versatility" },
-    },
-    [257] = { -- Holy (healer)
-        raid   = { "crit", "versatility", "mastery", "haste" },
-        mythic = { "crit", "versatility", "haste", "mastery" },
-    },
-    -- Shadow: hero-talent dependent (IV recommends separate gear sets).
-    -- Voidweaver favors haste first (soft cap ~30%); Archon leads mastery.
-    [258] = { -- Shadow (dps): default = Voidweaver
-        raid    = { "haste", "mastery", "crit", "versatility" },
-        softcap = { haste = 30 },
+    [256] = { -- Discipline; healing baseline
+        current = true,
+        source = "Icy Veins / Wowhead",
+        date = "2026-08-13",
         builds = {
-            [18] = { raid = { "haste", "mastery", "crit", "versatility" }, softcap = { haste = 30 } }, -- Voidweaver
-            [19] = { raid = { "mastery", "crit", "haste", "versatility" } },                           -- Archon
+            [18] = { -- Voidweaver
+                raid = { "haste", "mastery", "crit", "versatility" },
+                goals = {
+                    { stat = "haste", value = 1800, unit = "rating" },
+                },
+            },
+            [20] = { -- Oracle
+                raid = { "haste", "mastery", "crit", "versatility" },
+            },
+        },
+    },
+    [258] = { -- Shadow
+        current = true,
+        source = "Warcraft Priests / Icy Veins / Method",
+        date = "2026-08-13",
+        builds = {
+            [19] = { -- Archon
+                raid = { "mastery", "crit", "haste", "versatility" },
+                mythic = { "mastery", "haste", "crit", "versatility" },
+                contentGoals = {
+                    raid = {
+                        { stat = "mastery", min = 1200, max = 1400 },
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1400, max = 1600 },
+                        { stat = "versatility", max = 400 },
+                    },
+                    mythic = {
+                        { stat = "mastery", min = 1000, max = 1200 },
+                        { stat = "haste", min = 1600, max = 1800 },
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "versatility", max = 400 },
+                    },
+                },
+            },
+            [18] = { -- Voidweaver
+                raid = { "mastery", "haste", "crit", "versatility" },
+                mythic = { "haste", "mastery", "crit", "versatility" },
+                contentGoals = {
+                    raid = {
+                        { stat = "mastery", min = 1200, max = 1400 },
+                        { stat = "haste", min = 1400, max = 1800 },
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "versatility", max = 400 },
+                    },
+                    mythic = {
+                        { stat = "haste", min = 1600, max = 1800 },
+                        { stat = "mastery", min = 1000, max = 1200 },
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "versatility", max = 400 },
+                    },
+                },
+            },
         },
     },
 
     ------------------------------------------------------------------
     -- Rogue
     ------------------------------------------------------------------
-    [259] = { -- Assassination (dps)
+    [259] = { -- Assassination
+        current = true,
         raid = { "crit", "haste", "mastery", "versatility" },
-    },
-    [260] = { -- Outlaw (dps): ~20-25% haste reaches the GCD breakpoint
-        raid    = { "crit", "haste", "versatility", "mastery" },
-        softcap = { haste = 25 },
-    },
-    [261] = { -- Subtlety (dps)
-        raid = { "haste", "mastery", "crit", "versatility" },
+        source = "Wowhead / Icy Veins",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Shaman
     ------------------------------------------------------------------
-    [262] = { -- Elemental (dps): mastery soft cap with Elemental Blast
-        raid    = { "mastery", "haste", "crit", "versatility" },
-        softcap = { mastery = 86 },
-    },
-    -- Enhancement: hero-talent dependent. Totemic leads mastery,
-    -- Stormbringer leads haste (Maelstrom Weapon cycling); top two swap.
-    [263] = { -- Enhancement (dps): default = Totemic
-        raid = { "mastery", "haste", "crit", "versatility" },
-        builds = {
-            [54] = { raid = { "mastery", "haste", "crit", "versatility" } }, -- Totemic
-            [55] = { raid = { "haste", "mastery", "crit", "versatility" } }, -- Stormbringer
+    [262] = { -- Elemental
+        current = true,
+        raid = { "mastery", { "haste", "crit" }, "versatility" },
+        goals = {
+            { stat = "mastery", value = 1200, percent = 72, unit = "rating" },
         },
+        source = "Wowhead / Icy Veins",
+        date = "2026-08-13",
     },
-    [264] = { -- Restoration (healer)
-        raid = { "crit", "versatility", "haste", "mastery" },
-    },
-
-    ------------------------------------------------------------------
-    -- Warlock
-    ------------------------------------------------------------------
-    [265] = { -- Affliction (dps)
-        raid = { "haste", "crit", "mastery", "versatility" },
-    },
-    [266] = { -- Demonology (dps)
-        raid = { "crit", "haste", "mastery", "versatility" },
-    },
-    [267] = { -- Destruction (dps)
-        raid = { "crit", "haste", "mastery", "versatility" },
+    [263] = { -- Enhancement
+        current = true,
+        raid = { { "mastery", "haste" }, "crit", "versatility" },
+        source = "Wowhead / Icy Veins (Wordup)",
+        date = "2026-08-13",
     },
 
     ------------------------------------------------------------------
     -- Warrior
     ------------------------------------------------------------------
-    [71] = { -- Arms (dps): crit and haste are a near-tie
+    [71] = { -- Arms
+        current = true,
         raid = { { "crit", "haste" }, "mastery", "versatility" },
+        source = "Wowhead / Icy Veins (Archimtiros)",
+        date = "2026-08-13",
     },
-    [72] = { -- Fury (dps)
-        raid = { "mastery", "haste", "versatility", "crit" },
-    },
-    [73] = { -- Protection (tank): vers/crit tie in raid; crit ahead in M+
-        raid   = { "haste", { "versatility", "crit" }, "mastery" },
+    [73] = { -- Protection; general survival baseline
+        current = true,
+        raid = { "haste", { "crit", "versatility" }, "mastery" },
         mythic = { "haste", "crit", "versatility", "mastery" },
+        source = "Wowhead / Icy Veins",
+        date = "2026-08-13",
     },
-
 }

@@ -92,30 +92,27 @@ weapons). It lives in `Config.lua` and is easy to update when a new
 season changes the rules.
 
 **Stat priority line**, at the top of the gear summary side panel (and
-the inspect panel): the current spec's PvE secondary-stat priority for
-the season, in the same colored abbreviations the stat grid below uses
-(e.g. `Mastery = Crit > Haste > Versatility`, with `=` for stats that
-are roughly equal). When the raid and Mythic+ priorities differ it shows
-two labeled lines. The line follows your **hero talent** — specs whose
-priority changes by hero talent (Blood Death Knight, Survival, Shadow,
-Enhancement, Devourer, Holy Paladin) switch automatically when you do,
-and inspecting another player reads theirs. Mouse over the line for the
-full stat names, any soft caps, the active build, and the data source.
+the inspect panel): verified Patch 12.1 PvE secondary-stat guidance in the
+same colored abbreviations the stat grid below uses (e.g.
+`Mastery = Crit > Haste > Versatility`, with `=` for stats that are roughly
+equal). Raid and Mythic+ form the columns and the two hero talents form the
+rows of a compact data matrix. Identical hero rows are stored once, while
+identical Raid/M+ columns render as one line; a spec therefore uses anything
+from one shared line to a full 2-by-2 data matrix.
 
-> **Patch 12.1:** the stat-priority line and its settings toggle are
-> temporarily hidden while the Season 2 recommendations are re-verified.
-> The renderer, saved preference and legacy data remain in place for
-> reactivation. A second full review on August 13 still found 0/40 specs safe
-> to publish before the announced Season 2 tuning pass; see
-> [`STAT_PRIORITY_RESEARCH_2026-08-13.md`](STAT_PRIORITY_RESEARCH_2026-08-13.md).
+The initial Patch 12.1 set covers **26 of 40 specs**. Availability is
+per-spec: verified specs display normally and the other 14 stay completely
+hidden, with no fallback to old Season 1 advice. The line switches when you
+change hero talents, and inspecting another player follows theirs. A cyan
+`*` marks a rating target or a point where the priority changes; hover for
+the before/after order, rough target ranges, active build, per-spec source
+and review date. See the complete
+[`2026-08-13 release matrix`](STAT_PRIORITY_RELEASE_2026-08-13.md).
 
-The retained Season 1 table covers all 40 specs, but it is not presented as
-current Patch 12.1 guidance.
-
-Stat priorities are aggregated from public theorycrafting guides for
-reference only and are not guaranteed accurate — sim your own character
-for the final word. The data lives in `Data/StatPriority.lua` and is
-updated each season.
+The guidance is only a general gearing reference. Item level and primary
+stat normally come first; tank rows use a survival baseline and healer rows
+use healing throughput. Sim your character for final choices. The data
+lives in `Data/StatPriority.lua` and is reviewed after tuning changes.
 
 **Inspect window**: when you inspect another player the same idea
 applies to their gear. On each inspected slot: **item level** (top-left,
@@ -166,7 +163,7 @@ All options live under **Esc > Options > AddOns > DodoInspect**:
 - **Gear summary side panel**: the gear list next to the character
   frame.
 - **Stat priority line**: the season PvE stat priority shown at the top
-  of the gear summary side panels when the bundled season data is current.
+  of the gear summary side panels when current guidance exists for that spec.
 - **Inspect window gear panel**: the slot / item level / stat panel
   next to the inspect window.
 - **Target info**: the player summary line above the target frame.

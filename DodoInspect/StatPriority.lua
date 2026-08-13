@@ -7,8 +7,8 @@
 -- (Config.STAT_COLORS) the panel's stat grid uses, so the top line and
 -- the per-row dominant-stat highlight read as the same language. Raid
 -- and M+ collapse to one unlabeled line when identical, otherwise show
--- two labeled lines. Soft caps and the source live in the hover tooltip
--- (structured, template-translated -- no per-spec prose to localize).
+-- two labeled lines. Threshold transitions, review date, sources and the
+-- disclaimer live in the hover tooltip (structured and translated).
 --
 -- This file stays ASCII: the separators are plain ">" and "=", the
 -- labels come from ns.L (Locales.lua) and the tooltip full names come
@@ -84,6 +84,10 @@ end
 function ns.InspectHeroSubTree()
     if not (C_Traits and C_Traits.GetConfigInfo and C_Traits.GetTreeNodes
         and C_Traits.GetNodeInfo) then
+        return nil
+    end
+    if not C_Traits.HasValidInspectData
+        or not C_Traits.HasValidInspectData() then
         return nil
     end
     local INSPECT = -1
@@ -179,23 +183,76 @@ local function OrdersEqual(a, b)
     return true
 end
 
--- Resolve the effective priority for a spec given the active hero
--- talent sub-tree. A build-specific override (data.builds[subTreeID])
--- wins; otherwise the spec default. Each entry is self-contained
--- (raid + optional mythic + optional softcap), so a matched build is
--- returned as-is and never inherits the default's mythic / softcap.
-local function Resolve(specID, subTreeID)
-    if ns.Config.STAT_PRIORITY_DATA_CURRENT ~= true then return nil end
-    local data = specID and ns.StatPriority and ns.StatPriority[specID]
-    if not data then return nil end
-    if subTreeID and data.builds and data.builds[subTreeID] then
-        return data.builds[subTreeID]
-    end
-    return data
+local function TransitionEqual(a, b)
+    if a == b then return true end
+    if not a or not b then return false end
+    return a.stat == b.stat
+        and a.value == b.value
+        and a.unit == b.unit
+        and a.percentMin == b.percentMin
+        and a.percentMax == b.percentMax
+        and OrdersEqual(a.after, b.after)
 end
 
--- True when the header can show anything at all: the data-freshness
--- gate plus the user toggle.
+local function EffectiveTransition(data, content)
+    if not data then return nil end
+    if data.threshold then return data.threshold end
+    return data.thresholds and data.thresholds[content] or nil
+end
+
+local function EffectiveGoals(data, content)
+    if not data then return nil end
+    if data.goals then return data.goals end
+    return data.contentGoals and data.contentGoals[content] or nil
+end
+
+local function GoalEqual(a, b)
+    if a == b then return true end
+    if not a or not b then return false end
+    return a.stat == b.stat and a.value == b.value
+        and a.min == b.min and a.max == b.max
+        and a.unit == b.unit and a.percent == b.percent
+end
+
+local function GoalsEqual(a, b)
+    if a == b then return true end
+    if not a or not b or #a ~= #b then return false end
+    for i = 1, #a do
+        if not GoalEqual(a[i], b[i]) then return false end
+    end
+    return true
+end
+
+local function RulesEqual(data)
+    local mythic = data.mythic or data.raid
+    return OrdersEqual(data.raid, mythic)
+        and TransitionEqual(EffectiveTransition(data, "raid"),
+            EffectiveTransition(data, "mythic"))
+        and GoalsEqual(EffectiveGoals(data, "raid"),
+            EffectiveGoals(data, "mythic"))
+end
+
+-- Resolve the effective priority for a spec given the active hero
+-- talent sub-tree. Freshness is per spec: stale / unverified entries do
+-- not resolve. A build-specific matrix row wins. A build-only entry has
+-- no arbitrary fallback while the hero tree is unknown, so it hides
+-- instead of showing the other tree's advice during inspect loading.
+local function Resolve(specID, subTreeID)
+    if ns.Config.STAT_PRIORITY_FEATURE_ENABLED ~= true then return nil end
+    local specData = specID and ns.StatPriority and ns.StatPriority[specID]
+    if not specData or specData.current ~= true then return nil end
+    if specData.builds then
+        if subTreeID and specData.builds[subTreeID] then
+            return specData.builds[subTreeID], specData
+        end
+        if not specData.raid then return nil end
+    end
+    return specData, specData
+end
+
+-- True when the renderer is globally available and the user toggle is on.
+-- Per-spec freshness is checked later by Resolve; unsupported specs simply
+-- produce no header.
 --
 -- Callers must check this BEFORE looking a spec up. The gate inside
 -- Resolve is too late to protect the lookups: UpdateStatPriorityHeader's
@@ -204,8 +261,15 @@ end
 -- Callers still call UpdateStatPriorityHeader with a nil specID when this
 -- is false -- that is what zeroes dodoPriorityHeight and re-flows the rows.
 function ns.StatPriorityActive()
-    if ns.Config.STAT_PRIORITY_DATA_CURRENT ~= true then return false end
+    if ns.Config.STAT_PRIORITY_FEATURE_ENABLED ~= true then return false end
     return ns.IsEnabled("showStatPriority") and true or false
+end
+
+-- Cheap per-spec freshness check for callers that already have a safe
+-- specID. This avoids hero-tree API work for intentionally hidden specs.
+function ns.StatPrioritySpecCurrent(specID)
+    local data = specID and ns.StatPriority and ns.StatPriority[specID]
+    return data and data.current == true or false
 end
 
 ------------------------------------------------------------------
@@ -213,7 +277,7 @@ end
 ------------------------------------------------------------------
 
 local function OnHeaderEnter(self)
-    local data = Resolve(self.specID, self.subTreeID)
+    local data, specData = Resolve(self.specID, self.subTreeID)
     if not data then return end
     local L = ns.L or {}
 
@@ -227,7 +291,7 @@ local function OnHeaderEnter(self)
     end
 
     local mythic = data.mythic or data.raid
-    if OrdersEqual(data.raid, mythic) then
+    if RulesEqual(data) then
         GameTooltip:AddLine(BuildOrder(data.raid, FullLabel), 1, 1, 1, true)
         GameTooltip:AddLine(L.priSame or "Raid = M+", 0.6, 0.6, 0.6)
     else
@@ -248,10 +312,80 @@ local function OnHeaderEnter(self)
         end
     end
 
-    if ns.STAT_PRIORITY_SOURCE then
-        GameTooltip:AddLine(string.format(L.priSource or "Source: %s, %s",
-            ns.STAT_PRIORITY_SOURCE, ns.STAT_PRIORITY_DATE or "?"),
-            0.5, 0.5, 0.5)
+    local function AddTransition(contentLabel, transition)
+        if not transition or not transition.after then return end
+        local stat = FullLabel(transition.stat)
+        local template
+        if transition.unit == "percent" then
+            template = L.priAfterPercent or "At/above ~%d%% %s"
+        elseif transition.percentMin and transition.percentMax then
+            template = L.priAfterRatingPercent
+                or "At/above ~%d %s rating (~%d-%d%%)"
+        else
+            template = L.priAfterRating or "At/above ~%d %s rating"
+        end
+        local label
+        if transition.percentMin and transition.percentMax
+            and transition.unit ~= "percent" then
+            label = string.format(template, transition.value, stat,
+                transition.percentMin, transition.percentMax)
+        else
+            label = string.format(template, transition.value, stat)
+        end
+        if contentLabel then label = contentLabel .. " - " .. label end
+        -- Keep the long localized threshold and the full four-stat order
+        -- on separate wrapping lines; AddDoubleLine cannot wrap either
+        -- column and overflows easily in French / Spanish.
+        GameTooltip:AddLine(label, 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("  " .. BuildOrder(transition.after, FullLabel),
+            1, 1, 1, true)
+    end
+
+    if data.threshold then
+        AddTransition(nil, data.threshold)
+    elseif data.thresholds then
+        AddTransition(L.priRaid or "Raid", data.thresholds.raid)
+        AddTransition(L.priMythic or "M+", data.thresholds.mythic)
+    end
+
+    local function AddGoal(contentLabel, goal)
+        local stat = FullLabel(goal.stat)
+        local label
+        if goal.min and goal.max then
+            label = string.format(L.priGoalRange or "%s target %d-%d rating",
+                stat, goal.min, goal.max)
+        elseif goal.max then
+            label = string.format(L.priGoalMax
+                or "%s target at most ~%d rating", stat, goal.max)
+        elseif goal.percent then
+            label = string.format(L.priGoalRatingPercent
+                or "%s target ~%d rating (~%d%%)", stat, goal.value,
+                goal.percent)
+        else
+            label = string.format(L.priGoalRating or "%s target ~%d rating",
+                stat, goal.value)
+        end
+        if contentLabel then label = contentLabel .. " - " .. label end
+        GameTooltip:AddLine(label, 0.8, 0.8, 0.8)
+    end
+
+    if data.goals then
+        for _, goal in ipairs(data.goals) do AddGoal(nil, goal) end
+    elseif data.contentGoals then
+        for _, goal in ipairs(data.contentGoals.raid or {}) do
+            AddGoal(L.priRaid or "Raid", goal)
+        end
+        for _, goal in ipairs(data.contentGoals.mythic or {}) do
+            AddGoal(L.priMythic or "M+", goal)
+        end
+    end
+
+    local source = data.source or (specData and specData.source)
+    local date = data.date or (specData and specData.date)
+    if source then
+        GameTooltip:AddLine(string.format(L.priSource
+            or "Sources: %s | Reviewed: %s",
+            source, date or "?"), 0.5, 0.5, 0.5, true)
     end
 
     -- disclaimer: aggregated public data, reference only (wraps)
@@ -335,15 +469,27 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
     local raidLine = BuildOrder(data.raid, AbbrevLabel)
     local lines, lastFS = 1, fs1
 
-    if OrdersEqual(data.raid, mythic) then
-        fs1:SetText(raidLine)
+    local raidTransition = EffectiveTransition(data, "raid")
+    local mythicTransition = EffectiveTransition(data, "mythic")
+    local function MarkGuidance(line, transition, goals)
+        if not transition and not goals then return line end
+        return line .. " " .. CYAN .. "*|r"
+    end
+
+    local raidGoals = EffectiveGoals(data, "raid")
+    local mythicGoals = EffectiveGoals(data, "mythic")
+
+    if RulesEqual(data) then
+        fs1:SetText(MarkGuidance(raidLine, raidTransition, raidGoals))
         fs2:Hide()
     else
-        fs1:SetText(CYAN .. (ns.L.priRaid or "R") .. "|r " .. raidLine)
+        fs1:SetText(CYAN .. (ns.L.priRaid or "R") .. "|r "
+            .. MarkGuidance(raidLine, raidTransition, raidGoals))
         fs2:ClearAllPoints()
         fs2:SetPoint("TOPLEFT", fs1, "BOTTOMLEFT", 0, -2)
         fs2:SetText(CYAN .. (ns.L.priMythic or "M") .. "|r "
-            .. BuildOrder(mythic, AbbrevLabel))
+            .. MarkGuidance(BuildOrder(mythic, AbbrevLabel),
+                mythicTransition, mythicGoals))
         fs2:Show()
         lines, lastFS = 2, fs2
     end
