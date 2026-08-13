@@ -317,20 +317,17 @@ local function OnHeaderEnter(self)
         end
     end
 
-    local hasRatingGuidance = false
-
     local function AddTransition(contentLabel, transition)
         if not transition or not transition.after then return end
-        if transition.unit ~= "percent" then hasRatingGuidance = true end
         local stat = FullLabel(transition.stat)
         local template
         if transition.unit == "percent" then
             template = L.priAfterPercent or "At/above ~%d%% %s"
         elseif transition.percentMin and transition.percentMax then
             template = L.priAfterRatingPercent
-                or "At/above ~%d %s rating (~%d-%d%%)"
+                or "At/above ~%d %s (~%d-%d%%)"
         else
-            template = L.priAfterRating or "At/above ~%d %s rating"
+            template = L.priAfterRating or "At/above ~%d %s"
         end
         local label
         if transition.percentMin and transition.percentMax
@@ -357,24 +354,23 @@ local function OnHeaderEnter(self)
     end
 
     local function AddGoal(contentLabel, goal)
-        if goal.unit ~= "percent" then hasRatingGuidance = true end
         local stat = FullLabel(goal.stat)
         local label
         if goal.unit == "percent" then
             label = string.format(L.priGoalPercent or "%s target ~%d%%",
                 stat, goal.value)
         elseif goal.min and goal.max then
-            label = string.format(L.priGoalRange or "%s target %d-%d rating",
+            label = string.format(L.priGoalRange or "%s target %d-%d",
                 stat, goal.min, goal.max)
         elseif goal.max then
             label = string.format(L.priGoalMax
-                or "%s target at most ~%d rating", stat, goal.max)
+                or "%s target at most ~%d", stat, goal.max)
         elseif goal.percent then
             label = string.format(L.priGoalRatingPercent
-                or "%s target ~%d rating (~%d%%)", stat, goal.value,
+                or "%s target ~%d (~%d%%)", stat, goal.value,
                 goal.percent)
         else
-            label = string.format(L.priGoalRating or "%s target ~%d rating",
+            label = string.format(L.priGoalRating or "%s target ~%d",
                 stat, goal.value)
         end
         if contentLabel then label = contentLabel .. " - " .. label end
@@ -390,10 +386,6 @@ local function OnHeaderEnter(self)
         for _, goal in ipairs(data.contentGoals.mythic or {}) do
             AddGoal(L.priMythic or "M+", goal)
         end
-    end
-
-    if hasRatingGuidance and L.priRatingHelp then
-        GameTooltip:AddLine(L.priRatingHelp, 0.65, 0.65, 0.65, true)
     end
 
     if data.provisional == true
