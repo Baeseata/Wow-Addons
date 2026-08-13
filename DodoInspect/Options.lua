@@ -147,7 +147,7 @@ function ns.RegisterOptions()
             AddFeatureCheckbox(category,
                 "DODO_INSPECT_STAT_PRIORITY", "showStatPriority",
                 "Stat priority line",
-                "Show current PvE secondary-stat guidance (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. It follows hero talents and Raid/M+ when they differ. Hover for targets, provisional status, review date, sources and the disclaimer.",
+                "Show a fixed PvE secondary-stat priority (e.g. Mastery = Crit > Haste > Versatility) at the top of the gear summary side panels. It follows hero talents and Raid/M+ when they differ, but does not change based on your current gear. Hover for provisional status, review date, sources and the disclaimer.",
                 ns.ApplyStatPriorityEnabled)
         end
 

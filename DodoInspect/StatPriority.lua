@@ -7,8 +7,8 @@
 -- (Config.STAT_COLORS) the panel's stat grid uses, so the top line and
 -- the per-row dominant-stat highlight read as the same language. Raid
 -- and M+ collapse to one unlabeled line when identical, otherwise show
--- two labeled lines. Threshold transitions, review date, sources and the
--- disclaimer live in the hover tooltip (structured and translated).
+-- two labeled lines. Active build, review date, sources, provisional
+-- status and the disclaimer live in the translated hover tooltip.
 --
 -- This file stays ASCII: the separators are plain ">" and "=", the
 -- labels and tooltip full names come from ns.L (Locales.lua). The
@@ -126,16 +126,6 @@ local STAT_FULL = {
     versatility = "STAT_VERSATILITY",
 }
 
--- Numeric targets use a fixed display order that matches the character
--- sheet, independent of the priority order above them.
-local GOAL_DISPLAY_ORDER = { "crit", "haste", "mastery", "versatility" }
-local GOAL_DISPLAY_STAT = {
-    crit = true,
-    haste = true,
-    mastery = true,
-    versatility = true,
-}
-
 local function AbbrevLabel(statKey)
     return (ns.L and ns.L.stats and ns.L.stats[statKey]) or statKey
 end
@@ -197,53 +187,9 @@ local function OrdersEqual(a, b)
     return true
 end
 
-local function TransitionEqual(a, b)
-    if a == b then return true end
-    if not a or not b then return false end
-    return a.stat == b.stat
-        and a.value == b.value
-        and a.unit == b.unit
-        and a.percentMin == b.percentMin
-        and a.percentMax == b.percentMax
-        and OrdersEqual(a.after, b.after)
-end
-
-local function EffectiveTransition(data, content)
-    if not data then return nil end
-    if data.threshold then return data.threshold end
-    return data.thresholds and data.thresholds[content] or nil
-end
-
-local function EffectiveGoals(data, content)
-    if not data then return nil end
-    if data.goals then return data.goals end
-    return data.contentGoals and data.contentGoals[content] or nil
-end
-
-local function GoalEqual(a, b)
-    if a == b then return true end
-    if not a or not b then return false end
-    return a.stat == b.stat and a.value == b.value
-        and a.min == b.min and a.max == b.max
-        and a.unit == b.unit and a.percent == b.percent
-end
-
-local function GoalsEqual(a, b)
-    if a == b then return true end
-    if not a or not b or #a ~= #b then return false end
-    for i = 1, #a do
-        if not GoalEqual(a[i], b[i]) then return false end
-    end
-    return true
-end
-
 local function RulesEqual(data)
     local mythic = data.mythic or data.raid
     return OrdersEqual(data.raid, mythic)
-        and TransitionEqual(EffectiveTransition(data, "raid"),
-            EffectiveTransition(data, "mythic"))
-        and GoalsEqual(EffectiveGoals(data, "raid"),
-            EffectiveGoals(data, "mythic"))
 end
 
 -- Resolve the effective priority for a spec given the active hero
@@ -314,107 +260,6 @@ local function OnHeaderEnter(self)
             BuildOrder(data.raid, FullLabel))
         GameTooltip:AddDoubleLine(L.priMythic or "M+",
             BuildOrder(mythic, FullLabel))
-    end
-
-    if data.softcap then
-        for _, sk in ipairs({ "crit", "haste", "mastery", "versatility" }) do
-            local v = data.softcap[sk]
-            if v then
-                GameTooltip:AddLine(
-                    string.format(L.priSoftcap or "%s soft cap ~%d%%",
-                        FullLabel(sk), v), 0.8, 0.8, 0.8)
-            end
-        end
-    end
-
-    local function AddTransition(contentLabel, transition)
-        if not transition or not transition.after then return end
-        local stat = FullLabel(transition.stat)
-        local template
-        if transition.unit == "percent" then
-            template = L.priAfterPercent or "At/above ~%d%% %s"
-        elseif transition.percentMin and transition.percentMax then
-            template = L.priAfterRatingPercent
-                or "At/above ~%d %s (~%d-%d%%)"
-        else
-            template = L.priAfterRating or "At/above ~%d %s"
-        end
-        local label
-        if transition.percentMin and transition.percentMax
-            and transition.unit ~= "percent" then
-            label = string.format(template, transition.value, stat,
-                transition.percentMin, transition.percentMax)
-        else
-            label = string.format(template, transition.value, stat)
-        end
-        if contentLabel then label = contentLabel .. " - " .. label end
-        -- Keep the long localized threshold and the full four-stat order
-        -- on separate wrapping lines; AddDoubleLine cannot wrap either
-        -- column and overflows easily in French / Spanish.
-        GameTooltip:AddLine(label, 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("  " .. BuildOrder(transition.after, FullLabel),
-            1, 1, 1, true)
-    end
-
-    if data.threshold then
-        AddTransition(nil, data.threshold)
-    elseif data.thresholds then
-        AddTransition(L.priRaid or "Raid", data.thresholds.raid)
-        AddTransition(L.priMythic or "M+", data.thresholds.mythic)
-    end
-
-    local goalCount = 0
-
-    local function AddGoal(contentLabel, goal)
-        goalCount = goalCount + 1
-        local stat = FullLabel(goal.stat)
-        local label
-        if goal.unit == "percent" then
-            label = string.format(L.priGoalPercent or "%s target ~%d%%",
-                stat, goal.value)
-        elseif goal.min and goal.max then
-            label = string.format(L.priGoalRange or "%s target %d-%d",
-                stat, goal.min, goal.max)
-        elseif goal.max then
-            label = string.format(L.priGoalMax
-                or "%s target at most ~%d", stat, goal.max)
-        elseif goal.percent then
-            label = string.format(L.priGoalRatingPercent
-                or "%s target ~%d (~%d%%)", stat, goal.value,
-                goal.percent)
-        else
-            label = string.format(L.priGoalRating or "%s target ~%d",
-                stat, goal.value)
-        end
-        if contentLabel then label = contentLabel .. " - " .. label end
-        GameTooltip:AddLine(label, 0.8, 0.8, 0.8)
-    end
-
-    local function AddGoals(contentLabel, goals)
-        goals = goals or {}
-        for _, stat in ipairs(GOAL_DISPLAY_ORDER) do
-            for _, goal in ipairs(goals) do
-                if goal.stat == stat then AddGoal(contentLabel, goal) end
-            end
-        end
-        -- Preserve forward compatibility if a future schema adds another
-        -- target type that is not one of the four current secondary stats.
-        for _, goal in ipairs(goals) do
-            if not GOAL_DISPLAY_STAT[goal.stat] then
-                AddGoal(contentLabel, goal)
-            end
-        end
-    end
-
-    if data.goals then
-        AddGoals(nil, data.goals)
-    elseif data.contentGoals then
-        AddGoals(L.priRaid or "Raid", data.contentGoals.raid)
-        AddGoals(L.priMythic or "M+", data.contentGoals.mythic)
-    end
-
-    if goalCount > 1 and L.priGoalOrderNote then
-        GameTooltip:AddLine(L.priGoalOrderNote, 0.65, 0.65, 0.65, true)
     end
 
     if data.provisional == true
@@ -513,27 +358,16 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
     local raidLine = BuildOrder(data.raid, AbbrevLabel)
     local lines, lastFS = 1, fs1
 
-    local raidTransition = EffectiveTransition(data, "raid")
-    local mythicTransition = EffectiveTransition(data, "mythic")
-    local function MarkGuidance(line, transition, goals)
-        if not transition and not goals then return line end
-        return line .. " " .. CYAN .. "*|r"
-    end
-
-    local raidGoals = EffectiveGoals(data, "raid")
-    local mythicGoals = EffectiveGoals(data, "mythic")
-
     if RulesEqual(data) then
-        fs1:SetText(MarkGuidance(raidLine, raidTransition, raidGoals))
+        fs1:SetText(raidLine)
         fs2:Hide()
     else
         fs1:SetText(CYAN .. (ns.L.priRaid or "R") .. "|r "
-            .. MarkGuidance(raidLine, raidTransition, raidGoals))
+            .. raidLine)
         fs2:ClearAllPoints()
         fs2:SetPoint("TOPLEFT", fs1, "BOTTOMLEFT", 0, -2)
         fs2:SetText(CYAN .. (ns.L.priMythic or "M") .. "|r "
-            .. MarkGuidance(BuildOrder(mythic, AbbrevLabel),
-                mythicTransition, mythicGoals))
+            .. BuildOrder(mythic, AbbrevLabel))
         fs2:Show()
         lines, lastFS = 2, fs2
     end

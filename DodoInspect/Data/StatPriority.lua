@@ -13,14 +13,8 @@
 --
 -- Order elements are stat keys or nested tie groups. Example:
 --   { "mastery", { "crit", "haste" }, "versatility" }
---
--- Structured guidance:
---   goals         : shared rough rating/percent targets (not hard caps)
---   contentGoals  : separate raid / mythic rough targets
---   threshold     : shared point where the order changes
---   thresholds    : separate raid / mythic transition points
--- A threshold has stat, value, unit="rating" or "percent", and the
--- after-order. Optional percentMin/percentMax annotate a rating point.
+-- Orders are deliberately static. The addon never adjusts advice from
+-- the player's current ratings and does not expose caps or target ranges.
 
 local _, ns = ...
 
@@ -38,12 +32,6 @@ ns.StatPriority = {
             [31] = { -- San'layn
                 raid = { "haste", { "mastery", "crit", "versatility" } },
                 mythic = { "versatility", "haste", "mastery", "crit" },
-                thresholds = {
-                    mythic = {
-                        stat = "versatility", value = 1620, unit = "rating",
-                        after = { "haste", "mastery", "crit", "versatility" },
-                    },
-                },
             },
             [33] = { -- Deathbringer
                 raid = { "crit", { "mastery", "versatility" }, "haste" },
@@ -92,18 +80,6 @@ ns.StatPriority = {
             [126] = { -- Void-Scarred
                 raid = { "haste", "crit", "mastery", "versatility" },
                 mythic = { "haste", "mastery", "crit", "versatility" },
-                thresholds = {
-                    raid = {
-                        stat = "haste", value = 800, unit = "rating",
-                        percentMin = 17, percentMax = 20,
-                        after = { "crit", "mastery", "versatility", "haste" },
-                    },
-                    mythic = {
-                        stat = "haste", value = 800, unit = "rating",
-                        percentMin = 17, percentMax = 20,
-                        after = { "mastery", "crit", "versatility", "haste" },
-                    },
-                },
             },
         },
     },
@@ -181,17 +157,9 @@ ns.StatPriority = {
         builds = {
             [38] = { -- Chronowarden
                 raid = { "mastery", "crit", "haste", "versatility" },
-                threshold = {
-                    stat = "mastery", value = 1840, unit = "rating",
-                    after = { { "mastery", "crit", "haste" }, "versatility" },
-                },
             },
             [36] = { -- Scalecommander
                 raid = { "mastery", { "crit", "haste" }, "versatility" },
-                threshold = {
-                    stat = "mastery", value = 1840, unit = "rating",
-                    after = { { "mastery", "crit", "haste" }, "versatility" },
-                },
             },
         },
     },
@@ -318,19 +286,9 @@ ns.StatPriority = {
     ------------------------------------------------------------------
     [256] = { -- Discipline; healing baseline
         current = true,
+        raid = { "haste", "mastery", "crit", "versatility" },
         source = "Icy Veins / Wowhead",
         date = "2026-08-13",
-        builds = {
-            [18] = { -- Voidweaver
-                raid = { "haste", "mastery", "crit", "versatility" },
-                goals = {
-                    { stat = "haste", value = 1800, unit = "rating" },
-                },
-            },
-            [20] = { -- Oracle
-                raid = { "haste", "mastery", "crit", "versatility" },
-            },
-        },
     },
     [257] = { -- Holy; healing throughput baseline
         current = true,
@@ -342,46 +300,9 @@ ns.StatPriority = {
     },
     [258] = { -- Shadow
         current = true,
-        source = "Warcraft Priests / Icy Veins / Method",
+        raid = { "haste", "mastery", "crit", "versatility" },
+        source = "Warcraft Priests",
         date = "2026-08-13",
-        builds = {
-            [19] = { -- Archon
-                raid = { "mastery", "crit", "haste", "versatility" },
-                mythic = { "mastery", "haste", "crit", "versatility" },
-                contentGoals = {
-                    raid = {
-                        { stat = "crit", min = 800, max = 1200 },
-                        { stat = "haste", min = 1400, max = 1600 },
-                        { stat = "mastery", min = 1200, max = 1400 },
-                        { stat = "versatility", max = 400 },
-                    },
-                    mythic = {
-                        { stat = "crit", min = 800, max = 1200 },
-                        { stat = "haste", min = 1600, max = 1800 },
-                        { stat = "mastery", min = 1000, max = 1200 },
-                        { stat = "versatility", max = 400 },
-                    },
-                },
-            },
-            [18] = { -- Voidweaver
-                raid = { "mastery", "haste", "crit", "versatility" },
-                mythic = { "haste", "mastery", "crit", "versatility" },
-                contentGoals = {
-                    raid = {
-                        { stat = "crit", min = 800, max = 1200 },
-                        { stat = "haste", min = 1400, max = 1800 },
-                        { stat = "mastery", min = 1200, max = 1400 },
-                        { stat = "versatility", max = 400 },
-                    },
-                    mythic = {
-                        { stat = "crit", min = 800, max = 1200 },
-                        { stat = "haste", min = 1600, max = 1800 },
-                        { stat = "mastery", min = 1000, max = 1200 },
-                        { stat = "versatility", max = 400 },
-                    },
-                },
-            },
-        },
     },
 
     ------------------------------------------------------------------
@@ -397,9 +318,6 @@ ns.StatPriority = {
         current = true,
         provisional = true,
         raid = { "haste", "crit", "versatility", "mastery" },
-        goals = {
-            { stat = "haste", value = 23, unit = "percent" },
-        },
         source = "Wowhead (JustGuy)",
         date = "2026-08-13",
     },
@@ -407,14 +325,6 @@ ns.StatPriority = {
         current = true,
         provisional = true,
         raid = { "mastery", "haste", "crit", "versatility" },
-        contentGoals = {
-            raid = {
-                { stat = "haste", value = 1100, unit = "rating" },
-            },
-            mythic = {
-                { stat = "haste", min = 650, max = 700, unit = "rating" },
-            },
-        },
         source = "Wowhead (fuu1)",
         date = "2026-08-13",
     },
@@ -425,9 +335,6 @@ ns.StatPriority = {
     [262] = { -- Elemental
         current = true,
         raid = { "mastery", { "haste", "crit" }, "versatility" },
-        goals = {
-            { stat = "mastery", value = 1200, percent = 72, unit = "rating" },
-        },
         source = "Wowhead / Icy Veins",
         date = "2026-08-13",
     },

@@ -105,19 +105,16 @@ converged, while 14 use a best-effort baseline selected from the newest and
 most specific current source. Those provisional rows show an orange warning
 in the tooltip instead of pretending the sources agree. There is no fallback
 to old Season 1 advice. The line switches when you change hero talents, and
-inspecting another player follows theirs. A cyan `*` marks a rating target or
-a point where the priority changes; hover for the before/after order, rough
-target ranges, active build, provisional status, per-spec source and review
-date. See the complete
+inspecting another player follows theirs. The result is deliberately static:
+the addon never reads your current secondary-stat totals to change the order
+and does not show target ranges, caps or threshold-based alternatives. Hover
+for the active build, provisional status, per-spec source and review date. See
+the complete
 [`2026-08-13 release matrix`](STAT_PRIORITY_RELEASE_2026-08-13.md).
 
 Tooltip stat names follow the addon's language setting even when the game
 client uses another language; hero-talent build names still come from the
-game client. Numeric targets use the unbuffed total shown in parentheses on
-the character sheet. The tooltip omits the redundant `rating` unit word;
-these numbers are still not percentages, item levels or hard caps.
-When several targets are present, they always display as Critical Strike,
-Haste, Mastery, Versatility; the size of a target does not indicate priority.
+game client.
 
 The guidance is only a general gearing reference. Item level and primary
 stat normally come first; tank rows use a survival baseline and healer rows

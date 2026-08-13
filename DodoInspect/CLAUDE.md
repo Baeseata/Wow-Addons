@@ -99,15 +99,12 @@ tainted by 'DodoInspect'`。
   `showStatPriority`,所以已有 SavedVariable 不迁移。
 - 每专精最多 hero tree × Raid/M+ 的 2×2;相同内容省略 `mythic`,相同英雄树省略 `builds`。
   build-only entry 在英雄树未知时**隐藏**,不猜默认树,避免 inspect 数据还没 ready 时短暂显示错行。
-- 新结构 `threshold` / `thresholds` 表示达到评级/百分比后**顺序真的变化**;header 加青色 `*`,tooltip
-  显示 after-order。`goals` / `contentGoals` 只表示粗略评级/百分比目标或区间,不是硬 cap。当前用于
-  鲜血、噬灭、增辉、戒律、暗牧、元素、狂徒和敏锐。source/date 也从旧全局串改成每专精元数据。
+- 属性行是**静态答案**,只由 `specID × hero tree × Raid/M+` 决定;不读玩家当前绿字,不显示
+  rating/百分比目标、cap、区间或达标后换序。数据 schema 只有 `raid` / `mythic` / `builds`。
+  source/date 从旧全局串改成每专精元数据。
 - tooltip 免责声明改为:仅供通用配装参考;装等/主属性通常优先;坦克默认生存、治疗默认治疗量;
   最终模拟自己角色。`provisional=true` 另显示橙色“当前来源存在分歧”提示。TOC 升 1.9.0。
 - tooltip 属性全名跟插件 locale 的 `statNames`,不再被客户端语言锁定;英雄树名仍由游戏 API 本地化。
-  数字目标对应角色面板括号内的无增益绿字总点数;显示文案省略冗余的 rating/评级单位词。
-  多目标显示顺序固定为 C/H/M/V,与 priority order 无关;多于一个目标时显示 `priGoalOrderNote`,
-  明确“目标数值大小不代表优先级”。
 - **检视英雄树归属防串线**:`configID=-1` 是所有 addon 共用的全局 inspect config;另一插件对玩家 B
   `NotifyInspect` 时,不能让当前面板玩家 A 误读 B 的英雄树。`InspectPanel` hook 每次请求先 invalidate,
   只在 `INSPECT_READY` 的可读 GUID 与当前可检视 unit GUID 一致后重新信任;读取前还要求
@@ -148,7 +145,7 @@ tainted by 'DodoInspect'`。
   无 header 时仍居中)。开关 `showStatPriority`。header 字号跟 `FS`。
 - **tooltip**:全名(游戏全局 `STAT_CRITICAL_STRIKE` 等,四语免费)+ 软上限(结构化 `softcap={haste=20}` 套
   本地化模板)+ `构建: <英雄天赋名>` + 来源 + 免责声明。**无逐专精散文**,只 8 个模板串进 Locales
-  (`priTitle/priRaid/priMythic/priSame/priSoftcap/priGoal*/priProvisional/priSource/priDisclaimer/priBuild`,fr/es 无重音)。
+  (`priTitle/priRaid/priMythic/priSame/priSoftcap/priSource/priDisclaimer/priBuild`,fr/es 无重音)。
 - **数据**:`Data/StatPriority.lua` 按 **specID** 索引,**40 专精全覆盖**。order = stat key 数组,子数组 =
   tie group;`mythic` 与 raid 相同则省略;`softcap` 仅在有具体数字时写。来源/日期是全局
   `ns.STAT_PRIORITY_SOURCE/_DATE`(换季只改一处)。文件**纯 ASCII**(非 ASCII 只在 Locales)。

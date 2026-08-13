@@ -8,7 +8,8 @@
 
 > **同日最终决策：**改用 `spec × hero tree × Raid/M+` 单元矩阵。26 个采用已基本收敛的答案；
 > 对剩余 14 个，不再因来源冲突而隐藏，而是选取最新、最具体且符合默认场景的一份作为
-> `provisional` 基线，并在 tooltip 明示分歧。最终 **40/40** 矩阵、来源和阈值见
+> `provisional` 基线，并在 tooltip 明示分歧。最终产品只显示固定顺序，不读玩家当前绿字，
+> 也不显示目标区间或阈值。最终 **40/40** 矩阵和来源见
 > [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md)。
 
 ## 本轮结论（采用旧全局门槛时）
@@ -30,7 +31,7 @@
 
 下面是切换策略前的判断。逐专精放行后，两者都已进入 1.9.0 生产矩阵；保留此表只为记录决策演变。
 
-| specID | 专精 | 当前一致顺序 | 英雄树与内容覆盖 | 独立证据 | 阻挡项 |
+| specID | 专精 | 当时一致顺序 | 英雄树与内容覆盖 | 独立证据 | 阻挡项 |
 |---:|---|---|---|---|---|
 | 577 | 浩劫恶魔猎手 | 暴击 > 精通 > 急速 > 全能 | 两棵英雄树、单体与多目标未发现实质翻转 | [Icy Veins / Wordup](https://www.icy-veins.com/wow/havoc-demon-hunter-pve-dps-stat-priority)、[Method / Hype](https://www.method.gg/guides/havoc-demon-hunter/stats-races-and-consumables)、[Wowhead / Shadarek](https://www.wowhead.com/guide/classes/demon-hunter/havoc/stat-priority-pve-dps) | 等开季调优和首批 Season 2 数据 |
 | 70 | 惩戒圣骑士 | 精通 > 急速 > 暴击 > 全能 | 两棵英雄树；AoE 仍使用同一粗粒度顺序 | [Wowhead / Bolas](https://www.wowhead.com/guide/classes/paladin/retribution/stat-priority-pve-dps)、[Icy Veins / Bolas](https://www.icy-veins.com/wow/retribution-paladin-pve-dps-stat-priority)、[Method / Seqq](https://www.method.gg/guides/retribution-paladin/stats-races-and-consumables)；前两者按作者去重 | 等开季调优和首批 Season 2 数据 |
@@ -39,7 +40,7 @@
 
 以下是改用矩阵和结构化阈值以前的候选快照，不是当前生产状态。`≈` 只表示来源明确认为接近；花括号表示当时尚未解决内部次序。
 
-| specID | 专精 | 当前共同部分 | 主要阻碍 |
+| specID | 专精 | 当时共同部分 | 主要阻碍 |
 |---:|---|---|---|
 | 251 | 冰霜死亡骑士 | 暴击 > 精通≈急速 > 全能 | 中间两项仍随来源、构筑或目标翻转 |
 | 1473 | 增辉唤魔师 | 精通 > 暴击≈急速 > 全能 | 约 1840 精通评级后的权重趋近；缺明确的团本/M+双重确认 |
@@ -49,25 +50,26 @@
 | 64 | 冰霜法师 | 精通≈暴击≈急速 > 全能 | 前三项实际很接近且会随装备变化，固定顺序会过度承诺 |
 | 269 | 踏风武僧 | 急速=暴击=精通 > 全能 | [Peak of Serenity](https://www.peakofserenity.com/tww/windwalker/pve-guide/)明确要求把前三项视为动态集群；独立确认不足 |
 | 256 | 戒律牧师 | 急速 > 精通 > 暴击 > 全能 | 两棵英雄树和团本/M+大体兼容，但第二来源覆盖不足 |
-| 258 | 暗影牧师 | 按英雄树与内容拆分 | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)给出不同目标区间；旧 schema 当时不能表达区间，1.9.0 已补 `contentGoals` |
+| 258 | 暗影牧师 | 按英雄树与内容拆分 | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)给出不同目标区间；这些数字后来因最终产品只保留静态顺序而不再显示 |
 | 259 | 刺杀潜行者 | 暴击 > 急速 > 精通 > 全能 | [Icy Veins](https://www.icy-veins.com/wow/assassination-rogue-pve-dps-stat-priority)与 8 月 12 日 [Wowhead](https://www.wowhead.com/guide/classes/rogue/assassination/stat-priority-pve-dps)一致，但仍缺新鲜的独立职业社区原站确认 |
-| 262 | 元素萨满祭司 | 精通 > {急速、暴击} > 全能 | 72%/76%/86% 等精通阈值口径当时未统一；1.9.0 只显示来源明确的约 1200 评级/72%目标 |
+| 262 | 元素萨满祭司 | 精通 > {急速、暴击} > 全能 | 72%/76%/86% 等精通阈值口径当时未统一；最终 1.9.0 只保留固定 `精通 > 急速=暴击 > 全能` 顺序 |
 | 263 | 增强萨满祭司 | 精通≈急速 > 暴击 > 全能 | 新资料认为两棵英雄树已趋同，但 Icy Veins/Wowhead 均由 Wordup 撰写，只算一条证据链 |
 | 71 | 武器战士 | 暴击≈急速 > 精通 > 全能 | 两站均为 Archimtiros，同一作者链；静态 `>` 会夸大前两项差异 |
 | 73 | 防护战士 | 急速 > 暴击≈全能 > 精通 | 团本魔法伤、生存目标与 M+ 伤害目标会让全能/暴击换位，英雄树也未逐项确认 |
 
-暗影牧师当前至少需要四个数据单元，而不是一条通用顺序：
+旧门槛当时认为暗影牧师至少需要四个数据单元，而不是一条通用顺序：
 
 | 英雄树 | 团本/单体 | M+/AoE |
 |---|---|---|
 | Archon | 精通 > 暴击 > 急速 > 全能 | 精通 > 急速 > 暴击 > 全能 |
 | Voidweaver | 精通 > 急速 > 暴击 > 全能 | 急速 > 精通 > 暴击 > 全能 |
 
-这些是旧结构下的粗略顺序。1.9.0 已新增 `contentGoals`，并把区间明确标成目标而非硬上限。
+这些是旧结构下的粗略顺序。1.9.0 开发中曾短暂加入数值目标，最终按产品决策移除；
+当前暗牧固定显示 `急速 > 精通 > 暴击 > 全能`。
 
 ## 旧门槛下的 24 个不确定专精
 
-这是逐专精矩阵复核前的快照。其中 10 个后来通过拆分矩阵、明确 tie/目标口径进入已收敛组；
+这是逐专精矩阵复核前的快照。其中 10 个后来通过拆分矩阵、明确 tie/默认场景进入已收敛组；
 其余 14 个也在选择单一 source-of-record 后以 `provisional` 方式进入生产。最终状态以发布矩阵为准：
 
 - 死亡骑士：鲜血（250）、邪恶（252）
