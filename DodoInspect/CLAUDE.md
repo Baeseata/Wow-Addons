@@ -106,6 +106,8 @@ tainted by 'DodoInspect'`。
   最终模拟自己角色。`provisional=true` 另显示橙色“当前来源存在分歧”提示。TOC 升 1.9.0。
 - tooltip 属性全名跟插件 locale 的 `statNames`,不再被客户端语言锁定;英雄树名仍由游戏 API 本地化。
   数字目标对应角色面板括号内的无增益绿字总点数;显示文案省略冗余的 rating/评级单位词。
+  多目标显示顺序固定为 C/H/M/V,与 priority order 无关;多于一个目标时显示 `priGoalOrderNote`,
+  明确“目标数值大小不代表优先级”。
 - **检视英雄树归属防串线**:`configID=-1` 是所有 addon 共用的全局 inspect config;另一插件对玩家 B
   `NotifyInspect` 时,不能让当前面板玩家 A 误读 B 的英雄树。`InspectPanel` hook 每次请求先 invalidate,
   只在 `INSPECT_READY` 的可读 GUID 与当前可检视 unit GUID 一致后重新信任;读取前还要求

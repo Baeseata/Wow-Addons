@@ -126,6 +126,16 @@ local STAT_FULL = {
     versatility = "STAT_VERSATILITY",
 }
 
+-- Numeric targets use a fixed display order that matches the character
+-- sheet, independent of the priority order above them.
+local GOAL_DISPLAY_ORDER = { "crit", "haste", "mastery", "versatility" }
+local GOAL_DISPLAY_STAT = {
+    crit = true,
+    haste = true,
+    mastery = true,
+    versatility = true,
+}
+
 local function AbbrevLabel(statKey)
     return (ns.L and ns.L.stats and ns.L.stats[statKey]) or statKey
 end
@@ -353,7 +363,10 @@ local function OnHeaderEnter(self)
         AddTransition(L.priMythic or "M+", data.thresholds.mythic)
     end
 
+    local goalCount = 0
+
     local function AddGoal(contentLabel, goal)
+        goalCount = goalCount + 1
         local stat = FullLabel(goal.stat)
         local label
         if goal.unit == "percent" then
@@ -377,15 +390,31 @@ local function OnHeaderEnter(self)
         GameTooltip:AddLine(label, 0.8, 0.8, 0.8)
     end
 
+    local function AddGoals(contentLabel, goals)
+        goals = goals or {}
+        for _, stat in ipairs(GOAL_DISPLAY_ORDER) do
+            for _, goal in ipairs(goals) do
+                if goal.stat == stat then AddGoal(contentLabel, goal) end
+            end
+        end
+        -- Preserve forward compatibility if a future schema adds another
+        -- target type that is not one of the four current secondary stats.
+        for _, goal in ipairs(goals) do
+            if not GOAL_DISPLAY_STAT[goal.stat] then
+                AddGoal(contentLabel, goal)
+            end
+        end
+    end
+
     if data.goals then
-        for _, goal in ipairs(data.goals) do AddGoal(nil, goal) end
+        AddGoals(nil, data.goals)
     elseif data.contentGoals then
-        for _, goal in ipairs(data.contentGoals.raid or {}) do
-            AddGoal(L.priRaid or "Raid", goal)
-        end
-        for _, goal in ipairs(data.contentGoals.mythic or {}) do
-            AddGoal(L.priMythic or "M+", goal)
-        end
+        AddGoals(L.priRaid or "Raid", data.contentGoals.raid)
+        AddGoals(L.priMythic or "M+", data.contentGoals.mythic)
+    end
+
+    if goalCount > 1 and L.priGoalOrderNote then
+        GameTooltip:AddLine(L.priGoalOrderNote, 0.65, 0.65, 0.65, true)
     end
 
     if data.provisional == true

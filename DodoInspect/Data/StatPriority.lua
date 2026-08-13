@@ -350,15 +350,15 @@ ns.StatPriority = {
                 mythic = { "mastery", "haste", "crit", "versatility" },
                 contentGoals = {
                     raid = {
-                        { stat = "mastery", min = 1200, max = 1400 },
                         { stat = "crit", min = 800, max = 1200 },
                         { stat = "haste", min = 1400, max = 1600 },
+                        { stat = "mastery", min = 1200, max = 1400 },
                         { stat = "versatility", max = 400 },
                     },
                     mythic = {
-                        { stat = "mastery", min = 1000, max = 1200 },
-                        { stat = "haste", min = 1600, max = 1800 },
                         { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1600, max = 1800 },
+                        { stat = "mastery", min = 1000, max = 1200 },
                         { stat = "versatility", max = 400 },
                     },
                 },
@@ -368,15 +368,15 @@ ns.StatPriority = {
                 mythic = { "haste", "mastery", "crit", "versatility" },
                 contentGoals = {
                     raid = {
-                        { stat = "mastery", min = 1200, max = 1400 },
-                        { stat = "haste", min = 1400, max = 1800 },
                         { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1400, max = 1800 },
+                        { stat = "mastery", min = 1200, max = 1400 },
                         { stat = "versatility", max = 400 },
                     },
                     mythic = {
+                        { stat = "crit", min = 800, max = 1200 },
                         { stat = "haste", min = 1600, max = 1800 },
                         { stat = "mastery", min = 1000, max = 1200 },
-                        { stat = "crit", min = 800, max = 1200 },
                         { stat = "versatility", max = 400 },
                     },
                 },

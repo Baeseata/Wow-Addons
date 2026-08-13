@@ -116,14 +116,14 @@
 
 tooltip 同时显示无增益的粗略评级目标：
 
-| 格子 | 精通 | 急速 | 暴击 | 全能 |
+| 格子 | 暴击 | 急速 | 精通 | 全能 |
 |---|---:|---:|---:|---:|
-| Archon 团本 | 1200–1400 | 1400–1600 | 800–1200 | ≤400 |
-| Archon M+ | 1000–1200 | 1600–1800 | 800–1200 | ≤400 |
-| Voidweaver 团本 | 1200–1400 | 1400–1800 | 800–1200 | ≤400 |
-| Voidweaver M+ | 1000–1200 | 1600–1800 | 800–1200 | ≤400 |
+| Archon 团本 | 800–1200 | 1400–1600 | 1200–1400 | ≤400 |
+| Archon M+ | 800–1200 | 1600–1800 | 1000–1200 | ≤400 |
+| Voidweaver 团本 | 800–1200 | 1400–1800 | 1200–1400 | ≤400 |
+| Voidweaver M+ | 800–1200 | 1600–1800 | 1000–1200 | ≤400 |
 
-来源：[Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)、[Icy Veins / Publik](https://www.icy-veins.com/wow/shadow-priest-pve-dps-stat-priority)、[Method / Jaerv](https://www.method.gg/guides/shadow-priest/stats-races-and-consumables)。这些是目标区间，不是硬上限。
+来源：[Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)、[Icy Veins / Publik](https://www.icy-veins.com/wow/shadow-priest-pve-dps-stat-priority)、[Method / Jaerv](https://www.method.gg/guides/shadow-priest/stats-races-and-consumables)。这些是目标区间，不是硬上限；目标数字大小也不表示属性优先级。
 
 ## 暂定基线：14 个
 

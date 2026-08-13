@@ -116,6 +116,8 @@ client uses another language; hero-talent build names still come from the
 game client. Numeric targets use the unbuffed total shown in parentheses on
 the character sheet. The tooltip omits the redundant `rating` unit word;
 these numbers are still not percentages, item levels or hard caps.
+When several targets are present, they always display as Critical Strike,
+Haste, Mastery, Versatility; the size of a target does not indicate priority.
 
 The guidance is only a general gearing reference. Item level and primary
 stat normally come first; tank rows use a survival baseline and healer rows
