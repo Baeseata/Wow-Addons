@@ -111,7 +111,7 @@ guide gives a useful rough stat target, the tooltip shows it as a reference
 without turning it into a cap or an automatic reorder. Hover for the active
 build, rough targets, provisional status, per-spec source and review date. See
 the complete
-[`2026-08-13 release matrix`](STAT_PRIORITY_RELEASE_2026-08-13.md).
+[`2026-08-13 release matrix`](https://github.com/Baeseata/Wow-Addons/blob/main/DodoInspect/STAT_PRIORITY_RELEASE_2026-08-13.md).
 
 Tooltip stat names follow the addon's language setting even when the game
 client uses another language; hero-talent build names still come from the
