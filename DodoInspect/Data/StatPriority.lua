@@ -10,11 +10,13 @@
 --   raid       : Raid / single-target order
 --   mythic     : M+ / AoE order; omit when identical to raid
 --   builds[id] : hero-tree row; omit builds when both trees are identical
+--   goalBuilds[id] : hero-specific rough targets without changing the order
 --
 -- Order elements are stat keys or nested tie groups. Example:
 --   { "mastery", { "crit", "haste" }, "versatility" }
--- Orders are deliberately static. The addon never adjusts advice from
--- the player's current ratings and does not expose caps or target ranges.
+-- Orders are deliberately static. Optional goals/contentGoals are rough
+-- reference targets only; they never change an order. Threshold/after-order
+-- rules are intentionally unsupported.
 
 local _, ns = ...
 
@@ -289,6 +291,14 @@ ns.StatPriority = {
         raid = { "haste", "mastery", "crit", "versatility" },
         source = "Icy Veins / Wowhead",
         date = "2026-08-13",
+        goalBuilds = {
+            [18] = { -- Voidweaver
+                goals = {
+                    { stat = "haste", value = 1800, unit = "rating" },
+                },
+            },
+            [20] = {}, -- Oracle; no specific target
+        },
     },
     [257] = { -- Holy; healing throughput baseline
         current = true,
@@ -303,6 +313,40 @@ ns.StatPriority = {
         raid = { "haste", "mastery", "crit", "versatility" },
         source = "Warcraft Priests",
         date = "2026-08-13",
+        goalBuilds = {
+            [19] = { -- Archon
+                contentGoals = {
+                    raid = {
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1400, max = 1600 },
+                        { stat = "mastery", min = 1200, max = 1400 },
+                        { stat = "versatility", max = 400 },
+                    },
+                    mythic = {
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1600, max = 1800 },
+                        { stat = "mastery", min = 1000, max = 1200 },
+                        { stat = "versatility", max = 400 },
+                    },
+                },
+            },
+            [18] = { -- Voidweaver
+                contentGoals = {
+                    raid = {
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1400, max = 1800 },
+                        { stat = "mastery", min = 1200, max = 1400 },
+                        { stat = "versatility", max = 400 },
+                    },
+                    mythic = {
+                        { stat = "crit", min = 800, max = 1200 },
+                        { stat = "haste", min = 1600, max = 1800 },
+                        { stat = "mastery", min = 1000, max = 1200 },
+                        { stat = "versatility", max = 400 },
+                    },
+                },
+            },
+        },
     },
 
     ------------------------------------------------------------------
@@ -318,6 +362,9 @@ ns.StatPriority = {
         current = true,
         provisional = true,
         raid = { "haste", "crit", "versatility", "mastery" },
+        goals = {
+            { stat = "haste", value = 23, unit = "percent" },
+        },
         source = "Wowhead (JustGuy)",
         date = "2026-08-13",
     },
@@ -325,6 +372,14 @@ ns.StatPriority = {
         current = true,
         provisional = true,
         raid = { "mastery", "haste", "crit", "versatility" },
+        contentGoals = {
+            raid = {
+                { stat = "haste", value = 1100, unit = "rating" },
+            },
+            mythic = {
+                { stat = "haste", min = 650, max = 700, unit = "rating" },
+            },
+        },
         source = "Wowhead (fuu1)",
         date = "2026-08-13",
     },
@@ -335,6 +390,9 @@ ns.StatPriority = {
     [262] = { -- Elemental
         current = true,
         raid = { "mastery", { "haste", "crit" }, "versatility" },
+        goals = {
+            { stat = "mastery", value = 1200, percent = 72, unit = "rating" },
+        },
         source = "Wowhead / Icy Veins",
         date = "2026-08-13",
     },

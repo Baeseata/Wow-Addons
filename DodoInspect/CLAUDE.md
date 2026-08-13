@@ -99,12 +99,14 @@ tainted by 'DodoInspect'`。
   `showStatPriority`,所以已有 SavedVariable 不迁移。
 - 每专精最多 hero tree × Raid/M+ 的 2×2;相同内容省略 `mythic`,相同英雄树省略 `builds`。
   build-only entry 在英雄树未知时**隐藏**,不猜默认树,避免 inspect 数据还没 ready 时短暂显示错行。
-- 属性行是**静态答案**,只由 `specID × hero tree × Raid/M+` 决定;不读玩家当前绿字,不显示
-  rating/百分比目标、cap、区间或达标后换序。数据 schema 只有 `raid` / `mythic` / `builds`。
+- 属性行是**静态答案**,只由 `specID × hero tree × Raid/M+` 决定。
+  `goals` / `contentGoals` 只在 tooltip 显示攻略给出的粗略参考目标;不支持 cap、threshold 或 after-order。
+  英雄树专属目标放 `goalBuilds[subTreeID]`,与 order 用的 `builds` 分轴;目标未知就不猜。
+  当前参考目标覆盖戒律、暗牧、狂徒、敏锐、元素。目标行固定按 C/H/M/V 显示,header 不加 `*`。
   source/date 从旧全局串改成每专精元数据。
 - tooltip 免责声明改为:仅供通用配装参考;装等/主属性通常优先;坦克默认生存、治疗默认治疗量;
   最终模拟自己角色。`provisional=true` 另显示橙色“当前来源存在分歧”提示。TOC 升 1.9.0。
-- tooltip 属性全名跟插件 locale 的 `statNames`,不再被客户端语言锁定;英雄树名仍由游戏 API 本地化。
+- tooltip 属性全名和目标文案跟插件 locale,不再被客户端语言锁定;英雄树名仍由游戏 API 本地化。
 - **检视英雄树归属防串线**:`configID=-1` 是所有 addon 共用的全局 inspect config;另一插件对玩家 B
   `NotifyInspect` 时,不能让当前面板玩家 A 误读 B 的英雄树。`InspectPanel` hook 每次请求先 invalidate,
   只在 `INSPECT_READY` 的可读 GUID 与当前可检视 unit GUID 一致后重新信任;读取前还要求

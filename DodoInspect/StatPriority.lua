@@ -7,8 +7,8 @@
 -- (Config.STAT_COLORS) the panel's stat grid uses, so the top line and
 -- the per-row dominant-stat highlight read as the same language. Raid
 -- and M+ collapse to one unlabeled line when identical, otherwise show
--- two labeled lines. Active build, review date, sources, provisional
--- status and the disclaimer live in the translated hover tooltip.
+-- two labeled lines. Active build, rough targets, review date, sources,
+-- provisional status and the disclaimer live in the translated tooltip.
 --
 -- This file stays ASCII: the separators are plain ">" and "=", the
 -- labels and tooltip full names come from ns.L (Locales.lua). The
@@ -126,6 +126,16 @@ local STAT_FULL = {
     versatility = "STAT_VERSATILITY",
 }
 
+-- Rough target references always use the character-sheet order. They are
+-- informational only and never change the fixed priority shown above them.
+local GOAL_DISPLAY_ORDER = { "crit", "haste", "mastery", "versatility" }
+local GOAL_DISPLAY_STAT = {
+    crit = true,
+    haste = true,
+    mastery = true,
+    versatility = true,
+}
+
 local function AbbrevLabel(statKey)
     return (ns.L and ns.L.stats and ns.L.stats[statKey]) or statKey
 end
@@ -190,6 +200,14 @@ end
 local function RulesEqual(data)
     local mythic = data.mythic or data.raid
     return OrdersEqual(data.raid, mythic)
+end
+
+local function GoalData(specData, subTreeID)
+    if specData and specData.goalBuilds then
+        if not subTreeID then return nil end
+        return specData.goalBuilds[subTreeID]
+    end
+    return specData
 end
 
 -- Resolve the effective priority for a spec given the active hero
@@ -260,6 +278,52 @@ local function OnHeaderEnter(self)
             BuildOrder(data.raid, FullLabel))
         GameTooltip:AddDoubleLine(L.priMythic or "M+",
             BuildOrder(mythic, FullLabel))
+    end
+
+    local function AddGoal(contentLabel, goal)
+        local stat = FullLabel(goal.stat)
+        local label
+        if goal.unit == "percent" then
+            label = string.format(L.priGoalPercent or "%s target ~%d%%",
+                stat, goal.value)
+        elseif goal.min and goal.max then
+            label = string.format(L.priGoalRange or "%s target %d-%d",
+                stat, goal.min, goal.max)
+        elseif goal.max then
+            label = string.format(L.priGoalMax
+                or "%s target at most ~%d", stat, goal.max)
+        elseif goal.percent then
+            label = string.format(L.priGoalRatingPercent
+                or "%s target ~%d (~%d%%)", stat, goal.value,
+                goal.percent)
+        else
+            label = string.format(L.priGoalRating or "%s target ~%d",
+                stat, goal.value)
+        end
+        if contentLabel then label = contentLabel .. " - " .. label end
+        GameTooltip:AddLine(label, 0.8, 0.8, 0.8)
+    end
+
+    local function AddGoals(contentLabel, goals)
+        goals = goals or {}
+        for _, stat in ipairs(GOAL_DISPLAY_ORDER) do
+            for _, goal in ipairs(goals) do
+                if goal.stat == stat then AddGoal(contentLabel, goal) end
+            end
+        end
+        for _, goal in ipairs(goals) do
+            if not GOAL_DISPLAY_STAT[goal.stat] then
+                AddGoal(contentLabel, goal)
+            end
+        end
+    end
+
+    local goalData = GoalData(specData, self.subTreeID)
+    if goalData and goalData.goals then
+        AddGoals(nil, goalData.goals)
+    elseif goalData and goalData.contentGoals then
+        AddGoals(L.priRaid or "Raid", goalData.contentGoals.raid)
+        AddGoals(L.priMythic or "M+", goalData.contentGoals.mythic)
     end
 
     if data.provisional == true

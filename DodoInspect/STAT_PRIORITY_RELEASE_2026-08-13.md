@@ -13,7 +13,7 @@
 - 同一个格子里仍有实质相反的当前资料时，选更新时间最新、拆分最细且最符合默认场景的一份
   作为 source-of-record，并给 entry 标记 `provisional=true`；tooltip 必须明示来源仍有分歧。
 - `=` 只用于攻略明确表示相近、可互换或经常翻转的属性。
-- 最终产品只显示固定属性顺序；不读取玩家当前绿字，也不显示目标数值、cap、区间或达标后换序。
+- 最终产品显示固定属性顺序；有可靠资料时附粗略目标数值，但不把目标当 cap，也不按阈值自动换序。
 - 所有提示统一带免责声明：仅供通用配装参考，通常先看装等和主属性；坦克默认生存，治疗默认治疗量；最终模拟自己的角色。
 - 每个生产 entry 必须显式 `current=true`；暂定 entry 还必须显式 `provisional=true`。不回退 Season 1 数据。
 
@@ -45,7 +45,7 @@
 | 269 | 踏风武僧 | `H=C=M > V` | [Peak of Serenity / Babylonius](https://www.peakofserenity.com/tww/windwalker/pve-guide/)、[Wowhead](https://www.wowhead.com/guide/classes/monk/windwalker/stat-priority-pve-dps) |
 | 70 | 惩戒圣骑士 | `M > H > C > V` | [Wowhead / Bolas](https://www.wowhead.com/guide/classes/paladin/retribution/stat-priority-pve-dps)、[Method / Seqq](https://www.method.gg/guides/retribution-paladin/stats-races-and-consumables) |
 | 256 | 戒律牧师 | 治疗：`H > M > C > V` | [Icy Veins / Clandon](https://www.icy-veins.com/wow/discipline-priest-pve-healing-stat-priority)、[Wowhead / AutomaticJak](https://www.wowhead.com/guide/classes/priest/discipline/stat-priority-pve-healer) |
-| 258 | 暗影牧师 | `H > M > C > V` | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md) 的通用固定顺序；不把英雄树/当前装备目标换算成动态建议 |
+| 258 | 暗影牧师 | `H > M > C > V` | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md) 的通用固定顺序；英雄树/内容目标只作参考 |
 | 259 | 刺杀潜行者 | `C > H > M > V` | [Wowhead / Whispyr](https://www.wowhead.com/guide/classes/rogue/assassination/stat-priority-pve-dps)、[Icy Veins / Seliathan](https://www.icy-veins.com/wow/assassination-rogue-pve-dps-stat-priority) |
 | 262 | 元素萨满祭司 | `M > H=C > V` | [Wowhead / HawkCorrigan](https://www.wowhead.com/guide/classes/shaman/elemental/stat-priority-pve-dps)、[Icy Veins / Stormy](https://www.icy-veins.com/wow/elemental-shaman-pve-dps-stat-priority) |
 | 263 | 增强萨满祭司 | `M=H > C > V` | [Wowhead / Wordup](https://www.wowhead.com/guide/classes/shaman/enhancement/stat-priority-pve-dps)、[Icy Veins / Wordup](https://www.icy-veins.com/wow/enhancement-shaman-pve-dps-stat-priority) |
@@ -105,6 +105,20 @@
 | Lightsmith `49` | `M > C > H > V` | `M > H > C > V` |
 
 来源：[Icy Veins / Mytholxgy](https://www.icy-veins.com/wow/holy-paladin-pve-healing-stat-priority)、[Method / Joki](https://www.method.gg/guides/holy-paladin/stats-races-and-consumables)、[WingsIsUp / Ellesmere](https://wingsisup.com/quickview)。
+
+## Tooltip 粗略目标参考
+
+目标数值只在当前资料确实提供时显示，排列固定为 `C / H / M / V`。它们不改变上面的固定优先级，
+也不是达到后自动换序的 cap。
+
+| specID | 专精/英雄树 | 团本 | M+ |
+|---:|---|---|---|
+| 256 | 戒律 / Voidweaver `18` | `H ~1800` | `H ~1800` |
+| 258 | 暗牧 / Archon `19` | `C 800–1200; H 1400–1600; M 1200–1400; V ≤400` | `C 800–1200; H 1600–1800; M 1000–1200; V ≤400` |
+| 258 | 暗牧 / Voidweaver `18` | `C 800–1200; H 1400–1800; M 1200–1400; V ≤400` | `C 800–1200; H 1600–1800; M 1000–1200; V ≤400` |
+| 260 | 狂徒 | `H ~23%` | `H ~23%` |
+| 261 | 敏锐 | `H ~1100` | `H 650–700` |
+| 262 | 元素 | `M ~1200（约 72%）` | `M ~1200（约 72%）` |
 
 ## 暂定基线：14 个
 

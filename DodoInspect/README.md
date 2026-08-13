@@ -106,9 +106,10 @@ most specific current source. Those provisional rows show an orange warning
 in the tooltip instead of pretending the sources agree. There is no fallback
 to old Season 1 advice. The line switches when you change hero talents, and
 inspecting another player follows theirs. The result is deliberately static:
-the addon never reads your current secondary-stat totals to change the order
-and does not show target ranges, caps or threshold-based alternatives. Hover
-for the active build, provisional status, per-spec source and review date. See
+each spec, hero talent and content type has a fixed priority. When a current
+guide gives a useful rough stat target, the tooltip shows it as a reference
+without turning it into a cap or an automatic reorder. Hover for the active
+build, rough targets, provisional status, per-spec source and review date. See
 the complete
 [`2026-08-13 release matrix`](STAT_PRIORITY_RELEASE_2026-08-13.md).
 

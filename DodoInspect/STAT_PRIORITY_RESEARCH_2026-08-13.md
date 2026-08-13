@@ -8,8 +8,8 @@
 
 > **同日最终决策：**改用 `spec × hero tree × Raid/M+` 单元矩阵。26 个采用已基本收敛的答案；
 > 对剩余 14 个，不再因来源冲突而隐藏，而是选取最新、最具体且符合默认场景的一份作为
-> `provisional` 基线，并在 tooltip 明示分歧。最终产品只显示固定顺序，不读玩家当前绿字，
-> 也不显示目标区间或阈值。最终 **40/40** 矩阵和来源见
+> `provisional` 基线，并在 tooltip 明示分歧。最终产品固定显示顺序；攻略提供的目标区间仍作参考，
+> 但不作为 cap 或自动换序阈值。最终 **40/40** 矩阵和来源见
 > [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md)。
 
 ## 本轮结论（采用旧全局门槛时）
@@ -50,7 +50,7 @@
 | 64 | 冰霜法师 | 精通≈暴击≈急速 > 全能 | 前三项实际很接近且会随装备变化，固定顺序会过度承诺 |
 | 269 | 踏风武僧 | 急速=暴击=精通 > 全能 | [Peak of Serenity](https://www.peakofserenity.com/tww/windwalker/pve-guide/)明确要求把前三项视为动态集群；独立确认不足 |
 | 256 | 戒律牧师 | 急速 > 精通 > 暴击 > 全能 | 两棵英雄树和团本/M+大体兼容，但第二来源覆盖不足 |
-| 258 | 暗影牧师 | 按英雄树与内容拆分 | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)给出不同目标区间；这些数字后来因最终产品只保留静态顺序而不再显示 |
+| 258 | 暗影牧师 | 按英雄树与内容拆分 | [Warcraft Priests S2 FAQ](https://github.com/WarcraftPriests/discord/blob/main/shadow-faq/threads/gearing.md)给出不同目标区间；最终顺序固定，但这些数字仍作为 tooltip 参考 |
 | 259 | 刺杀潜行者 | 暴击 > 急速 > 精通 > 全能 | [Icy Veins](https://www.icy-veins.com/wow/assassination-rogue-pve-dps-stat-priority)与 8 月 12 日 [Wowhead](https://www.wowhead.com/guide/classes/rogue/assassination/stat-priority-pve-dps)一致，但仍缺新鲜的独立职业社区原站确认 |
 | 262 | 元素萨满祭司 | 精通 > {急速、暴击} > 全能 | 72%/76%/86% 等精通阈值口径当时未统一；最终 1.9.0 只保留固定 `精通 > 急速=暴击 > 全能` 顺序 |
 | 263 | 增强萨满祭司 | 精通≈急速 > 暴击 > 全能 | 新资料认为两棵英雄树已趋同，但 Icy Veins/Wowhead 均由 Wordup 撰写，只算一条证据链 |
@@ -64,8 +64,8 @@
 | Archon | 精通 > 暴击 > 急速 > 全能 | 精通 > 急速 > 暴击 > 全能 |
 | Voidweaver | 精通 > 急速 > 暴击 > 全能 | 急速 > 精通 > 暴击 > 全能 |
 
-这些是旧结构下的粗略顺序。1.9.0 开发中曾短暂加入数值目标，最终按产品决策移除；
-当前暗牧固定显示 `急速 > 精通 > 暴击 > 全能`。
+这些是旧结构下的粗略顺序。当前暗牧固定显示 `急速 > 精通 > 暴击 > 全能`；
+数值目标仅作 tooltip 参考，不改变这个顺序。
 
 ## 旧门槛下的 24 个不确定专精
 
