@@ -189,5 +189,64 @@ for i = 1, #shoulders do
 end
 check(stable, "ranking is stable across calls")
 
+--------------------------------------------------------------------
+-- Top item level tier (Myth 9/6 == 344): the last two Venomous Abyss
+-- bosses. Promoted only when the item carries a primary stat, because
+-- that is what those ten item levels actually buy.
+--------------------------------------------------------------------
+
+local function fakeEntry(instance, position, primary)
+    return { instance, 0, position, primary, "haste", 4000, "crit", 3000 }
+end
+
+check(ns.ReachesTopItemLevel(fakeEntry(1320, 8, "INT")),
+      "344: armor from the final boss is promoted")
+check(ns.ReachesTopItemLevel(fakeEntry(1320, 7, "STR")),
+      "344: armor from the penultimate boss is promoted")
+check(not ns.ReachesTopItemLevel(fakeEntry(1320, 8, nil)),
+      "344: a ring/neck from the final boss is NOT promoted")
+check(not ns.ReachesTopItemLevel(fakeEntry(1320, 6, "INT")),
+      "344: an earlier raid boss is not promoted")
+check(not ns.ReachesTopItemLevel(fakeEntry(1030, 8, "INT")),
+      "344: a Mythic+ dungeon is never promoted")
+
+-- End to end, over every armor slot: promoted rows must all sort above
+-- unpromoted ones. Counted, not just asserted -- an ordering rule that
+-- never fires would satisfy the ordering check while doing nothing.
+local ARMOR_SLOTS = {
+    "INVTYPE_HEAD", "INVTYPE_SHOULDER", "INVTYPE_CHEST", "INVTYPE_HAND",
+    "INVTYPE_WAIST", "INVTYPE_LEGS", "INVTYPE_FEET", "INVTYPE_WRIST",
+    "INVTYPE_CLOAK",
+}
+local promotedTotal, orderHolds = 0, true
+for _, slot in ipairs(ARMOR_SLOTS) do
+    local list = ns.SlotCandidates(slot, SPECS.arms, nil, "raid")
+    local seenPlain = false
+    for _, row in ipairs(list or {}) do
+        if row.topItemLevel then
+            promotedTotal = promotedTotal + 1
+            if seenPlain then orderHolds = false end
+        else
+            seenPlain = true
+        end
+    end
+end
+check(orderHolds, "344 items never appear below a lower-ceiling item")
+check(promotedTotal > 0,
+      "at least one armor slot actually contains a 344 item")
+
+-- The rule the owner asked for, stated where it bites: rings and necks
+-- from those same two bosses must NOT be promoted, because they have no
+-- primary stat to gain.
+for _, slot in ipairs({ "INVTYPE_FINGER", "INVTYPE_NECK" }) do
+    local list = ns.SlotCandidates(slot, SPECS.arms, nil, "raid")
+    local promoted = 0
+    for _, row in ipairs(list or {}) do
+        if row.topItemLevel then promoted = promoted + 1 end
+    end
+    check(list and #list > 0, slot .. " has candidates at all")
+    checkEqual(promoted, 0, slot .. " gets no item level promotion")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

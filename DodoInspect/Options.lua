@@ -47,27 +47,6 @@ local function AddFeatureCheckbox(category, variable, dbKey, label, tooltip, onC
     Settings.CreateCheckbox(category, setting, tooltip)
 end
 
--- Opt-in variant of the above. The shipped display toggles default to ON
--- when their SavedVariable is unset, which is right for them and wrong
--- for anything backed by season-dated data: an addon update should not
--- silently start rewriting tooltips with a table that may be a patch
--- behind. These default to OFF until the player asks for them.
-local function AddOptInCheckbox(category, variable, dbKey, label, tooltip, onChanged)
-    local setting = Settings.RegisterProxySetting(
-        category,
-        variable,
-        Settings.VarType.Boolean,
-        label,
-        false,
-        function() return DodoInspectDB and DodoInspectDB[dbKey] == true end,
-        function(value)
-            DodoInspectDB[dbKey] = value and true or false
-            onChanged()
-        end
-    )
-    Settings.CreateCheckbox(category, setting, tooltip)
-end
-
 -- One px-value slider per panel font size, stored in DodoInspectDB[dbKey]
 -- (absent = the Config default). The value is in font pixels, bounded by
 -- Config.PANEL_FONT_MIN/MAX; onChanged re-flows the affected panel live.
@@ -172,14 +151,19 @@ function ns.RegisterOptions()
                 ns.ApplyStatPriorityEnabled)
         end
 
+        -- These two are backed by season-dated data (Data/Loot.lua carries
+        -- a build and date stamp) and shipped opt-in for that reason. Owner
+        -- decision 2026-08-14: default them ON like every other display
+        -- toggle -- keeping the loot table current is a job he does by
+        -- hand, so the addon does not need to hedge on his behalf.
         if ns.Config.LOOT_FEATURE_ENABLED == true then
-            AddOptInCheckbox(category,
+            AddFeatureCheckbox(category,
                 "DODO_INSPECT_LOOT_SOURCE", "showLootSource",
                 "Item source on tooltips",
                 "Add a line to item tooltips showing where the item drops. Raid items name the boss and its position; Mythic+ items name the dungeon only. Covers the current season's raids and Mythic+ pool; other items are left alone.",
                 function() end)
 
-            AddOptInCheckbox(category,
+            AddFeatureCheckbox(category,
                 "DODO_INSPECT_GEAR_PANEL", "showGearPanel",
                 "Slot candidate panel",
                 "Make the slot labels in the gear side panels clickable. Clicking one opens a list of this season's drops for that slot, ranked by how well their secondary stats match the stat priority. It is a stat-fit ranking, not a best-in-slot list: item level, tier bonuses, on-item effects and trinket procs are not scored.",

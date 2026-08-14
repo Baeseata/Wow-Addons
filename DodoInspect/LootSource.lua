@@ -11,9 +11,9 @@
 -- not change where you have to go, and the returning dungeons put the
 -- same item on several bosses anyway.
 --
--- This feature is opt-in: ns.IsEnabled defaults unset flags to ON, which
--- is right for the display toggles that shipped with the addon but wrong
--- for a new season-dated data set, so the check here is explicit.
+-- Defaults ON like the addon's other display toggles (owner decision
+-- 2026-08-14; he keeps Data/Loot.lua current by hand). It shipped opt-in
+-- because the data is season-dated -- see Options.lua for that history.
 
 local _, ns = ...
 
@@ -22,8 +22,7 @@ local instanceNames = {}
 local encounterNames = {}
 
 function ns.LootSourceEnabled()
-    local db = DodoInspectDB
-    return (db and db.showLootSource == true) and true or false
+    return ns.IsEnabled("showLootSource")
 end
 
 -- The Encounter Journal is load-on-demand. Its EJ_* functions can answer
@@ -36,6 +35,9 @@ local function EnsureEncounterJournal()
         pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal")
     end
 end
+
+-- GearPanel needs the journal loaded too, for its tooltip links.
+ns.EnsureEncounterJournal = EnsureEncounterJournal
 
 -- Both lookups can fail while the journal data is still cold. Return nil
 -- and let the caller drop the line rather than printing a placeholder:

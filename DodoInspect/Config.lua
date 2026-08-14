@@ -185,6 +185,29 @@ ns.Config = {
     LOOT_SOURCE_COLOR = { 0.25, 0.85, 0.85, 1 }, -- matches the slot column
     GEAR_EFFECT_COLOR = { 1.00, 0.70, 0.20, 1 }, -- on-item effect marker
     GEAR_MUTED_COLOR  = { 0.55, 0.55, 0.55, 1 }, -- unrankable rows
+    -- Ceiling for the pieces that reach the Myth 9/6 equivalent. Shown
+    -- next to those rows so their position is self-explaining. SEASONAL:
+    -- this number changes when the upgrade tracks do, and nothing in the
+    -- generated data can derive it -- it is a fact about the patch, not
+    -- about the items. See GearRank.NINE_SIX_SOURCES for who gets it.
+    GEAR_TOP_ITEM_LEVEL = 344,
+    GEAR_TOP_ILVL_COLOR = { 1.00, 0.90, 0.40, 1 },
+    -- What everything else in the pool reaches once fully upgraded
+    -- (Myth 6/6). Shown instead of the item's base item level, which is
+    -- what the static data carries and is wrong for every returning
+    -- dungeon piece. SEASONAL, same as the number above.
+    GEAR_MYTH_ITEM_LEVEL = 334,
+    GEAR_ILVL_COLOR      = { 0.80, 0.80, 0.85, 1 },
+    -- Ceiling for max-quality crafted gear, shown on the wrist and back
+    -- rows. Wrist and back cannot be pushed further: Ascendant Venomstones
+    -- only apply to weapons, trinkets and necklaces.
+    --
+    -- Owner's call 2026-08-14: use 331. Noted for whoever revisits this --
+    -- every source quoting 331 also quoted Myth 9/6 as 337, and 344 was
+    -- observed in game the same day, so this number comes from the same
+    -- pre-season data set that was wrong about the other one. It is here
+    -- because he decided it is close enough, not because it was verified.
+    GEAR_CRAFTED_ITEM_LEVEL = 331,
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)

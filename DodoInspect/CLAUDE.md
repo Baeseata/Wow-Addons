@@ -157,6 +157,72 @@ lua tools/test_gearrank.lua       # 60 项离线测试,必须 0 failures
   验:开着面板关角色框、以及关检视窗口。
 - 部位按钮的**可发现性**:悬停要变亮 + 出下划线,已打开的那行下划线常驻。
 
+### 2026-08-14 HOME 续作(真机跑过一部分,**尾巴全未验证**)
+
+Jerry 在 HOME 上装了上面那批未发版代码并实测,以下为这一轮的结果与改动。
+
+**真机确认可用**(有截图):掉落来源 tooltip 行 · 部位按钮 · 候选面板 · 四列属性网格 · 去重 · 344 标记。
+
+**🔴 修的第一个 bug —— 又是「FontString 没字体」**:`GearPanel.NewCell` 用
+`CreateFontString(nil,"OVERLAY")` 且**没跟 `SetFont`** → 点开面板必崩 `3x FontString:SetText(): Font not set`。
+**这是本插件第二次栽在同一个坑**(1.1.1 TargetInfo 那次)。本次顺带把全插件 13 处
+`CreateFontString` 全扫了一遍,其余都合规(另外 3 处可疑是假红,字体在 `SetText` 前一两行设了)。
+⇒ **本仓约定:`CreateFontString` 不带模板时,下一句必须是 `ns.SetOverlayFont`。**
+
+**Jerry 拍板的设计变更**(推翻了原设计,理由记在各自代码注释里):
+- **两个开关默认 ON**(原为 opt-in)。他自己管赛季数据更新,不需要插件替他保守。
+  改了**三处**:`Options` 的 checkbox(`AddOptInCheckbox` 已删)+ `LootSourceEnabled` + `GearPanelActive`。
+- **装等进入排序**(原设计明写「不看装等」)。烈毒之渊 **#7/#8 且带主属性**的 → 排该部位最前;
+  **戒指/项链不吃这个提升**(`[4]` 为 nil),因为那 10 点装等买的是主属性。见 `GearRank.NINE_SIX_SOURCES`。
+- **面板新增装等列**:344 金 / 334 灰 / azerite 件留空(它们不在任何当前轨道上,报任何数都是撒谎)。
+- 属性列改为**四列缩写网格**(同侧栏那套:同列序、同色、dominant 下划线),去掉百分比与契合度。
+- 字号改为**跟随侧栏字号**,几何全部由它推导。
+
+**⚠ 未验证清单(HOME 关机前没来得及跑,OMEN 接手第一件事)**:
+1. **bonusID 那条路**(下面「下一步」),命令都写好了没跑
+2. **`TooltipLink` 走百科全书那条** —— 第一版(不 select)实测无效,第二版加了
+   `EJ_SelectInstance` + 借完恢复原状态,**没验过**。若 bonusID 路通了,**整条删掉**更好,少一层副作用
+3. 制造装等 `331` 是 Jerry 拍板沿用,**不是实测值**(见 Config 注释)
+4. `INVTYPE_FINGER` 那条测试目前是**空真**(本赛季 #7/#8 没掉戒指),A/B 时只有 NECK 变红
+
+### 🔑 下一步:让 tooltip 按 6/6 / 9/6 渲染(**已挖到 bonusID,只差一条验证**)
+
+Jerry 的需求:面板里 hover 一件老本装备,tooltip 显示的是 **ilvl 28 蓝色**(`SetItemByID` 渲染的是
+**不带任何 bonusID 的基础形态** —— 不是 bug,那字面上就是赛季 bonus 应用前的样子)。他要看升满后的属性。
+
+**挖法(可复用,比翻攻略网站可靠得多)**:让 Jerry 跑
+`/run for _,s in ipairs({1,2,3,5,15}) do local l=GetInventoryItemLink("player",s) if l then print(s,(l:gsub("\124","\124\124"))) end end`
+把自己装备的 link 打出来 → 提取 bonusID → 去 `wago.tools` 的 `ItemBonusListGroupEntry` 反查它属于哪个轨道组。
+**他自己的客户端是权威源,版本必然对得上。**
+
+**已得结论**(2026-08-14,用他三件装备校验过):
+
+| 观测 | bonusList | 所属 group | 结论 |
+|---|---|---|---|
+| 肩/背 285 | `12827` | 615 rank3 | — |
+| 头 292 | `12833` | 616 rank1 | 616 = **Champion**(1/6=292) |
+| 颈 305 | `12841` | 617 rank1 | 617 = **Hero**(1/6=305) |
+
+⇒ **`group 618` = Myth 轨道**,而且是全表**唯一一条 9 rank 的**(其余皆 8),第 9 段 bonusList `13848`
+**不连号**(前 8 段 12849–12856 连号)= 赛季中期补上 9/6 在数据里的样子。
+
+- **Myth 6/6 → bonusList `12854`**
+- **Myth 9/6 → bonusList `13848`**
+
+⚠ `ItemLevelSelector` 里查不到 334/344(**全量扫过 1971 行,各 0 命中**)—— 12.1 的 Mistcrest
+系统不走那两张老表。但**构造 link 不需要它**,装等由游戏自己算。
+
+**待跑的验证**(link 的冒号位置是从他装备 link 反推的,itemID 后 13 个冒号才到 numBonusIDs):
+```
+/run local id=250243 for _,b in ipairs({12854,13848}) do local l="item:"..id..":::::::::::::1:"..b local n,lk,q,i=C_Item.GetItemInfo(l) print(b,n,"ilvl",i,"quality",q) end
+```
+期望:`12854` → ilvl **334**,`13848` → **344**,quality 均为 4。
+- 对上 ⇒ 两个 ID 进 Config,tooltip 改 `SetHyperlink` 构造串,**并删掉 `TooltipLink` 那条百科全书路径**;
+  顺带 `GEAR_TOP_ITEM_LEVEL`/`GEAR_MYTH_ITEM_LEVEL` 两个手填数字可改成**从游戏现读**,不必每赛季手改
+- 对不上 ⇒ 多半还需带上同行的其他 bonusID(他装备上还挂着 `6652` / `13662` 这类),调 link 再试
+
+⚠ **这些 bonusList ID 是赛季性的**,换赛季必须重挖(方法同上,几分钟)。
+
 ## 当前状态:1.9.0(2026-08-13 已发布,tag `DodoInspect-v1.9.0`,CurseForge file 8643276)
 1.8.1 → **1.9.0**:属性优先级改为**逐专精放行 + hero × content 矩阵**,不再等 40/40 一起开。
 - 当前 12.1 已覆盖 **40/40**:26 个采用已基本收敛的矩阵,14 个按 Jerry 的产品口径采用

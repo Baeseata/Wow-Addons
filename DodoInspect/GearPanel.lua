@@ -37,33 +37,6 @@ local function Colored(text, color)
                          math.floor(color[3] * 255), text)
 end
 
--- "71% Haste / 29% Crit" using the same abbreviations and colors the
--- stat grid already uses, so the two panels read as one tool.
-local function StatSummary(entry)
-    local firstStat, firstValue = entry[5], entry[6]
-    if not firstStat then return nil end
-    local secondStat, secondValue = entry[7], entry[8]
-    local total = (firstValue or 0) + (secondValue or 0)
-    if total <= 0 then return nil end
-
-    local labels = ns.L and ns.L.stats or {}
-    local colors = ns.Config.STAT_COLORS or {}
-    local parts = {
-        Colored(string.format("%d%% %s",
-                              math.floor((firstValue / total) * 100 + 0.5),
-                              labels[firstStat] or firstStat),
-                colors[firstStat]),
-    }
-    if secondStat then
-        parts[#parts + 1] = Colored(
-            string.format("%d%% %s",
-                          math.floor((secondValue / total) * 100 + 0.5),
-                          labels[secondStat] or secondStat),
-            colors[secondStat])
-    end
-    return table.concat(parts, " / ")
-end
-
 -- Which content order to rank against. Persisted, defaults to Mythic+.
 function ns.GearPanelContent()
     local db = DodoInspectDB
@@ -78,8 +51,7 @@ end
 
 function ns.GearPanelActive()
     if ns.Config.LOOT_FEATURE_ENABLED ~= true then return false end
-    local db = DodoInspectDB
-    return (db and db.showGearPanel == true) and true or false
+    return ns.IsEnabled("showGearPanel")
 end
 
 -- Equipped item id for the viewed unit, or nil. Guarded: on an enemy
@@ -94,31 +66,165 @@ local function EquippedID(unit, slotID)
     return id
 end
 
-local ROW_HEIGHT = 15
 local HEADER_H = 40
 local PAD = 8
-local NAME_W, STAT_W, SOURCE_W = 170, 115, 150
-local PANEL_WIDTH = NAME_W + STAT_W + SOURCE_W + PAD * 2 + 16
 local MAX_ROWS = 12
 
-local function NewCell(row, width, anchor, offset)
+-- Geometry follows the side panel's font size, so this window reads at
+-- the same scale as the panel that opened it and the options font slider
+-- reaches it too. Recomputed on every refresh rather than captured once,
+-- because the slider can move while the panel is open.
+local FS, ROW_HEIGHT, STAT_STEP, NAME_W, ILVL_W, SOURCE_W, PANEL_WIDTH
+
+local function Layout()
+    FS          = ns.SidePanelFontSize()
+    ROW_HEIGHT  = math.floor(FS * 1.35)
+    STAT_STEP   = math.floor(FS * 1.6)   -- one stat grid column
+    NAME_W      = math.floor(FS * 11)
+    ILVL_W      = math.floor(FS * 2.4)
+    SOURCE_W    = math.floor(FS * 10)
+    PANEL_WIDTH = NAME_W + ILVL_W + STAT_STEP * 4 + SOURCE_W + PAD * 2 + 16
+end
+
+-- A FontString created without a font template has no font object, and
+-- SetText on it throws "Font not set". Every cell gets its font at
+-- creation AND again in LayoutRow: this addon already shipped that exact
+-- bug once (1.1.1, TargetInfo).
+local function NewCell(row, justify)
     local fs = row:CreateFontString(nil, "OVERLAY")
-    fs:SetPoint("LEFT", anchor or row, anchor and "RIGHT" or "LEFT", offset or 0, 0)
-    fs:SetWidth(width)
-    fs:SetJustifyH("LEFT")
+    ns.SetOverlayFont(fs, FS)
+    fs:SetJustifyH(justify or "LEFT")
     fs:SetWordWrap(false)
     return fs
 end
 
-local function CreateRow(parent, index)
-    local row = CreateFrame("Frame", nil, parent)
+local function LayoutRow(row, index)
     row:SetSize(PANEL_WIDTH - PAD * 2, ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD,
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", PAD,
                  -(HEADER_H + (index - 1) * ROW_HEIGHT))
 
-    row.name = NewCell(row, NAME_W)
-    row.stats = NewCell(row, STAT_W, row.name, 6)
-    row.source = NewCell(row, SOURCE_W, row.stats, 6)
+    ns.SetOverlayFont(row.name, FS)
+    row.name:ClearAllPoints()
+    row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.name:SetWidth(NAME_W)
+
+    ns.SetOverlayFont(row.ilvl, FS)
+    row.ilvl:ClearAllPoints()
+    row.ilvl:SetPoint("LEFT", row, "LEFT", NAME_W, 0)
+    row.ilvl:SetWidth(ILVL_W)
+
+    for i = 1, #ns.STAT_ORDER do
+        local fs = row.stats[i]
+        ns.SetOverlayFont(fs, FS)
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", row, "LEFT",
+                    NAME_W + ILVL_W + math.floor((i - 0.5) * STAT_STEP), 0)
+    end
+
+    ns.SetOverlayFont(row.source, FS)
+    row.source:ClearAllPoints()
+    row.source:SetPoint("LEFT", row, "LEFT",
+                        NAME_W + ILVL_W + STAT_STEP * 4 + 6, 0)
+    row.source:SetWidth(SOURCE_W)
+end
+
+-- Pick the first thing in a return list that looks like an item link.
+-- Written with select() rather than a table because the journal's return
+-- signature has changed across expansions and embedded nils would
+-- truncate a table walk, hiding the link that comes after them.
+local function FirstItemLink(ok, ...)
+    if not ok then return nil end
+    for i = 1, select("#", ...) do
+        local value = select(i, ...)
+        if type(value) == "string" and value:find("|Hitem:", 1, true) then
+            return value
+        elseif type(value) == "table" and type(value.link) == "string" then
+            return value.link
+        end
+    end
+    return nil
+end
+
+-- SetItemByID renders an item with no bonus ids at all -- its base form.
+-- That is why the returning dungeon pieces come up blue at item level
+-- 59: nothing is broken, that literally is the item before the season's
+-- bonus ids are applied. The Encounter Journal's own link carries those
+-- ids, so preferring it makes the tooltip match what actually drops.
+--
+-- Best effort on purpose: this needs the journal loaded with the right
+-- instance selected, and we deliberately do NOT select one, because that
+-- would move the player's own Encounter Journal out from under them.
+-- When it comes back empty we show the bare item rather than nothing.
+-- Difficulty the journal should be asked about. Raid loot is quoted at
+-- Mythic, dungeon loot at Mythic keystone level, because that is the
+-- version of the item this panel is recommending you go get.
+local MYTHIC_RAID, MYTHIC_DUNGEON = 16, 23
+
+-- false is cached as "asked, nothing there" so a miss costs one lookup
+-- per item rather than one per mouseover.
+local linkCache = {}
+
+local function TooltipLink(itemID)
+    if linkCache[itemID] ~= nil then return linkCache[itemID] or nil end
+    if type(EJ_GetLootInfoByID) ~= "function"
+       or type(EJ_SelectInstance) ~= "function" then
+        return nil
+    end
+    local entry = ns.LootEntry and ns.LootEntry(itemID)
+    if not entry then linkCache[itemID] = false return nil end
+
+    if ns.EnsureEncounterJournal then ns.EnsureEncounterJournal() end
+
+    -- The journal is a single shared selection, and the player may have
+    -- their own instance open in it. Borrow it, then put it back exactly
+    -- as it was -- silently retargeting someone's Encounter Journal is
+    -- the kind of side effect an item level tooltip has no business
+    -- causing.
+    local prevInstance = EJ_GetCurrentInstance and EJ_GetCurrentInstance()
+    local prevDifficulty = EJ_GetDifficulty and EJ_GetDifficulty()
+
+    local isRaid = ns.LootMeta and ns.LootMeta.raids
+                   and ns.LootMeta.raids[entry[1]]
+    pcall(EJ_SelectInstance, entry[1])
+    if type(EJ_SetDifficulty) == "function" then
+        pcall(EJ_SetDifficulty, isRaid and MYTHIC_RAID or MYTHIC_DUNGEON)
+    end
+
+    local link = FirstItemLink(pcall(EJ_GetLootInfoByID, itemID))
+
+    if prevInstance and prevInstance > 0 then
+        pcall(EJ_SelectInstance, prevInstance)
+    end
+    if prevDifficulty and type(EJ_SetDifficulty) == "function" then
+        pcall(EJ_SetDifficulty, prevDifficulty)
+    end
+
+    linkCache[itemID] = link or false
+    return link
+end
+
+local function CreateRow(parent, index)
+    local row = CreateFrame("Frame", nil, parent)
+
+    row.name = NewCell(row)
+    row.ilvl = NewCell(row, "RIGHT")
+    row.source = NewCell(row)
+
+    -- Four-column secondary stat grid: same order, colors, abbreviations
+    -- and dominant-stat underline as the character side panel. The two
+    -- windows sit side by side and get read together, so they have to
+    -- speak one visual language rather than two.
+    row.stats, row.statLines = {}, {}
+    for i = 1, #ns.STAT_ORDER do
+        row.stats[i] = NewCell(row, "CENTER")
+        local line = row:CreateTexture(nil, "OVERLAY")
+        line:SetHeight(1)
+        line:Hide()
+        row.statLines[i] = line
+    end
+
+    LayoutRow(row, index)
 
     -- Hovering a row shows the real item tooltip, which is where the
     -- item level, sockets and any on-item effect actually live. The
@@ -128,7 +234,12 @@ local function CreateRow(parent, index)
     row:SetScript("OnEnter", function(self)
         if not self.itemID then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetItemByID(self.itemID)
+        local link = TooltipLink(self.itemID)
+        if link then
+            GameTooltip:SetHyperlink(link)
+        else
+            GameTooltip:SetItemByID(self.itemID)
+        end
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -139,6 +250,11 @@ local function EnsureRows(count)
     panel.rows = panel.rows or {}
     for i = #panel.rows + 1, count do
         panel.rows[i] = CreateRow(panel, i)
+    end
+    -- Re-layout the rows that already exist: the font slider can move
+    -- between two openings of this panel, and the geometry is derived.
+    for i = 1, count do
+        LayoutRow(panel.rows[i], i)
     end
     for i = count + 1, #panel.rows do
         panel.rows[i]:Hide()
@@ -157,6 +273,97 @@ local function ViewedSpec()
            ns.InspectHeroSubTree and ns.InspectHeroSubTree()
 end
 
+-- Two different itemIDs can resolve to the same name: the returning BfA
+-- dungeons still list legacy pieces (the ilvl 59 azerite head/shoulder/
+-- chest among them) beside their modern namesakes, and one name printed
+-- twice reads as a bug no matter which of the two is "right".
+--
+-- Candidates arrive already ranked, so the first occurrence is the one
+-- worth keeping -- and because unranked pieces sort last, a ranked twin
+-- always wins over a statless one.
+--
+-- Items whose name has not come back from the server yet are passed
+-- through untouched rather than dropped: GetItemInfo returns nil until
+-- the item is cached, and treating nil as a name would collapse every
+-- uncached row into one. The panel redraws when the names arrive.
+local function DedupeByName(candidates)
+    local out, seen = {}, {}
+    for _, entryRow in ipairs(candidates) do
+        local name = C_Item.GetItemInfo(entryRow.id)
+        if name == nil or not seen[name] then
+            if name then seen[name] = true end
+            out[#out + 1] = entryRow
+        end
+    end
+    return out
+end
+
+-- Four-column stat grid mirroring the character side panel: the stat's
+-- abbreviation sits in the stat's own column, the dominant one is
+-- underlined, ties get no underline. Deliberately no percentages -- the
+-- columns already say which stats the item carries, and the list order
+-- already carries the fit. Costs a quarter of the width the old
+-- "77% Haste / 23% Crit  87%" cell did.
+local function SetStatCells(row, entryRow)
+    for i = 1, #ns.STAT_ORDER do
+        row.stats[i]:Hide()
+        row.statLines[i]:Hide()
+    end
+
+    -- Items with no secondaries at all (the ilvl 59 BfA azerite pieces)
+    -- get an explicit dash: four blank columns read as missing data.
+    if entryRow.unranked then
+        local fs, c = row.stats[1], ns.Config.GEAR_MUTED_COLOR
+        fs:SetText("-")
+        fs:SetTextColor(c[1], c[2], c[3], c[4])
+        fs:Show()
+        return
+    end
+
+    local entry = entryRow.entry
+    local values = {}
+    if entry[5] then values[entry[5]] = entry[6] or 0 end
+    if entry[7] then values[entry[7]] = entry[8] or 0 end
+
+    local maxKey, maxVal, tie = nil, 0, false
+    for _, key in ipairs(ns.STAT_ORDER) do
+        local v = values[key]
+        if type(v) == "number" and v > 0 then
+            if v > maxVal then maxVal, maxKey, tie = v, key, false
+            elseif v == maxVal then tie = true end
+        end
+    end
+    if tie then maxKey = nil end
+
+    -- Latin two-letter abbreviations carry side bearings that make a
+    -- full-width underline look wider than the glyphs; a CJK glyph fills
+    -- its box. Same correction the side panel applies.
+    local underL, underR = 0, 0
+    local sample = (ns.L and ns.L.stats and ns.L.stats.versatility) or ""
+    if not (strlenutf8 and #sample > strlenutf8(sample)) then
+        underL = math.floor(FS * 0.06 + 0.5)
+        underR = math.floor(FS * 0.17 + 0.5)
+    end
+
+    for i, key in ipairs(ns.STAT_ORDER) do
+        if values[key] then
+            local fs = row.stats[i]
+            local c = ns.Config.STAT_COLORS[key]
+            fs:SetText((ns.L and ns.L.stats and ns.L.stats[key]) or key)
+            fs:SetTextColor(c[1], c[2], c[3], c[4])
+            fs:Show()
+            if key == maxKey then
+                local line = row.statLines[i]
+                line:SetColorTexture(c[1], c[2], c[3], 0.9)
+                line:ClearAllPoints()
+                line:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", underL, 1)
+                line:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", -underR, 1)
+                line:Show()
+            end
+        end
+    end
+end
+
 local function SetRow(row, index, entryRow, equippedID)
     row.itemID = entryRow.id
     local name = C_Item.GetItemInfo(entryRow.id)
@@ -173,14 +380,23 @@ local function SetRow(row, index, entryRow, equippedID)
     row.name:SetTextColor(isEquipped and 1 or 0.9, isEquipped and 0.82 or 0.9,
                           isEquipped and 0.2 or 0.9)
 
+    -- The item level the piece reaches once fully upgraded, NOT the base
+    -- level the static data carries -- that one is 59 for every returning
+    -- dungeon piece and is the reason this column exists at all. Blank
+    -- for the statless azerite leftovers: they are not on a current
+    -- upgrade track, so quoting either ceiling for them would be a lie.
     if entryRow.unranked then
-        row.stats:SetText(Colored(ns.L.gearNoStats or "no stat data",
-                                  ns.Config.GEAR_MUTED_COLOR))
+        row.ilvl:SetText("")
     else
-        local summary = StatSummary(entryRow.entry)
-        local fit = math.floor((entryRow.score or 0) * 100 + 0.5)
-        row.stats:SetText(string.format("%s  %d%%", summary or "", fit))
+        local top = entryRow.topItemLevel
+        local cfg = ns.Config
+        local c = top and cfg.GEAR_TOP_ILVL_COLOR or cfg.GEAR_ILVL_COLOR
+        row.ilvl:SetText(tostring(top and cfg.GEAR_TOP_ITEM_LEVEL
+                                      or cfg.GEAR_MYTH_ITEM_LEVEL))
+        row.ilvl:SetTextColor(c[1], c[2], c[3], c[4])
     end
+
+    SetStatCells(row, entryRow)
 
     row.source:SetText(Colored(ns.LootSourceText(entryRow.id) or "",
                                ns.Config.LOOT_SOURCE_COLOR))
@@ -190,10 +406,16 @@ end
 function ns.RefreshGearPanel()
     if not panel or not state.slotKey then return end
 
+    -- Geometry is derived from the font size, which the options slider
+    -- can have moved since the last draw.
+    Layout()
+    panel:SetWidth(PANEL_WIDTH)
+
     local specID, subTree = ViewedSpec()
     local candidates = specID
         and ns.SlotCandidates(state.slotKey, specID, subTree,
                               ns.GearPanelContent())
+    if candidates then candidates = DedupeByName(candidates) end
 
     -- INVTYPE_* are global strings the client already localizes ("Head",
     -- "Tete", ...). Falling back to our own two-letter abbreviation keeps
@@ -209,7 +431,17 @@ function ns.RefreshGearPanel()
     -- not in any loot table and whose stats the player picks anyway.
     local notes = {}
     if CRAFTED_SLOTS[state.slotKey] then
-        notes[#notes + 1] = ns.L.gearCrafted or ""
+        local note = ns.L.gearCrafted or ""
+        -- The crafted ceiling, when it is actually known. Config keeps it
+        -- nil until a real value is confirmed, and an absent number reads
+        -- honestly here -- a wrong one would be quoted back at the player
+        -- as if the addon had checked.
+        local crafted = ns.Config.GEAR_CRAFTED_ITEM_LEVEL
+        if crafted then
+            note = note .. " " .. Colored(tostring(crafted),
+                                          ns.Config.GEAR_ILVL_COLOR)
+        end
+        notes[#notes + 1] = note
     end
     -- provisional lives on the spec entry, not on the resolved build, and
     -- StatPrioritySpecCurrent only answers "is this spec live at all".
@@ -241,6 +473,7 @@ end
 function ns.SetupGearPanel()
     if panel then return panel end
 
+    Layout()
     panel = CreateFrame("Frame", "DodoInspectGearPanel", UIParent,
                         "BackdropTemplate")
     panel:SetWidth(PANEL_WIDTH)
