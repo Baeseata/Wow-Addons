@@ -1,0 +1,10 @@
+## Interface: 120005, 120007, 120100
+## Group: Dodo
+## OptionalDeps: Dodo
+## Title: DodoProbe
+## Notes: dodo的secret value探针(诊断用,默认静默;/dp 手动跑)
+## Author: Doodo
+## Version: 0.2.0
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+
+DodoProbe.lua
