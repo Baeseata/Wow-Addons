@@ -178,14 +178,23 @@ Jerry 在 HOME 上装了上面那批未发版代码并实测,以下为这一轮�
 - 属性列改为**四列缩写网格**(同侧栏那套:同列序、同色、dominant 下划线),去掉百分比与契合度。
 - 字号改为**跟随侧栏字号**,几何全部由它推导。
 
-**⚠ 未验证清单(HOME 关机前没来得及跑,OMEN 接手第一件事)**:
-1. **bonusID 那条路**(下面「下一步」),命令都写好了没跑
-2. **`TooltipLink` 走百科全书那条** —— 第一版(不 select)实测无效,第二版加了
-   `EJ_SelectInstance` + 借完恢复原状态,**没验过**。若 bonusID 路通了,**整条删掉**更好,少一层副作用
-3. 制造装等 `331` 是 Jerry 拍板沿用,**不是实测值**(见 Config 注释)
-4. `INVTYPE_FINGER` 那条测试目前是**空真**(本赛季 #7/#8 没掉戒指),A/B 时只有 NECK 变红
+**⚠ 未验证清单(2026-08-14 OMEN 续作后更新)**:
+1. ~~bonusID 那条路~~ ✅ **已实测 + 已落地**(见下节)
+2. ~~`TooltipLink` 走百科全书那条~~ ✅ **整条已删** —— bonusID 路通了就不必再借
+   EJ 的选中状态,连带 `FirstItemLink` / `linkCache` / `MYTHIC_RAID` 一起清掉。
+   (`ns.EnsureEncounterJournal` / `ns.LootEntry` **没删**,掉落来源那条路还在用)
+3. 制造装等 `331` 仍是 Jerry 拍板沿用,**不是实测值**(见 Config 注释)。
+   ⚠ 现在有取数法了可以真验一次 —— 而且**它可疑**:Config 注释自己写着,
+   所有报 331 的来源同时把 Myth 9/6 报成 337,而 9/6 实测是 **344** ⇒
+   331 出自同一批已被证伪的 pre-season 数据。挖法同下节(找制造装备的轨道 group)
+4. ~~`INVTYPE_FINGER` 空真~~ ✅ **已显式化**:改成问「把主属性条件拿掉它会不会被促」
+   (调 `ns.ReachesTopItemLevel` 真函数,不复刻 `NINE_SIX_SOURCES`),
+   并把「本赛季没有 9/6 戒指」本身断言成一条 tripwire —— 哪个赛季掉了戒指它就变红,
+   而那正是上面那条断言开始有意义的时刻。NECK 侧配了反空转断言。A/B 两条各自精确变红
+5. 🔴 **新的 tooltip 渲染路径游戏内零验证** —— 只跑过离线测试(71→73 checks 全绿)+
+   构造串跟实测有效串逐字符比对。真机第一次跑先 hover 一件老本装备看是不是紫的 334/344
 
-### 🔑 下一步:让 tooltip 按 6/6 / 9/6 渲染(**已挖到 bonusID,只差一条验证**)
+### ✅ 已落地:tooltip 按 6/6 / 9/6 渲染(2026-08-14 OMEN,实测 + 代码已改)
 
 Jerry 的需求:面板里 hover 一件老本装备,tooltip 显示的是 **ilvl 28 蓝色**(`SetItemByID` 渲染的是
 **不带任何 bonusID 的基础形态** —— 不是 bug,那字面上就是赛季 bonus 应用前的样子)。他要看升满后的属性。
@@ -212,7 +221,27 @@ Jerry 的需求:面板里 hover 一件老本装备,tooltip 显示的是 **ilvl 2
 ⚠ `ItemLevelSelector` 里查不到 334/344(**全量扫过 1971 行,各 0 命中**)—— 12.1 的 Mistcrest
 系统不走那两张老表。但**构造 link 不需要它**,装等由游戏自己算。
 
-**待跑的验证**(link 的冒号位置是从他装备 link 反推的,itemID 后 13 个冒号才到 numBonusIDs):
+**✅ 实测结果(2026-08-14,item 250243)**:`12854` → ilvl **334** / quality 4;
+`13848` → ilvl **344** / quality 4。两个都跟预期一致,已进 `Config.GEAR_MYTH_BONUS_ID`
+/ `GEAR_TOP_BONUS_ID`,`GearPanel.TooltipLink` 改为自己构造 link。
+
+🔴 **两个坑,都真咬过一次**:
+1. **冒号数原本写错了** —— 交接里那条命令写的是 itemID 后 **13** 个冒号,正确是 **12**
+   (11 个空字段 enchant/四宝石/suffix/unique/level/spec/modifiers/context,然后才到
+   `numBonusIDs`)。多一个 = 每个字段整体错位一格,而 `GetItemInfo` **只回 nil,不给任何提示**。
+   ⇒ 代码里写成 `string.rep(":", 11)` 让数量是**声明的**而不是数出来的;
+   验收时拿构造串跟「游戏里真的成功过」那个串逐字符比,并用 `rep(10)`/`rep(12)` 当负对照
+   证明这个比对不是恒真。
+2. **第一枪必然全 nil** —— `GetItemInfo` 对没缓存的物品**本来就返回 nil**(只触发异步加载)。
+   跟第 1 条叠在一起时特别难分辨:两个原因产出的症状**一模一样**。
+   ⇒ 诊断要拆开问:`GetItemInfoInstant`(同步,验 itemID 有效)+ 裸 ID 查询(验缓存)
+   + 打印构造串(肉眼核字段)+ 带 bonus 查询,一条命令四个探针。
+
+⚠ **`GEAR_TOP_ITEM_LEVEL` / `GEAR_MYTH_ITEM_LEVEL` 故意没改成「从游戏现读」**(HOME 建议过):
+收益只有省两个常量,代价是要硬编码一个探针 itemID;而**每赛季 bonusID 本来就得重挖**,
+所以「不必每赛季手改」只成立一半 —— 那两个数跟 bonusID 是同一批要换的东西,放一起手改反而清楚。
+
+**下面是原始挖法记录**(换赛季重挖时照走):
 ```
 /run local id=250243 for _,b in ipairs({12854,13848}) do local l="item:"..id..":::::::::::::1:"..b local n,lk,q,i=C_Item.GetItemInfo(l) print(b,n,"ilvl",i,"quality",q) end
 ```

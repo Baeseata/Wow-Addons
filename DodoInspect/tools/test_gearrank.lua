@@ -238,15 +238,42 @@ check(promotedTotal > 0,
 -- The rule the owner asked for, stated where it bites: rings and necks
 -- from those same two bosses must NOT be promoted, because they have no
 -- primary stat to gain.
+--
+-- Would this row be promoted if the one thing holding it back -- having
+-- no primary stat -- were taken away? Asks the shipped rule rather than
+-- restating which bosses count, so the test cannot drift away from it.
+local function wouldPromoteWithPrimary(row)
+    local clone = {}
+    for i = 1, 9 do clone[i] = row.entry[i] end
+    clone[4] = "STR"
+    return ns.ReachesTopItemLevel(clone) == true
+end
+
+local nineSixBySlot = {}
 for _, slot in ipairs({ "INVTYPE_FINGER", "INVTYPE_NECK" }) do
     local list = ns.SlotCandidates(slot, SPECS.arms, nil, "raid")
-    local promoted = 0
+    local promoted, nineSix = 0, 0
     for _, row in ipairs(list or {}) do
         if row.topItemLevel then promoted = promoted + 1 end
+        if wouldPromoteWithPrimary(row) then nineSix = nineSix + 1 end
     end
     check(list and #list > 0, slot .. " has candidates at all")
     checkEqual(promoted, 0, slot .. " gets no item level promotion")
+    nineSixBySlot[slot] = nineSix
 end
+
+-- The two slots above do NOT carry the same evidence, and saying so is
+-- the point of these two checks. Without them "promoted == 0" reads as
+-- one result twice, when really it is one live assertion and one that
+-- holds no matter what the rule says.
+check(nineSixBySlot.INVTYPE_NECK > 0,
+      "NECK assertion is live: a 9/6 neck exists and is held back only "
+      .. "by the primary-stat condition")
+checkEqual(nineSixBySlot.INVTYPE_FINGER, 0,
+      "FINGER assertion is known-vacuous: no 9/6 ring drops this season, "
+      .. "so its 'no promotion' result proves nothing. This check is the "
+      .. "tripwire -- a future season that adds one turns it red, which "
+      .. "is exactly when the assertion above starts carrying weight")
 
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

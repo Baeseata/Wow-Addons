@@ -198,6 +198,19 @@ ns.Config = {
     -- dungeon piece. SEASONAL, same as the number above.
     GEAR_MYTH_ITEM_LEVEL = 334,
     GEAR_ILVL_COLOR      = { 0.80, 0.80, 0.85, 1 },
+    -- Bonus ids for this season's Myth upgrade track (group 618). Used to
+    -- render tooltips at the level a piece actually reaches instead of its
+    -- base form. Measured in game 2026-08-14 on item 250243:
+    --   12854 -> ilvl 334, quality 4  (sequence 6 = Myth 6/6)
+    --   13848 -> ilvl 344, quality 4  (sequence 9 = Myth 9/6)
+    -- SEASONAL, like the two numbers above -- and these have to be looked
+    -- up rather than guessed: the 9/6 id does NOT continue the numbering
+    -- of the first eight (12849-12856), it was added mid-season.
+    -- To re-derive: print an equipped item's link, take its bonus id, find
+    -- it in ItemBonusListGroupEntry on wago.tools to get the group, then
+    -- read that group's SequenceValue rows.
+    GEAR_MYTH_BONUS_ID = 12854,
+    GEAR_TOP_BONUS_ID  = 13848,
     -- Ceiling for max-quality crafted gear, shown on the wrist and back
     -- rows. Wrist and back cannot be pushed further: Ascendant Venomstones
     -- only apply to weapons, trinkets and necklaces.

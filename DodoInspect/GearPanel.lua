@@ -129,79 +129,31 @@ local function LayoutRow(row, index)
     row.source:SetWidth(SOURCE_W)
 end
 
--- Pick the first thing in a return list that looks like an item link.
--- Written with select() rather than a table because the journal's return
--- signature has changed across expansions and embedded nils would
--- truncate a table walk, hiding the link that comes after them.
-local function FirstItemLink(ok, ...)
-    if not ok then return nil end
-    for i = 1, select("#", ...) do
-        local value = select(i, ...)
-        if type(value) == "string" and value:find("|Hitem:", 1, true) then
-            return value
-        elseif type(value) == "table" and type(value.link) == "string" then
-            return value.link
-        end
-    end
-    return nil
-end
-
 -- SetItemByID renders an item with no bonus ids at all -- its base form.
 -- That is why the returning dungeon pieces come up blue at item level
 -- 59: nothing is broken, that literally is the item before the season's
--- bonus ids are applied. The Encounter Journal's own link carries those
--- ids, so preferring it makes the tooltip match what actually drops.
+-- bonus ids are applied.
 --
--- Best effort on purpose: this needs the journal loaded with the right
--- instance selected, and we deliberately do NOT select one, because that
--- would move the player's own Encounter Journal out from under them.
--- When it comes back empty we show the bare item rather than nothing.
--- Difficulty the journal should be asked about. Raid loot is quoted at
--- Mythic, dungeon loot at Mythic keystone level, because that is the
--- version of the item this panel is recommending you go get.
-local MYTHIC_RAID, MYTHIC_DUNGEON = 16, 23
+-- So build the link ourselves and carry the upgrade track's bonus id in
+-- it. An item link is item:<id> followed by eleven fields we have nothing
+-- to say about (enchant, four gems, suffix, unique, level, spec,
+-- modifiers, context), then the bonus id count and the ids themselves.
+-- Spelled with rep() rather than a literal run of colons so the count is
+-- stated rather than counted: one colon too many shifts every field along
+-- and GetItemInfo answers nil with no hint as to why.
+local LINK_EMPTY_FIELDS = string.rep(":", 11)
 
--- false is cached as "asked, nothing there" so a miss costs one lookup
--- per item rather than one per mouseover.
-local linkCache = {}
-
-local function TooltipLink(itemID)
-    if linkCache[itemID] ~= nil then return linkCache[itemID] or nil end
-    if type(EJ_GetLootInfoByID) ~= "function"
-       or type(EJ_SelectInstance) ~= "function" then
-        return nil
-    end
-    local entry = ns.LootEntry and ns.LootEntry(itemID)
-    if not entry then linkCache[itemID] = false return nil end
-
-    if ns.EnsureEncounterJournal then ns.EnsureEncounterJournal() end
-
-    -- The journal is a single shared selection, and the player may have
-    -- their own instance open in it. Borrow it, then put it back exactly
-    -- as it was -- silently retargeting someone's Encounter Journal is
-    -- the kind of side effect an item level tooltip has no business
-    -- causing.
-    local prevInstance = EJ_GetCurrentInstance and EJ_GetCurrentInstance()
-    local prevDifficulty = EJ_GetDifficulty and EJ_GetDifficulty()
-
-    local isRaid = ns.LootMeta and ns.LootMeta.raids
-                   and ns.LootMeta.raids[entry[1]]
-    pcall(EJ_SelectInstance, entry[1])
-    if type(EJ_SetDifficulty) == "function" then
-        pcall(EJ_SetDifficulty, isRaid and MYTHIC_RAID or MYTHIC_DUNGEON)
-    end
-
-    local link = FirstItemLink(pcall(EJ_GetLootInfoByID, itemID))
-
-    if prevInstance and prevInstance > 0 then
-        pcall(EJ_SelectInstance, prevInstance)
-    end
-    if prevDifficulty and type(EJ_SetDifficulty) == "function" then
-        pcall(EJ_SetDifficulty, prevDifficulty)
-    end
-
-    linkCache[itemID] = link or false
-    return link
+-- Which ceiling this row is being shown at has to come from the caller:
+-- the item level column has already picked one, and a row labelled 344
+-- whose tooltip renders 334 is worse than either number on its own.
+-- Unranked rows get no bonus id -- they are not on a current upgrade
+-- track, which is exactly why their item level cell is left blank too.
+local function TooltipLink(itemID, top, unranked)
+    if unranked then return nil end
+    local cfg = ns.Config
+    local bonus = top and cfg.GEAR_TOP_BONUS_ID or cfg.GEAR_MYTH_BONUS_ID
+    if not bonus then return nil end
+    return "item:" .. itemID .. LINK_EMPTY_FIELDS .. ":1:" .. bonus
 end
 
 local function CreateRow(parent, index)
@@ -234,7 +186,8 @@ local function CreateRow(parent, index)
     row:SetScript("OnEnter", function(self)
         if not self.itemID then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        local link = TooltipLink(self.itemID)
+        local link = TooltipLink(self.itemID, self.trackTop,
+                                 self.trackUnranked)
         if link then
             GameTooltip:SetHyperlink(link)
         else
@@ -366,6 +319,10 @@ end
 
 local function SetRow(row, index, entryRow, equippedID)
     row.itemID = entryRow.id
+    -- Carried onto the row so the tooltip quotes the same ceiling the
+    -- item level cell below is about to print.
+    row.trackTop = entryRow.topItemLevel
+    row.trackUnranked = entryRow.unranked
     local name = C_Item.GetItemInfo(entryRow.id)
     local isEquipped = (equippedID == entryRow.id)
 
