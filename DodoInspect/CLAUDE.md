@@ -89,6 +89,74 @@ tainted by 'DodoInspect'`。
 
 **复现姿势**(修完想验就这么点):开着检视窗口 → 目标切到敌对玩家(战场最快)→ 旧版必进 BugSack。
 
+## 🚧 未发版:掉落来源 + 部位候选面板(2026-08-14 写完,**游戏内零验证**)
+
+> 🔴 **这一节描述的代码从未在游戏里跑过一次。** 语法全过 `luac -p`,排序逻辑有 60 项
+> 离线测试(含 A/B 反证),但**所有 UI、事件、EJ API、secret 防护都只是纸面正确**。
+> 真机第一次跑之前,别把下面任何一句当成"已经好使"。
+
+**新增文件**:`Data/Loot.lua`(生成物)· `LootSource.lua` · `GearRank.lua` · `GearPanel.lua`
+· `tools/gen_loot.py`(生成器)· `tools/test_gearrank.lua` + `tools/fixture_itemshape.lua`(离线测试)。
+
+**两个功能,都默认关**(`AddOptInCheckbox`,新加的 opt-in 变体 —— 老的 `ns.IsEnabled`
+未设置时**默认开**,对赛季数据不合适):
+- `showLootSource`:物品 tooltip 加一行来源。团本 `副本名 #N Boss名`,大秘境只给副本名。
+- `showGearPanel`:两个侧栏最左列部位名变可点,点开右侧挂载窗口列该部位候选,按属性契合排序。
+
+**数据怎么来 / 怎么重生成**(换赛季就跑这个,改 `gen_loot.py` 顶部的 `RAIDS`/`DUNGEONS` 常量):
+```
+python tools/gen_loot.py          # 重写 Data/Loot.lua + tools/fixture_itemshape.lua
+lua tools/test_gearrank.lua       # 60 项离线测试,必须 0 failures
+```
+本机 `luac` / `lua` 已装(`~/AppData/Local/Programs/Lua/`),`luac -p <file>` 可做语法验证 ——
+**这是本插件第一次有可自动跑的验证手段,别丢掉**。
+
+**零翻译原则**:数据文件只存 ID。物品名走 `C_Item.GetItemInfo`、副本/Boss 名走
+`EJ_GetInstanceInfo`/`EJ_GetEncounterInfo`、部位全名走全局串 `_G["INVTYPE_HEAD"]` ——
+**中英法西四语全部由客户端本地化,插件一个装备名都不存**。只有 7 个自己的 UI 串进 Locales。
+
+**边界(设计上就不做,不是没做完)**:饰品不排序(价值在特效)· 武器不排序(双手/双持是构筑
+选择,数据里没有干净答案)· 护腕/披风显示"通常用制造装备"静态提示(缀饰件不在任何掉落表里,
+而且它的副属性是玩家做的时候自选的)· 不看装等(见下)。
+
+### 🔴 这轮踩到的坑(每条都真的咬过一次)
+
+1. **`ItemSparse.ItemLevel` 在这个场景完全不可用**:烈毒之渊 219 / Midnight 地牢 108 /
+   诸王之眠·塞塔里斯 **59**(BfA 原值)/ 红玉 250。老本回归靠 bonusID 在运行时拉装等,
+   静态表里那个数字是假的。⇒ **面板绝不显示装等数字**,否则会显示 59。
+   「不看装等只按属性排」不是简化,是**唯一可行**。
+2. **披风的护甲类型是 `Cloth`**(`cls4 sub1`),主属性 `SAI`。按 subclass 过滤 = 只有布甲职业
+   看得到披风,其他职业那一行**空白**,而空白读起来像数据缺失。⇒ `GearRank.ARMOR_TYPE_SLOTS`
+   白名单只对真护甲部位开过滤。**这个 bug 是测试抓到的,A/B 种回去精确报两条红。**
+3. **`JournalEncounter.OrderIndex` 基数不一致**:8-boss 团本是 **1..8**,单 boss 团本是 **0**。
+   直接打印会出 `#0` 和 `#9`。⇒ 生成器按 OrderIndex 排序后**重编号成 1..N**。
+4. **武器/副手在 `StatModifier` 里有第二个主属性条目**(单手武器既有 `Int:5259` 又有
+   `Int:25370`),循环里后者会覆盖前者。⇒ 取**第一个**;并加断言:**护甲**若出现多主属性
+   条目直接报错退出(护甲一旦中招,主属性过滤就静默失效,板甲职业会互相看到对方的装备)。
+5. **`ClassID ∈ {2,4}` 过滤不干净**:混进 3 件**幻化头饰**(Armor subclass 5,ilvl 1,零属性)。
+   ⚠ 但 subclass 5 只对 **Armor** 是幻化,对 **Weapon** 是**法杖** —— 别无条件排除 subclass 5。
+6. **49 件装备零副属性**,分三类:饰品 33(正常)· 武器 2(不做)· **护甲 14**。那 14 件全是
+   ilvl 59 的 **BfA azerite 头/肩/胸**(那个年代就没有副属性),只出现在诸王之眠和塞塔里斯神庙。
+   ⇒ 保留并标记 `unranked` 排在最后,**不删掉** —— 装备从列表里消失读起来像数据不全。
+7. **`tools/` 里的 `.lua` 会被打进 CurseForge 包**,而那个防泄漏 guard 只查 `CLAUDE.md`
+   和 `/test/`,**会绿着放行**。已同时补 `find` 排除和 guard 的 grep(两处都改,只改一处等于没改)。
+8. **`ns.StatPrioritySpecCurrent` 返回 boolean**,不是 `"provisional"` —— provisional 要直接读
+   `ns.StatPriority[specID].provisional`。我一开始按名字猜了语义,猜错。
+
+### ⚠ 真机第一次跑必须验的(按风险排)
+
+- **EJ API 冷启动**:`EJ_GetInstanceInfo` / `EJ_GetEncounterInfo` 在 `Blizzard_EncounterJournal`
+  没加载时能不能答。`LootSource.lua` 做了 lazy `LoadAddOn` + `pcall` + 缓存,**拿不到就不显示
+  那一行**(不显示占位符)。→ 验:全新登录后直接开背包看 tooltip 有没有来源行。
+- **secret value**:`InspectPanel` 的 unit **跟着目标走**,开着检视窗口把目标切到敌对玩家
+  (战场最快)→ 点部位按钮。`ViewedSpec` 走 `ns.InspectSpecID`(已 guard),`EquippedID` 自己
+  `pcall` + `issecretvalue` + `type` 三重挡。**这是本插件历史上崩得最多的一条路。**
+- **`_G["INVTYPE_HEAD"]` 这类全局串是否真的存在** —— 面板标题靠它出四语部位全名,不存在时
+  回落到两字母缩写(标题会变成 "HD",丑但不炸)。
+- **`panel:SetParent(anchorFrame)`** 让面板跟着侧栏一起隐藏(角色框关 → 侧栏隐 → 它隐)。
+  验:开着面板关角色框、以及关检视窗口。
+- 部位按钮的**可发现性**:悬停要变亮 + 出下划线,已打开的那行下划线常驻。
+
 ## 当前状态:1.9.0(2026-08-13 已发布,tag `DodoInspect-v1.9.0`,CurseForge file 8643276)
 1.8.1 → **1.9.0**:属性优先级改为**逐专精放行 + hero × content 矩阵**,不再等 40/40 一起开。
 - 当前 12.1 已覆盖 **40/40**:26 个采用已基本收敛的矩阵,14 个按 Jerry 的产品口径采用

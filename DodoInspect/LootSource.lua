@@ -1,0 +1,113 @@
+-- DodoInspect - LootSource.lua
+-- Turns a Data/Loot.lua entry into a localized "where does this drop"
+-- line, and adds that line to item tooltips.
+--
+-- No translated strings live here. Instance and boss names come from the
+-- Encounter Journal (EJ_GetInstanceInfo / EJ_GetEncounterInfo), so every
+-- client language is covered without the addon shipping a single name.
+--
+-- Raids print the boss: "The Venomous Abyss  #8 Ula'tek".
+-- Mythic+ dungeons print the instance only -- which boss dropped it does
+-- not change where you have to go, and the returning dungeons put the
+-- same item on several bosses anyway.
+--
+-- This feature is opt-in: ns.IsEnabled defaults unset flags to ON, which
+-- is right for the display toggles that shipped with the addon but wrong
+-- for a new season-dated data set, so the check here is explicit.
+
+local _, ns = ...
+
+local ejLoadAttempted = false
+local instanceNames = {}
+local encounterNames = {}
+
+function ns.LootSourceEnabled()
+    local db = DodoInspectDB
+    return (db and db.showLootSource == true) and true or false
+end
+
+-- The Encounter Journal is load-on-demand. Its EJ_* functions can answer
+-- before the UI is loaded on some paths and not on others, so ask once,
+-- lazily, and never block on the result.
+local function EnsureEncounterJournal()
+    if ejLoadAttempted then return end
+    ejLoadAttempted = true
+    if C_AddOns and type(C_AddOns.LoadAddOn) == "function" then
+        pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal")
+    end
+end
+
+-- Both lookups can fail while the journal data is still cold. Return nil
+-- and let the caller drop the line rather than printing a placeholder:
+-- a missing line reads as "no data for this item", a placeholder reads
+-- as a bug.
+local function LookupName(cache, id, apiName)
+    if cache[id] ~= nil then
+        return cache[id] or nil
+    end
+    local api = _G[apiName]
+    if type(api) ~= "function" then return nil end
+    local ok, name = pcall(api, id)
+    if not ok or type(name) ~= "string" or name == "" then
+        EnsureEncounterJournal()
+        return nil
+    end
+    cache[id] = name
+    return name
+end
+
+function ns.LootEntry(itemID)
+    if type(itemID) ~= "number" then return nil end
+    return ns.LootData and ns.LootData[itemID] or nil
+end
+
+-- Localized source line for an item, or nil when the item is not part of
+-- the current season's tables.
+function ns.LootSourceText(itemID)
+    local entry = ns.LootEntry(itemID)
+    if not entry then return nil end
+
+    local instanceID, encounterID, position = entry[1], entry[2], entry[3]
+    local instanceName = LookupName(instanceNames, instanceID, "EJ_GetInstanceInfo")
+    if not instanceName then return nil end
+
+    if not (ns.LootMeta and ns.LootMeta.raids and ns.LootMeta.raids[instanceID]) then
+        return instanceName
+    end
+
+    local bossName = LookupName(encounterNames, encounterID, "EJ_GetEncounterInfo")
+    if not bossName then return instanceName end
+    return string.format("%s  #%d %s", instanceName, position, bossName)
+end
+
+-- Tooltip line. TooltipDataProcessor fires for every item tooltip, which
+-- is what we want: bags, the character frame, the inspect window, chat
+-- links and the auction house all get the same line for free.
+--
+-- The id is guarded even though item ids are not unit data: the addon's
+-- standing rule is that issecretvalue comes first on anything that
+-- reaches an arithmetic or comparison, and a tainted tooltip on an
+-- enemy player's gear is exactly the path that has bitten this addon
+-- before.
+local function OnItemTooltip(tooltip, data)
+    if not ns.LootSourceEnabled() then return end
+    if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
+
+    local itemID = data and data.id
+    if issecretvalue(itemID) then return end
+    if type(itemID) ~= "number" then return end
+
+    local text = ns.LootSourceText(itemID)
+    if not text then return end
+
+    local color = ns.Config.LOOT_SOURCE_COLOR
+    tooltip:AddLine(text, color[1], color[2], color[3])
+end
+
+function ns.SetupLootSource()
+    if not TooltipDataProcessor or not Enum or not Enum.TooltipDataType then
+        return
+    end
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item,
+                                            OnItemTooltip)
+end

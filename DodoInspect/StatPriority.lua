@@ -244,6 +244,21 @@ function ns.StatPriorityActive()
     return ns.IsEnabled("showStatPriority") and true or false
 end
 
+-- Resolved secondary-stat order for a spec, as a flat array whose
+-- elements are stat keys or tie-group sub-arrays -- the same shape the
+-- header line already renders. content is "raid" or "mythic"; specs that
+-- do not split omit `mythic` and fall back to the raid order.
+--
+-- This is deliberately narrower than Resolve: the gear panel only needs
+-- the order, never the goals or the provisional metadata, which it asks
+-- for separately through ns.StatPrioritySpecCurrent.
+function ns.StatPriorityOrder(specID, subTreeID, content)
+    local data = Resolve(specID, subTreeID)
+    if not data then return nil end
+    if content == "mythic" and data.mythic then return data.mythic end
+    return data.raid
+end
+
 -- Cheap per-spec freshness check for callers that already have a safe
 -- specID. This avoids hero-tree API work for intentionally hidden specs.
 function ns.StatPrioritySpecCurrent(specID)

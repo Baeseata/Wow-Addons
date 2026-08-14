@@ -108,6 +108,14 @@ local function CreateRow(parent, slotInfo)
     row.slot:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
+    -- Same click target as the character side panel, but the unit is
+    -- resolved at click time: InspectFrame.unit is a unit token that
+    -- follows your target, so it must be re-qualified through
+    -- CurrentInspectableUnit on every click rather than captured here.
+    if ns.AttachSlotButton then
+        ns.AttachSlotButton(row, parent, CurrentInspectableUnit)
+    end
+
     -- item level (gradient colored), between the slot and the stats
     row.ilvl = NewText("RIGHT")
 

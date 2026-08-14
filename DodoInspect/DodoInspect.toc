@@ -16,8 +16,12 @@ Equipment.lua
 Inspect.lua
 Bags.lua
 Bank.lua
+Data\Loot.lua
 Data\StatPriority.lua
 StatPriority.lua
+LootSource.lua
+GearRank.lua
+GearPanel.lua
 SidePanel.lua
 Durability.lua
 StatRatings.lua

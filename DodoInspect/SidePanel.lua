@@ -307,6 +307,13 @@ local function CreateRow(parent, slotInfo)
     row.slot:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
+    -- Clicking the slot label opens the gear panel for that slot. The
+    -- label stays a FontString; the button is an invisible overlay so
+    -- the column geometry is untouched.
+    if ns.AttachSlotButton then
+        ns.AttachSlotButton(row, parent, "player")
+    end
+
     -- four-column secondary stat grid; center-anchored with natural
     -- width so the labels never get truncated. Each label has an
     -- underline texture shown when it is the item's dominant stat.

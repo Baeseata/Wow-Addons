@@ -179,6 +179,13 @@ ns.Config = {
     -- disagreements explicitly instead of exposing stale Season 1 data.
     STAT_PRIORITY_FEATURE_ENABLED = true,
 
+    -- Loot source and gear panel. Data/Loot.lua carries a build and date
+    -- stamp; both features are opt-in because the data is season-scoped.
+    LOOT_FEATURE_ENABLED = true,
+    LOOT_SOURCE_COLOR = { 0.25, 0.85, 0.85, 1 }, -- matches the slot column
+    GEAR_EFFECT_COLOR = { 1.00, 0.70, 0.20, 1 }, -- on-item effect marker
+    GEAR_MUTED_COLOR  = { 0.55, 0.55, 0.55, 1 }, -- unrankable rows
+
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)
     STAT_COLORS = {

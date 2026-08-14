@@ -127,7 +127,7 @@ jobs:
           cd "$ADDON"
           find . -type f \
             \( -name '*.lua' -o -name '*.toc' -o -name 'README.md' -o -name 'LICENSE' -o -name '*.tga' -o -name '*.blp' -o -name '*.png' -o -name '*.ttf' -o -name '*.xml' -o -name '*.mp3' -o -name '*.ogg' \) \
-            -not -path './test/*' -not -name 'CLAUDE.md' \
+            -not -path './test/*' -not -path './tools/*' -not -name 'CLAUDE.md' \
             -print | while read -r f; do
               install -D "$f" "$STAGE/$ADDON/$f"
             done
@@ -140,7 +140,7 @@ jobs:
 
           echo "Zip contents:"
           unzip -l "$ZIP"
-          if unzip -l "$ZIP" | grep -E 'CLAUDE\.md|/test/'; then
+          if unzip -l "$ZIP" | grep -E 'CLAUDE\.md|/test/|/tools/'; then
             echo "Forbidden files leaked into the zip"
             exit 1
           fi

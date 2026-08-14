@@ -72,6 +72,7 @@ local function OnLogin()
     ns.HookBagFrames()
     ns.SetupSidePanel()
     ns.SetupStatRatings()
+    ns.SetupLootSource()
 
     -- refresh the character views when the character frame opens
     if CharacterFrame and CharacterFrame.HookScript then
@@ -131,6 +132,12 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         -- read the (now non-secret) ratings
         C_Timer.After(0, ns.RefreshStatRatings)
         return
+    end
+    if event == "GET_ITEM_INFO_RECEIVED"
+        or event == "PLAYER_SPECIALIZATION_CHANGED"
+        or event == "TRAIT_CONFIG_UPDATED"
+        or event == "PLAYER_EQUIPMENT_CHANGED" then
+        ns.RefreshGearPanelIfShown()
     end
     ns.UpdateAllVisible()
 end)
