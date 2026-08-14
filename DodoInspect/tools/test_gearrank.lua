@@ -59,14 +59,38 @@ ns.StatPriorityOrder = function() return orderUnderTest end
 -- Weights: a tie group must consume as many positions as it has
 -- members, otherwise the notation silently changes the ranking.
 --------------------------------------------------------------------
-local weights = ns.StatWeights({ "crit", "haste", "mastery", "versatility" })
-checkEqual(weights.crit, 1.00, "flat order: first stat weight")
-checkEqual(weights.haste, 0.70, "flat order: second stat weight")
+-- Asserted WITHOUT hardcoding the curve. The numbers in POSITION_WEIGHT
+-- are a tuning decision that has already moved once; the position mapping
+-- is the invariant. Restating the values here just means a retune shows
+-- up as two failing tests that are not actually about tie groups.
+local flat = ns.StatWeights({ "crit", "haste", "mastery", "versatility" })
+checkEqual(flat.crit, 1.00, "flat order: first stat is the reference 1.00")
+check(flat.crit > flat.haste, "flat order: 1st outweighs 2nd")
+check(flat.haste > flat.mastery, "flat order: 2nd outweighs 3rd")
+check(flat.mastery > flat.versatility, "flat order: 3rd outweighs 4th")
 
-weights = ns.StatWeights({ { "crit", "haste" }, "mastery", "versatility" })
-checkEqual(weights.crit, 1.00, "tie group: both members share first weight")
-checkEqual(weights.haste, 1.00, "tie group: second member shares it too")
-checkEqual(weights.mastery, 0.45, "tie group consumes two positions")
+local tied = ns.StatWeights({ { "crit", "haste" }, "mastery", "versatility" })
+checkEqual(tied.crit, flat.crit, "tie group: both members share first weight")
+checkEqual(tied.haste, flat.crit, "tie group: second member shares it too")
+-- The point of the whole section: mastery lands on the THIRD weight, the
+-- one it would get in a flat order -- not the second. Comparing against
+-- flat says that without naming a number.
+checkEqual(tied.mastery, flat.mastery, "tie group consumes two positions")
+check(tied.mastery ~= flat.haste,
+      "tie group: the stat after it does NOT land on the second weight")
+
+-- The curve's SHAPE, which is a design decision (owner, 2026-08-14): the
+-- last stat is distinctly worse while the top three sit comparatively
+-- close. Encoded as "the drop into last place is bigger than any gap
+-- inside the top three". The old evenly-decaying 1.00/0.70/0.45/0.25
+-- fails this check, which is exactly why versatility rings outranked
+-- crit rings -- see the POSITION_WEIGHT comment in GearRank.lua.
+local gap12 = flat.crit - flat.haste
+local gap23 = flat.haste - flat.mastery
+local gap34 = flat.mastery - flat.versatility
+check(gap34 > gap12 and gap34 > gap23,
+      "curve shape: last position is pulled further away than any gap "
+      .. "inside the top three")
 
 --------------------------------------------------------------------
 -- Fit: normalise against the item's own budget, not a constant.

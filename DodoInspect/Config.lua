@@ -185,19 +185,13 @@ ns.Config = {
     LOOT_SOURCE_COLOR = { 0.25, 0.85, 0.85, 1 }, -- matches the slot column
     GEAR_EFFECT_COLOR = { 1.00, 0.70, 0.20, 1 }, -- on-item effect marker
     GEAR_MUTED_COLOR  = { 0.55, 0.55, 0.55, 1 }, -- unrankable rows
-    -- Ceiling for the pieces that reach the Myth 9/6 equivalent. Shown
-    -- next to those rows so their position is self-explaining. SEASONAL:
-    -- this number changes when the upgrade tracks do, and nothing in the
-    -- generated data can derive it -- it is a fact about the patch, not
-    -- about the items. See GearRank.NINE_SIX_SOURCES for who gets it.
-    GEAR_TOP_ITEM_LEVEL = 344,
-    GEAR_TOP_ILVL_COLOR = { 1.00, 0.90, 0.40, 1 },
-    -- What everything else in the pool reaches once fully upgraded
-    -- (Myth 6/6). Shown instead of the item's base item level, which is
-    -- what the static data carries and is wrong for every returning
-    -- dungeon piece. SEASONAL, same as the number above.
-    GEAR_MYTH_ITEM_LEVEL = 334,
     GEAR_ILVL_COLOR      = { 0.80, 0.80, 0.85, 1 },
+    -- The two ceiling numbers (334 / 344) that used to live here went away
+    -- with the gear panel's item level column, 2026-08-14. Nothing read
+    -- them once the tooltip started rendering from bonus ids, and a config
+    -- value nobody reads gets maintained forever by whoever assumes it is
+    -- live. The numbers themselves are recorded with the ids below --
+    -- which is also where they have to be kept in sync anyway.
     -- Bonus ids for this season's Myth upgrade track (group 618). Used to
     -- render tooltips at the level a piece actually reaches instead of its
     -- base form. Measured in game 2026-08-14 on item 250243:

@@ -74,16 +74,22 @@ local MAX_ROWS = 12
 -- the same scale as the panel that opened it and the options font slider
 -- reaches it too. Recomputed on every refresh rather than captured once,
 -- because the slider can move while the panel is open.
-local FS, ROW_HEIGHT, STAT_STEP, NAME_W, ILVL_W, SOURCE_W, PANEL_WIDTH
+local FS, ROW_HEIGHT, STAT_STEP, NAME_W, SOURCE_W, PANEL_WIDTH
+
+-- Two stat columns, not one per stat. An item carries at most two
+-- secondaries, so a column-per-stat grid was three-quarters empty on
+-- every row and cost width for nothing. Column 1 holds the larger of the
+-- item's two secondaries, column 2 the smaller -- position now says which
+-- one dominates, which is what the underline used to be for.
+local STAT_COLS = 2
 
 local function Layout()
     FS          = ns.SidePanelFontSize()
     ROW_HEIGHT  = math.floor(FS * 1.35)
     STAT_STEP   = math.floor(FS * 1.6)   -- one stat grid column
     NAME_W      = math.floor(FS * 11)
-    ILVL_W      = math.floor(FS * 2.4)
     SOURCE_W    = math.floor(FS * 10)
-    PANEL_WIDTH = NAME_W + ILVL_W + STAT_STEP * 4 + SOURCE_W + PAD * 2 + 16
+    PANEL_WIDTH = NAME_W + STAT_STEP * STAT_COLS + SOURCE_W + PAD * 2 + 16
 end
 
 -- A FontString created without a font template has no font object, and
@@ -109,23 +115,18 @@ local function LayoutRow(row, index)
     row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.name:SetWidth(NAME_W)
 
-    ns.SetOverlayFont(row.ilvl, FS)
-    row.ilvl:ClearAllPoints()
-    row.ilvl:SetPoint("LEFT", row, "LEFT", NAME_W, 0)
-    row.ilvl:SetWidth(ILVL_W)
-
-    for i = 1, #ns.STAT_ORDER do
+    for i = 1, STAT_COLS do
         local fs = row.stats[i]
         ns.SetOverlayFont(fs, FS)
         fs:ClearAllPoints()
         fs:SetPoint("CENTER", row, "LEFT",
-                    NAME_W + ILVL_W + math.floor((i - 0.5) * STAT_STEP), 0)
+                    NAME_W + math.floor((i - 0.5) * STAT_STEP), 0)
     end
 
     ns.SetOverlayFont(row.source, FS)
     row.source:ClearAllPoints()
     row.source:SetPoint("LEFT", row, "LEFT",
-                        NAME_W + ILVL_W + STAT_STEP * 4 + 6, 0)
+                        NAME_W + STAT_STEP * STAT_COLS + 6, 0)
     row.source:SetWidth(SOURCE_W)
 end
 
@@ -160,20 +161,16 @@ local function CreateRow(parent, index)
     local row = CreateFrame("Frame", nil, parent)
 
     row.name = NewCell(row)
-    row.ilvl = NewCell(row, "RIGHT")
     row.source = NewCell(row)
 
-    -- Four-column secondary stat grid: same order, colors, abbreviations
-    -- and dominant-stat underline as the character side panel. The two
-    -- windows sit side by side and get read together, so they have to
-    -- speak one visual language rather than two.
-    row.stats, row.statLines = {}, {}
-    for i = 1, #ns.STAT_ORDER do
+    -- Two stat columns, filled in the item's own value order. Colors and
+    -- abbreviations still match the character side panel; the column
+    -- POSITIONS deliberately no longer do -- there the column identifies
+    -- the stat, here it identifies the rank. That is the trade for not
+    -- carrying two permanently empty columns on every row.
+    row.stats = {}
+    for i = 1, STAT_COLS do
         row.stats[i] = NewCell(row, "CENTER")
-        local line = row:CreateTexture(nil, "OVERLAY")
-        line:SetHeight(1)
-        line:Hide()
-        row.statLines[i] = line
     end
 
     LayoutRow(row, index)
@@ -251,20 +248,17 @@ local function DedupeByName(candidates)
     return out
 end
 
--- Four-column stat grid mirroring the character side panel: the stat's
--- abbreviation sits in the stat's own column, the dominant one is
--- underlined, ties get no underline. Deliberately no percentages -- the
--- columns already say which stats the item carries, and the list order
--- already carries the fit. Costs a quarter of the width the old
--- "77% Haste / 23% Crit  87%" cell did.
+-- Two stat columns, filled in the item's own value order: bigger
+-- secondary first. Abbreviations and colors are still the side panel's,
+-- but the column no longer identifies the STAT, it identifies the RANK --
+-- which is also why the dominant-stat underline is gone: being in column
+-- one already says it. Deliberately no percentages; the list order
+-- already carries the fit.
 local function SetStatCells(row, entryRow)
-    for i = 1, #ns.STAT_ORDER do
-        row.stats[i]:Hide()
-        row.statLines[i]:Hide()
-    end
+    for i = 1, STAT_COLS do row.stats[i]:Hide() end
 
     -- Items with no secondaries at all (the ilvl 59 BfA azerite pieces)
-    -- get an explicit dash: four blank columns read as missing data.
+    -- get an explicit dash: blank columns read as missing data.
     if entryRow.unranked then
         local fs, c = row.stats[1], ns.Config.GEAR_MUTED_COLOR
         fs:SetText("-")
@@ -274,46 +268,27 @@ local function SetStatCells(row, entryRow)
     end
 
     local entry = entryRow.entry
-    local values = {}
-    if entry[5] then values[entry[5]] = entry[6] or 0 end
-    if entry[7] then values[entry[7]] = entry[8] or 0 end
+    local ranked = {}
+    if entry[5] then ranked[#ranked + 1] = { entry[5], entry[6] or 0 } end
+    if entry[7] then ranked[#ranked + 1] = { entry[7], entry[8] or 0 } end
 
-    local maxKey, maxVal, tie = nil, 0, false
-    for _, key in ipairs(ns.STAT_ORDER) do
-        local v = values[key]
-        if type(v) == "number" and v > 0 then
-            if v > maxVal then maxVal, maxKey, tie = v, key, false
-            elseif v == maxVal then tie = true end
-        end
-    end
-    if tie then maxKey = nil end
+    -- Equal values do occur, and then "which one is bigger" has no answer.
+    -- Fall back to the side panel's stat order so the same item always
+    -- renders the same way rather than depending on table iteration.
+    local rank = {}
+    for i, key in ipairs(ns.STAT_ORDER) do rank[key] = i end
+    table.sort(ranked, function(a, b)
+        if a[2] ~= b[2] then return a[2] > b[2] end
+        return (rank[a[1]] or 99) < (rank[b[1]] or 99)
+    end)
 
-    -- Latin two-letter abbreviations carry side bearings that make a
-    -- full-width underline look wider than the glyphs; a CJK glyph fills
-    -- its box. Same correction the side panel applies.
-    local underL, underR = 0, 0
-    local sample = (ns.L and ns.L.stats and ns.L.stats.versatility) or ""
-    if not (strlenutf8 and #sample > strlenutf8(sample)) then
-        underL = math.floor(FS * 0.06 + 0.5)
-        underR = math.floor(FS * 0.17 + 0.5)
-    end
-
-    for i, key in ipairs(ns.STAT_ORDER) do
-        if values[key] then
-            local fs = row.stats[i]
-            local c = ns.Config.STAT_COLORS[key]
-            fs:SetText((ns.L and ns.L.stats and ns.L.stats[key]) or key)
-            fs:SetTextColor(c[1], c[2], c[3], c[4])
-            fs:Show()
-            if key == maxKey then
-                local line = row.statLines[i]
-                line:SetColorTexture(c[1], c[2], c[3], 0.9)
-                line:ClearAllPoints()
-                line:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", underL, 1)
-                line:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", -underR, 1)
-                line:Show()
-            end
-        end
+    for i = 1, math.min(#ranked, STAT_COLS) do
+        local key = ranked[i][1]
+        local fs = row.stats[i]
+        local c = ns.Config.STAT_COLORS[key]
+        fs:SetText((ns.L and ns.L.stats and ns.L.stats[key]) or key)
+        fs:SetTextColor(c[1], c[2], c[3], c[4])
+        fs:Show()
     end
 end
 
@@ -337,22 +312,13 @@ local function SetRow(row, index, entryRow, equippedID)
     row.name:SetTextColor(isEquipped and 1 or 0.9, isEquipped and 0.82 or 0.9,
                           isEquipped and 0.2 or 0.9)
 
-    -- The item level the piece reaches once fully upgraded, NOT the base
-    -- level the static data carries -- that one is 59 for every returning
-    -- dungeon piece and is the reason this column exists at all. Blank
-    -- for the statless azerite leftovers: they are not on a current
-    -- upgrade track, so quoting either ceiling for them would be a lie.
-    if entryRow.unranked then
-        row.ilvl:SetText("")
-    else
-        local top = entryRow.topItemLevel
-        local cfg = ns.Config
-        local c = top and cfg.GEAR_TOP_ILVL_COLOR or cfg.GEAR_ILVL_COLOR
-        row.ilvl:SetText(tostring(top and cfg.GEAR_TOP_ITEM_LEVEL
-                                      or cfg.GEAR_MYTH_ITEM_LEVEL))
-        row.ilvl:SetTextColor(c[1], c[2], c[3], c[4])
-    end
-
+    -- No item level column (owner's call 2026-08-14): it was a whole
+    -- column repeating one of two numbers, and the tooltip now renders the
+    -- piece at that level anyway. entryRow.topItemLevel is still live --
+    -- it decides sort order and which bonus id the tooltip is built with.
+    -- The two ceiling NUMBERS are gone from Config with the column: the
+    -- tooltip renders from bonus ids, so nothing read them any more, and
+    -- their values are recorded next to those ids instead.
     SetStatCells(row, entryRow)
 
     row.source:SetText(Colored(ns.LootSourceText(entryRow.id) or "",
@@ -535,6 +501,23 @@ local slotButtons = {}
 local IDLE = { 0.25, 0.85, 0.85 }
 local HOVER = { 0.45, 1.00, 1.00 }
 
+-- Slots this panel deliberately does not rank yet (owner's call: not this
+-- season, revisit later). Trinkets have no free structured data source
+-- worth trusting, and weapons turn on one-hand vs two-hand, which is a
+-- build choice rather than a hard constraint -- neither can be answered
+-- from the loot table alone, so these slots get no button at all rather
+-- than a list that quietly guesses.
+--
+-- Enforced by withholding the button, not by hiding the panel later: a
+-- label that looks clickable and then opens an empty window is worse than
+-- one that was never interactive. Deleting a key here is all it takes to
+-- bring the slot back.
+local UNRANKED_SLOTS = {
+    INVTYPE_TRINKET        = true,
+    INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND  = true,
+}
+
 local function ApplyButtonLook(button)
     local open = ns.GearPanelActive()
                  and ns.GearPanelSlotKey() == button.slotKey
@@ -558,6 +541,7 @@ end
 -- label stays a FontString and an invisible button sits on top of it.
 function ns.AttachSlotButton(row, ownerPanel, unit)
     if not row or not row.slot then return end
+    if UNRANKED_SLOTS[row.slotKey] then return end
 
     local button = CreateFrame("Button", nil, row)
     button:SetAllPoints(row.slot)

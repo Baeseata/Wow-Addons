@@ -25,8 +25,24 @@ local _, ns = ...
 -- members, so writing { "crit", "haste" } in first place gives both 1.0
 -- and pushes the next stat to the third weight -- otherwise the choice
 -- of notation would silently change the ranking.
-local POSITION_WEIGHT = { 1.00, 0.70, 0.45, 0.25 }
-local MIN_WEIGHT = 0.25
+--
+-- The SHAPE matters more than the numbers (owner's call 2026-08-14). The
+-- honest answer here is a sim per spec, which we are not going to run, so
+-- this curve is an admitted approximation of one. What it encodes: a
+-- spec's top three secondaries are usually worth roughly similar amounts
+-- while the last one is worth distinctly less -- hence a compressed front
+-- (1.00/0.80/0.60) and a tail pulled well away (0.15).
+--
+-- The previous curve { 1.00, 0.70, 0.45, 0.25 } decayed evenly, which
+-- overstated how much worse the 2nd and 3rd stats are. Symptom: for a
+-- haste>mastery>crit>versatility spec, a ring with 78% haste + 22%
+-- VERSATILITY (its worst stat) outranked one with 64% haste + 36% crit,
+-- because crit was only worth 0.45 there.
+-- 🔴 Lowering the last weight alone does NOT fix this -- measured:
+-- 0.25 -> 0.10 moved that list by exactly zero positions (at 0.10 the two
+-- scores land on 0.802 each). Raising the MIDDLE is what moves it.
+local POSITION_WEIGHT = { 1.00, 0.80, 0.60, 0.15 }
+local MIN_WEIGHT = 0.15
 
 -- Items that can reach the Myth 9/6 equivalent (ilvl 344): the final two
 -- bosses of the Venomous Abyss. Ten item levels above everything else in
