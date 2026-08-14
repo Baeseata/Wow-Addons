@@ -48,8 +48,15 @@ ns.PlayerSpecID = PlayerSpecID
 -- a secret value, and type() still reports "number" for one: the throw
 -- happens on the id > 0 compare, not on the type check. issecretvalue
 -- accepts anything (nil included) and never throws, so it leads.
+--
+-- !! `if not unit` is not enough of a gate either. Every caller arrives
+-- through some resolver, and a resolver that fails can hand back
+-- something truthy that is not a unit token -- 2026-08-14 the gear
+-- panel's slot button did exactly that, passing the resolver FUNCTION
+-- itself when it answered nil. A unit token is a string or it is
+-- nothing; anything else reaches the client API as a bad argument.
 function ns.InspectSpecID(unit)
-    if not unit then return nil end
+    if type(unit) ~= "string" then return nil end
     local id
     if C_SpecializationInfo and C_SpecializationInfo.GetInspectSpecialization then
         id = C_SpecializationInfo.GetInspectSpecialization(unit)

@@ -299,5 +299,237 @@ checkEqual(nineSixBySlot.INVTYPE_FINGER, 0,
       .. "tripwire -- a future season that adds one turns it red, which "
       .. "is exactly when the assertion above starts carrying weight")
 
+--------------------------------------------------------------------
+-- Derived weapon proficiency (ns.SpecWeapons / ns.SpecShield)
+--
+-- Generated from SkillLine + SkillLineAbility.ClassMask, so these checks
+-- guard a DERIVATION, not a hand-written list. The failure mode they
+-- exist for is quiet shrinkage: rename a skill line upstream and every
+-- spec's weapon list silently gets shorter, which reads exactly like a
+-- stricter filter working correctly. Hence both directions below --
+-- things that must be present as well as things that must be absent.
+--------------------------------------------------------------------
+local WEAPON_SUB = { axe1h = 0, axe2h = 1, bow = 2, gun = 3, mace1h = 4,
+                     mace2h = 5, polearm = 6, sword1h = 7, sword2h = 8,
+                     warglaive = 9, staff = 10, fist = 13, dagger = 15,
+                     crossbow = 18, wand = 19 }
+
+local specCount, weaponCount = 0, 0
+for _ in pairs(ns.SpecGear) do specCount = specCount + 1 end
+for _ in pairs(ns.SpecWeapons or {}) do weaponCount = weaponCount + 1 end
+checkEqual(weaponCount, specCount,
+           "SpecWeapons covers exactly the specs SpecGear covers -- one "
+           .. "spec with an armor filter and no weapon filter would change "
+           .. "behaviour for that spec alone")
+
+local function canUse(specID, weapon)
+    local set = ns.SpecWeapons and ns.SpecWeapons[specID]
+    return (set and set[WEAPON_SUB[weapon]]) == true
+end
+
+-- Present-direction anchors. Without these the whole block passes on an
+-- empty table, which is the exact failure being guarded against.
+check(canUse(261, "dagger"), "subtlety rogue can use daggers")
+check(canUse(577, "warglaive"), "havoc demon hunter can use warglaives")
+check(canUse(257, "staff"), "holy priest can use staves")
+check(canUse(269, "polearm"), "windwalker monk can use polearms (its 2H)")
+
+-- Absent-direction anchors, each a real "cannot equip" in game.
+check(not canUse(261, "staff"), "rogues cannot use staves")
+check(not canUse(261, "polearm"), "rogues cannot use polearms")
+check(not canUse(261, "sword2h"), "rogues cannot use two-handed swords")
+check(not canUse(257, "sword1h"), "priests cannot use swords")
+check(not canUse(262, "sword1h"), "shamans cannot use swords")
+check(not canUse(253, "mace1h"), "hunters cannot use maces")
+check(not canUse(103, "sword1h"), "druids cannot use swords")
+check(not canUse(71, "warglaive"),
+      "warglaives are demon hunter only -- warriors can use everything "
+      .. "else, so this is the one weapon that proves the filter bites")
+
+-- Shields are armor, so they live in their own table.
+local shieldCount = 0
+for _ in pairs(ns.SpecShield or {}) do shieldCount = shieldCount + 1 end
+checkEqual(shieldCount, 9,
+           "exactly 9 specs have shield proficiency (warrior, paladin and "
+           .. "shaman, three specs each)")
+check(ns.SpecShield and ns.SpecShield[262] == true,
+      "elemental shaman can use a shield")
+check(not (ns.SpecShield and ns.SpecShield[257]),
+      "holy priest cannot use a shield")
+
+--------------------------------------------------------------------
+-- Weapon shape and pools
+--
+-- The hand-written half. Its failure mode is a spec quietly missing from
+-- the table, which makes both weapon rows empty for that spec only -- so
+-- coverage is checked first, and against SpecGear rather than a literal
+-- count, because SpecGear is itself derived and will grow on its own.
+--------------------------------------------------------------------
+local MAIN, OFF = "INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPONOFFHAND"
+
+local shapeless = {}
+for specID in pairs(ns.SpecGear) do
+    if not ns.WeaponShape(specID) then shapeless[#shapeless + 1] = specID end
+end
+checkEqual(#shapeless, 0,
+           "every spec has a weapon shape (missing: "
+           .. table.concat(shapeless, ",") .. ")")
+
+local ambiguous = 0
+for specID in pairs(ns.SpecGear) do
+    if ns.WeaponShapeAmbiguous(specID) then ambiguous = ambiguous + 1 end
+end
+checkEqual(ambiguous, 21,
+           "21 specs have coupled weapon rows and get the two-hand / "
+           .. "one-hand switch (4 dual-or-2H, 15 offhand-or-2H, 2 shaman)")
+
+-- A hand that holds nothing must answer nil, NOT an empty pool: the panel
+-- prints a different message for each, and conflating them tells a
+-- two-hand spec that the season dropped no off-hands.
+check(ns.WeaponPool(71, OFF, nil) == nil, "arms warrior has no off hand")
+check(ns.WeaponPool(253, OFF, nil) == nil, "beast mastery has no off hand")
+check(ns.WeaponPool(251, OFF, "twohand") == nil,
+      "frost death knight two-handed has no off hand")
+check(ns.WeaponPool(251, OFF, "onehand") ~= nil,
+      "frost death knight one-handed does have an off hand")
+check(ns.WeaponPool(261, OFF, "twohand") ~= nil,
+      "an unambiguous dual-wield spec ignores the mode entirely")
+
+--------------------------------------------------------------------
+-- Weapon candidates end to end
+--------------------------------------------------------------------
+local function weaponsIn(specID, slotKey, mode)
+    local list = ns.SlotCandidates(slotKey, specID, nil, "mythic", mode)
+    local locs, subs, n = {}, {}, 0
+    for _, row in ipairs(list or {}) do
+        local _, _, _, loc, _, classID, sub = GetItemInfoInstant(row.id)
+        locs[loc] = true
+        if classID == 2 then subs[sub] = true end
+        n = n + 1
+    end
+    return n, locs, subs
+end
+
+-- Reverse anchors first: every assertion below is about something being
+-- ABSENT, and absence proves nothing from an empty list.
+local n = weaponsIn(261, MAIN); check(n > 0, "subtlety has main hand candidates")
+n = weaponsIn(253, MAIN); check(n > 0, "beast mastery has main hand candidates")
+n = weaponsIn(64, MAIN, "twohand")
+check(n > 0, "frost mage two-handed has main hand candidates")
+
+local _, locs, subs = weaponsIn(261, MAIN)
+check(not locs.INVTYPE_2HWEAPON, "a dual-wield spec is never shown a two-hander")
+check(not locs.INVTYPE_RANGED and not locs.INVTYPE_RANGEDRIGHT,
+      "rogues are not shown bows even though the class has the proficiency "
+      .. "-- a ranged weapon costs them the off hand, so nobody equips one")
+check(not subs[9], "rogues are not shown warglaives (proficiency filter bites)")
+
+_, locs, subs = weaponsIn(577, MAIN)
+check(subs[9], "havoc IS shown warglaives -- the same filter, other way up")
+
+_, locs = weaponsIn(253, MAIN)
+check(locs.INVTYPE_RANGED or locs.INVTYPE_RANGEDRIGHT,
+      "beast mastery is shown ranged weapons")
+check(not locs.INVTYPE_WEAPON and not locs.INVTYPE_2HWEAPON,
+      "beast mastery is shown no melee weapons at all")
+
+_, locs, subs = weaponsIn(64, MAIN, "twohand")
+check(locs.INVTYPE_2HWEAPON, "frost mage two-handed sees two-handers")
+check(not locs.INVTYPE_WEAPON, "frost mage two-handed sees no one-handers")
+_, locs = weaponsIn(64, MAIN, "onehand")
+check(locs.INVTYPE_WEAPON, "frost mage one-handed sees one-handers")
+check(not locs.INVTYPE_2HWEAPON,
+      "frost mage one-handed sees no two-handers -- this is the whole point "
+      .. "of the switch: the two rows can never describe an impossible pair")
+
+_, locs = weaponsIn(64, OFF, "onehand")
+check(locs.INVTYPE_HOLDABLE, "frost mage one-handed off hand holds an item")
+check(not locs.INVTYPE_SHIELD, "mages get no shields")
+
+-- Shields are usable by Strength AND Intellect plate/mail, and the game
+-- writes that as two separate primary-stat entries rather than one hybrid
+-- id. The generator used to keep only the first, so every shield came out
+-- Strength and holy paladins saw an empty off-hand row -- a filter doing
+-- exactly what it was told, on data that had already lost the answer.
+-- The Strength side is the reverse anchor: if BOTH went to zero the fix
+-- would be "primary filtering turned off", which is not a fix.
+local strShields = weaponsIn(73, OFF, "onehand")
+local intShields = weaponsIn(65, OFF, "onehand")
+check(strShields > 0, "protection warrior has shield candidates")
+check(intShields > 0,
+      "holy paladin has shield candidates too -- Intellect users must not "
+      .. "lose shields to a multi-entry primary stat being read as one")
+
+_, locs, subs = weaponsIn(269, MAIN, "twohand")
+check(subs[6] or subs[10],
+      "windwalker two-handed sees polearms or staves, its only 2H options")
+check(not subs[8] and not subs[1],
+      "windwalker sees no two-handed swords or axes -- monks cannot use them")
+
+--------------------------------------------------------------------
+-- Slot button unit resolution
+--
+-- The side panel attaches the literal "player" to a slot button; the
+-- inspect panel attaches a RESOLVER FUNCTION, so the unit is read fresh
+-- on every click (InspectFrame.unit is a token that follows the target).
+-- That resolver answers nil whenever the current unit is not
+-- inspectable, and the battleground case reaches it directly: inspect
+-- window still open, target switched to a hostile player, click a slot.
+--
+-- Written as `type(u) == "function" and u() or u`, a nil answer falls
+-- through the `or` and yields the FUNCTION ITSELF, which then travels on
+-- in place of a unit token. Every secret-value guard in the addon is
+-- blind to this -- the value is not secret, it is simply not a unit.
+--------------------------------------------------------------------
+loadAddonFile("GearPanel.lua")
+
+checkEqual(ns.ResolveSlotUnit("player"), "player",
+           "a literal unit token passes through unchanged")
+checkEqual(ns.ResolveSlotUnit(function() return "target" end), "target",
+           "a resolver that names a unit resolves to that unit")
+checkEqual(ns.ResolveSlotUnit(function() return nil end), nil,
+           "a resolver that cannot name a unit resolves to nil, NOT to "
+           .. "the resolver itself -- this is the battleground path")
+checkEqual(ns.ResolveSlotUnit(nil), nil,
+           "no unit at all resolves to nil")
+checkEqual(ns.ResolveSlotUnit(false), nil,
+           "a non-string unit resolves to nil")
+
+-- Same rule at the shared spec entry point, loaded into its own
+-- namespace so the StatPriorityOrder stub above is not overwritten.
+-- ns.InspectSpecID is the single door for every non-player spec lookup
+-- (TargetInfo included), so the guard belongs there too and not only at
+-- the one call site that was found to need it.
+do
+    local specNS = { Config = { STAT_PRIORITY_FEATURE_ENABLED = true } }
+    -- The client API has to be stubbed or this whole block is vacuous:
+    -- with no C_SpecializationInfo present InspectSpecID returns nil for
+    -- every input, guard or no guard, and the checks below would pass
+    -- while proving nothing. sawBadUnit is the live assertion -- it is
+    -- what flips when the type guard is removed.
+    local sawBadUnit = false
+    -- Nothing offline is ever a secret value; this only stands in for the
+    -- client global so the real guard chain can run to completion.
+    _G.issecretvalue = function() return false end
+    _G.C_SpecializationInfo = {
+        GetInspectSpecialization = function(unit)
+            if type(unit) ~= "string" then sawBadUnit = true return nil end
+            return 258
+        end,
+    }
+    assert(loadfile("StatPriority.lua"))("DodoInspect", specNS)
+
+    checkEqual(specNS.InspectSpecID("target"), 258,
+               "InspectSpecID answers for a real unit token -- this is the "
+               .. "reverse assertion proving the stub is actually reached")
+    checkEqual(specNS.InspectSpecID(function() return nil end), nil,
+               "InspectSpecID rejects a resolver function")
+    checkEqual(specNS.InspectSpecID(0), nil,
+               "InspectSpecID rejects a truthy non-string unit (0 is truthy "
+               .. "in Lua, so `if not unit` never sees it)")
+    check(not sawBadUnit,
+          "InspectSpecID never hands a non-string unit to the client API")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

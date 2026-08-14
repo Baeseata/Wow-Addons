@@ -104,6 +104,10 @@ ns.Locales = {
         gearProvisional = "Provisional data",
         gearNoCandidates = "Nothing drops for this slot this season",
         gearNoSpec = "Specialization unknown",
+        gearTwoHand = "Two-hand",
+        gearOneHand = "One-hand",
+        gearNoOffHandSpec = "This specialization does not use an off hand",
+        gearNoOffHandTwo = "A two-handed weapon leaves this slot empty",
         priBuild      = "Build: %s",
     },
 
@@ -184,6 +188,10 @@ ns.Locales = {
         gearProvisional = "数据暂定",
         gearNoCandidates = "本赛季该部位无掉落",
         gearNoSpec = "专精未知",
+        gearTwoHand = "双手",
+        gearOneHand = "单手",
+        gearNoOffHandSpec = "该专精不使用副手",
+        gearNoOffHandTwo = "使用双手武器时该栏空置",
         priBuild      = "构建: %s",
     },
 
@@ -264,6 +272,10 @@ ns.Locales = {
         gearProvisional = "Donnees provisoires",
         gearNoCandidates = "Rien pour cet emplacement cette saison",
         gearNoSpec = "Specialisation inconnue",
+        gearTwoHand = "Deux mains",
+        gearOneHand = "Une main",
+        gearNoOffHandSpec = "Cette specialisation n'utilise pas de main gauche",
+        gearNoOffHandTwo = "Une arme a deux mains laisse cet emplacement vide",
         priBuild      = "Build : %s",
     },
 
@@ -344,6 +356,10 @@ ns.Locales = {
         gearProvisional = "Datos provisionales",
         gearNoCandidates = "Nada para esta ranura esta temporada",
         gearNoSpec = "Especializacion desconocida",
+        gearTwoHand = "Dos manos",
+        gearOneHand = "Una mano",
+        gearNoOffHandSpec = "Esta especializacion no usa mano izquierda",
+        gearNoOffHandTwo = "Un arma a dos manos deja esta ranura vacia",
         priBuild      = "Build: %s",
     },
 }

@@ -66,8 +66,38 @@ local function EquippedID(unit, slotID)
     return id
 end
 
+-- Two-hand vs one-hand, for the specs whose two weapon rows are coupled.
+--
+-- Deliberately NOT persisted. The viewed character is already wearing the
+-- answer, and that is a better default than anything we could remember:
+-- a stored preference goes stale the moment he swaps weapons, and then the
+-- panel argues with the gear on his body. Reading it fresh every time is
+-- both simpler and always current. A click overrides it for as long as the
+-- panel stays open, which is exactly how long "what if I went two-handed"
+-- is an interesting question.
+local INVSLOT_OFF_HAND = 17
+
+local function DefaultWeaponMode(unit)
+    return EquippedID(unit, INVSLOT_OFF_HAND) and "onehand" or "twohand"
+end
+
+function ns.GearPanelWeaponMode()
+    if state.weaponMode ~= "onehand" and state.weaponMode ~= "twohand" then
+        state.weaponMode = DefaultWeaponMode(state.unit)
+    end
+    return state.weaponMode
+end
+
+function ns.SetGearPanelWeaponMode(mode)
+    state.weaponMode = (mode == "onehand") and "onehand" or "twohand"
+    if panel and panel:IsShown() then ns.RefreshGearPanel() end
+end
+
 local HEADER_H = 40
 local PAD = 8
+-- Fallback only. The real cap is the height of the side panel this window
+-- docks to (owner's call: never taller than the panel that opened it),
+-- computed per refresh because the font slider moves both.
 local MAX_ROWS = 12
 
 -- Geometry follows the side panel's font size, so this window reads at
@@ -377,10 +407,29 @@ function ns.RefreshGearPanel()
     panel:SetWidth(PANEL_WIDTH)
 
     local specID, subTree = ViewedSpec()
+    local weaponRow = ns.IsWeaponSlot(state.slotKey)
+    local mode = weaponRow and ns.GearPanelWeaponMode() or nil
     local candidates = specID
         and ns.SlotCandidates(state.slotKey, specID, subTree,
-                              ns.GearPanelContent())
+                              ns.GearPanelContent(), mode)
     if candidates then candidates = DedupeByName(candidates) end
+
+    -- The two-hand / one-hand switch appears only where there is a real
+    -- choice. Its absence is information -- this spec has exactly one
+    -- configuration -- and showing it on, say, an arms warrior would
+    -- invite a build he must not use. (The raid/M+ toggle next to it is
+    -- always shown, on purpose: that question is legal for every spec even
+    -- when the answer happens to be the same. Different situation.)
+    local ambiguous = weaponRow and specID
+                      and ns.WeaponShapeAmbiguous(specID)
+    if panel.weapon then
+        panel.weapon:SetShown(ambiguous and true or false)
+        if ambiguous then
+            panel.weapon:SetText(mode == "onehand"
+                                 and (ns.L.gearOneHand or "One-hand")
+                                 or (ns.L.gearTwoHand or "Two-hand"))
+        end
+    end
 
     -- INVTYPE_* are global strings the client already localizes ("Head",
     -- "Tete", ...). Falling back to our own two-letter abbreviation keeps
@@ -418,15 +467,47 @@ function ns.RefreshGearPanel()
 
     if not candidates or #candidates == 0 then
         EnsureRows(0)
-        panel.empty:SetText(specID and (ns.L.gearNoCandidates or "")
-                                    or (ns.L.gearNoSpec or ""))
+        local message
+        if not specID then
+            message = ns.L.gearNoSpec or ""
+        elseif weaponRow
+               and not ns.WeaponPool(specID, state.slotKey, mode) then
+            -- This hand holds nothing in this configuration. That is a
+            -- fact about the SPEC; "nothing dropped" is a fact about the
+            -- SEASON, and a player who cannot tell them apart will go
+            -- looking for an off-hand that does not exist for him.
+            message = ambiguous and (ns.L.gearNoOffHandTwo or "")
+                                or (ns.L.gearNoOffHandSpec or "")
+        else
+            message = ns.L.gearNoCandidates or ""
+        end
+        panel.empty:SetText(message)
         panel.empty:Show()
         panel:SetHeight(HEADER_H + 24)
         return
     end
     panel.empty:Hide()
 
-    local shown = math.min(#candidates, MAX_ROWS)
+    -- Never taller than the side panel this docked to (owner's call). The
+    -- cap is recomputed every refresh because the font slider moves both
+    -- this window's row height and that panel's height.
+    local cap = MAX_ROWS
+    local anchorHeight = state.anchor and state.anchor.GetHeight
+                         and state.anchor:GetHeight()
+    if anchorHeight and anchorHeight > 0 and ROW_HEIGHT > 0 then
+        cap = math.floor((anchorHeight - HEADER_H - 8) / ROW_HEIGHT)
+    end
+    if cap < 1 then cap = 1 end
+
+    local shown = math.min(#candidates, cap)
+    -- Truncation has to be visible. A list quietly cut to fit reads as
+    -- "these are all of them", which is the one thing it is not. Digits
+    -- rather than a word, so no locale has to carry the string.
+    if shown < #candidates then
+        panel.title:SetText(string.format("%s  |cff808080%d/%d|r",
+                                          slotName, shown, #candidates))
+    end
+
     EnsureRows(shown)
     local equippedID = EquippedID(state.unit, state.slotID)
     for i = 1, shown do
@@ -490,11 +571,25 @@ function ns.SetupGearPanel()
                           and (ns.L and ns.L.priRaid or "Raid")
                           or (ns.L and ns.L.priMythic or "M+"))
 
+    -- Two-hand / one-hand switch, left of the content toggle. Hidden by
+    -- default; RefreshGearPanel owns both its visibility and its label,
+    -- because whether there is a choice at all depends on the spec being
+    -- viewed, which changes without this panel being rebuilt.
+    panel.weapon = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    panel.weapon:SetSize(80, 18)
+    panel.weapon:SetPoint("RIGHT", panel.content, "LEFT", -2, 0)
+    panel.weapon:Hide()
+    panel.weapon:SetScript("OnClick", function()
+        ns.SetGearPanelWeaponMode(
+            ns.GearPanelWeaponMode() == "onehand" and "twohand" or "onehand")
+    end)
+
     return panel
 end
 
 function ns.CloseGearPanel()
     state.slotKey, state.unit, state.anchor, state.slotID = nil, nil, nil, nil
+    state.weaponMode = nil
     if panel then panel:Hide() end
 end
 
@@ -502,6 +597,11 @@ end
 -- the contents, and the window docks to whichever panel was clicked.
 function ns.ToggleGearPanel(anchorFrame, slotKey, slotID, unit)
     if not ns.GearPanelActive() then return end
+    -- A unit token is required, and there is deliberately no `or "player"`
+    -- fallback here: this is reached from the inspect panel too, where
+    -- defaulting to the player would label someone else's slot with our
+    -- own ranking. Callers that cannot name a unit must not open at all.
+    if type(unit) ~= "string" then return end
     ns.SetupGearPanel()
 
     if state.slotKey == slotKey and state.anchor == anchorFrame
@@ -510,8 +610,13 @@ function ns.ToggleGearPanel(anchorFrame, slotKey, slotID, unit)
         return
     end
 
-    state.slotKey, state.slotID, state.unit = slotKey, slotID, unit or "player"
+    state.slotKey, state.slotID, state.unit = slotKey, slotID, unit
     state.anchor = anchorFrame
+    -- Cleared on every open so the mode is re-derived from what the viewed
+    -- character is actually wearing. Carrying it over would mean the panel
+    -- remembers a hypothetical after the player has moved on from it, and
+    -- worse, carries it across to a different character being inspected.
+    state.weaponMode = nil
     -- Reparenting rather than just anchoring: the panel then hides with
     -- whichever side panel opened it, which is what "closes with the
     -- character frame" actually requires -- the side panel is the thing
@@ -543,21 +648,21 @@ local slotButtons = {}
 local IDLE = { 0.25, 0.85, 0.85 }
 local HOVER = { 0.45, 1.00, 1.00 }
 
--- Slots this panel deliberately does not rank yet (owner's call: not this
--- season, revisit later). Trinkets have no free structured data source
--- worth trusting, and weapons turn on one-hand vs two-hand, which is a
--- build choice rather than a hard constraint -- neither can be answered
--- from the loot table alone, so these slots get no button at all rather
--- than a list that quietly guesses.
+-- Slots this panel deliberately does not rank (owner's call). Trinkets
+-- have no free structured data source worth trusting: their value is in
+-- the effect, which no stat sort can see.
+--
+-- Weapons USED to be here for a different reason -- one-hand versus
+-- two-hand is a build choice, not a constraint -- and they came back once
+-- the panel could express that choice instead of guessing at it. See the
+-- weapon shape table in GearRank.lua.
 --
 -- Enforced by withholding the button, not by hiding the panel later: a
 -- label that looks clickable and then opens an empty window is worse than
 -- one that was never interactive. Deleting a key here is all it takes to
 -- bring the slot back.
 local UNRANKED_SLOTS = {
-    INVTYPE_TRINKET        = true,
-    INVTYPE_WEAPONMAINHAND = true,
-    INVTYPE_WEAPONOFFHAND  = true,
+    INVTYPE_TRINKET = true,
 }
 
 local function ApplyButtonLook(button)
@@ -575,6 +680,28 @@ function ns.UpdateSlotButtonStates()
     for _, button in ipairs(slotButtons) do
         if button:IsShown() then ApplyButtonLook(button) end
     end
+end
+
+-- Resolve a slot button's unit. The side panel attaches the literal
+-- "player"; the inspect panel attaches a FUNCTION, so the unit is read
+-- fresh on every click instead of being frozen when the row was built --
+-- InspectFrame.unit is a unit token that follows the player's target.
+--
+-- That resolver answers nil the moment the current unit stops being
+-- inspectable, which is the battleground case: inspect window still open,
+-- target switched to a hostile player. Written as the one-liner
+--     type(u) == "function" and u() or u
+-- a nil answer falls through the `or` and yields THE FUNCTION ITSELF,
+-- which then travels on in place of a unit token. Spelled out instead, so
+-- the nil case has somewhere to go.
+--
+-- Returns nil rather than any fallback: "cannot read that unit" must not
+-- be mistaken for "player", or the inspect panel would rank OUR gear
+-- under HIS slot label.
+function ns.ResolveSlotUnit(unit)
+    if type(unit) == "function" then unit = unit() end
+    if type(unit) ~= "string" then return nil end
+    return unit
 end
 
 -- Make a row's slot label clickable without replacing it. A real Button
@@ -612,8 +739,15 @@ function ns.AttachSlotButton(row, ownerPanel, unit)
         ApplyButtonLook(self)
     end)
     button:SetScript("OnClick", function(self)
-        local resolved = type(self.unit) == "function" and self.unit()
-                         or self.unit
+        local resolved = ns.ResolveSlotUnit(self.unit)
+        if not resolved then
+            -- Nothing readable behind this label right now. Close rather
+            -- than no-op: whatever is on screen belongs to a unit we can
+            -- no longer read, and leaving it up is the worse of the two.
+            ns.CloseGearPanel()
+            ns.UpdateSlotButtonStates()
+            return
+        end
         ns.ToggleGearPanel(self.owner, self.slotKey, self.slotID, resolved)
         ns.UpdateSlotButtonStates()
     end)

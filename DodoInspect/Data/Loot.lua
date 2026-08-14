@@ -80,6 +80,73 @@ ns.SpecGear = {
     [1480] = { "Leather", "INT" }, -- Devourer
 }
 
+-- specID -> the weapon subclass ids that spec's CLASS is
+-- allowed to equip, derived from SkillLine +
+-- SkillLineAbility.ClassMask. This answers CAN, never
+-- SHOULD: a warrior appears here with daggers and bows.
+-- Which of them a spec actually wants is the hand-written
+-- weapon shape in GearRank.lua. Subclass ids are Blizzard's
+-- (0 axe, 1 2h-axe, 2 bow, 3 gun, 4 mace, 5 2h-mace,
+--  6 polearm, 7 sword, 8 2h-sword, 9 warglaive, 10 staff,
+--  13 fist, 15 dagger, 18 crossbow, 19 wand).
+ns.SpecWeapons = {
+    [62] = { [7] = true, [10] = true, [15] = true, [19] = true }, -- Arcane
+    [63] = { [7] = true, [10] = true, [15] = true, [19] = true }, -- Fire
+    [64] = { [7] = true, [10] = true, [15] = true, [19] = true }, -- Frost
+    [65] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true }, -- Holy
+    [66] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true }, -- Protection
+    [70] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true }, -- Retribution
+    [71] = { [0] = true, [1] = true, [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true, [18] = true }, -- Arms
+    [72] = { [0] = true, [1] = true, [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true, [18] = true }, -- Fury
+    [73] = { [0] = true, [1] = true, [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true, [18] = true }, -- Protection
+    [102] = { [4] = true, [5] = true, [6] = true, [10] = true, [13] = true, [15] = true }, -- Balance
+    [103] = { [4] = true, [5] = true, [6] = true, [10] = true, [13] = true, [15] = true }, -- Feral
+    [104] = { [4] = true, [5] = true, [6] = true, [10] = true, [13] = true, [15] = true }, -- Guardian
+    [105] = { [4] = true, [5] = true, [6] = true, [10] = true, [13] = true, [15] = true }, -- Restoration
+    [250] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true }, -- Blood
+    [251] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true }, -- Frost
+    [252] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true }, -- Unholy
+    [253] = { [0] = true, [1] = true, [2] = true, [3] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true, [18] = true }, -- Beast Mastery
+    [254] = { [0] = true, [1] = true, [2] = true, [3] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true, [18] = true }, -- Marksmanship
+    [255] = { [0] = true, [1] = true, [2] = true, [3] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true, [18] = true }, -- Survival
+    [256] = { [4] = true, [10] = true, [15] = true, [19] = true }, -- Discipline
+    [257] = { [4] = true, [10] = true, [15] = true, [19] = true }, -- Holy
+    [258] = { [4] = true, [10] = true, [15] = true, [19] = true }, -- Shadow
+    [259] = { [0] = true, [2] = true, [3] = true, [4] = true, [7] = true, [13] = true, [15] = true, [18] = true }, -- Assassination
+    [260] = { [0] = true, [2] = true, [3] = true, [4] = true, [7] = true, [13] = true, [15] = true, [18] = true }, -- Outlaw
+    [261] = { [0] = true, [2] = true, [3] = true, [4] = true, [7] = true, [13] = true, [15] = true, [18] = true }, -- Subtlety
+    [262] = { [0] = true, [1] = true, [4] = true, [5] = true, [10] = true, [13] = true, [15] = true }, -- Elemental
+    [263] = { [0] = true, [1] = true, [4] = true, [5] = true, [10] = true, [13] = true, [15] = true }, -- Enhancement
+    [264] = { [0] = true, [1] = true, [4] = true, [5] = true, [10] = true, [13] = true, [15] = true }, -- Restoration
+    [265] = { [7] = true, [10] = true, [15] = true, [19] = true }, -- Affliction
+    [266] = { [7] = true, [10] = true, [15] = true, [19] = true }, -- Demonology
+    [267] = { [7] = true, [10] = true, [15] = true, [19] = true }, -- Destruction
+    [268] = { [0] = true, [4] = true, [6] = true, [7] = true, [10] = true, [13] = true, [15] = true }, -- Brewmaster
+    [269] = { [0] = true, [4] = true, [6] = true, [7] = true, [10] = true, [13] = true, [15] = true }, -- Windwalker
+    [270] = { [0] = true, [4] = true, [6] = true, [7] = true, [10] = true, [13] = true, [15] = true }, -- Mistweaver
+    [577] = { [0] = true, [7] = true, [9] = true, [13] = true, [15] = true }, -- Havoc
+    [581] = { [0] = true, [7] = true, [9] = true, [13] = true, [15] = true }, -- Vengeance
+    [1467] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true }, -- Devastation
+    [1468] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true }, -- Preservation
+    [1473] = { [0] = true, [1] = true, [4] = true, [5] = true, [6] = true, [7] = true, [8] = true, [10] = true, [13] = true, [15] = true }, -- Augmentation
+    [1480] = { [0] = true, [7] = true, [9] = true, [13] = true, [15] = true }, -- Devourer
+}
+
+-- specIDs whose class has shield proficiency. Separate
+-- from the table above because a shield is armor, not a
+-- weapon subclass, and the off-hand pool needs both.
+ns.SpecShield = {
+    [65] = true, -- Holy
+    [66] = true, -- Protection
+    [70] = true, -- Retribution
+    [71] = true, -- Arms
+    [72] = true, -- Fury
+    [73] = true, -- Protection
+    [262] = true, -- Elemental
+    [263] = true, -- Enhancement
+    [264] = true, -- Restoration
+}
+
 ns.LootMeta = {
     build = "12.1.0.69299",
     date = "2026-08-14",
@@ -98,13 +165,13 @@ ns.LootData = {
     [268238] = { 1317, 2849, 1, "AI", "crit", 4557, "haste", 2443, nil },
     [268244] = { 1317, 2849, 1, "SI", "haste", 4942, "versatility", 2058, nil },
     [268247] = { 1317, 2849, 1, "AI", "haste", 4598, "versatility", 2402, nil },
-    [268262] = { 1317, 2849, 1, "STR", "mastery", 4696, "haste", 2304, nil },
+    [268262] = { 1317, 2849, 1, "SI", "mastery", 4696, "haste", 2304, nil },
     [268263] = { 1317, 2849, 1, "INT", "crit", 4710, "mastery", 2290, nil },
     [268266] = { 1317, 2849, 1, nil, "haste", 13650, "versatility", 3850, nil },
     [270167] = { 1317, 2849, 1, nil, "haste", 6666, nil, nil, 1 },
 
     -- The Venomous Abyss
-    [268196] = { 1320, 2894, 3, "STR", "haste", 4698, "crit", 2302, nil },
+    [268196] = { 1320, 2894, 3, "SI", "haste", 4698, "crit", 2302, nil },
     [268197] = { 1320, 2874, 2, "INT", "mastery", 4773, "haste", 2227, nil },
     [268198] = { 1320, 2874, 2, "STR", "crit", 4781, "haste", 2219, nil },
     [268200] = { 1320, 2894, 3, "AGI", "haste", 4851, "mastery", 2149, nil },
@@ -218,7 +285,7 @@ ns.LootData = {
     [159442] = { 1030, 2144, 3, "SI", "versatility", 4400, "mastery", 2600, nil },
     [159636] = { 1030, 2142, 1, "INT", "haste", 4100, "mastery", 2900, nil },
     [159637] = { 1030, 2143, 2, "AGI", "crit", 3950, "haste", 3050, nil },
-    [159664] = { 1030, 2144, 3, "STR", "versatility", 3800, "crit", 3200, nil },
+    [159664] = { 1030, 2144, 3, "SI", "versatility", 3800, "crit", 3200, nil },
     [162544] = { 1030, 2143, 2, nil, "mastery", 11000, "versatility", 6500, nil },
     [239031] = { 1030, 2145, 4, "INT", "haste", 3600, "crit", 3400, nil },
     [239032] = { 1030, 2145, 4, "INT", "mastery", 3950, "crit", 3050, nil },
@@ -279,7 +346,7 @@ ns.LootData = {
     [193751] = { 1202, 2503, 3, "AI", "versatility", 4400, "crit", 2600, nil },
     [193752] = { 1202, 2503, 3, "AI", "mastery", 4100, "crit", 2900, nil },
     [193753] = { 1202, 2503, 3, "SI", "mastery", 4400, "haste", 2600, nil },
-    [193754] = { 1202, 2503, 3, "STR", "versatility", 4250, "mastery", 2750, nil },
+    [193754] = { 1202, 2503, 3, "SI", "versatility", 4250, "mastery", 2750, nil },
     [193755] = { 1202, 2503, 3, "STR", "haste", 4400, "crit", 2600, nil },
     [193756] = { 1202, 2503, 3, "AGI", "versatility", 4250, "haste", 2750, nil },
     [193757] = { 1202, 2488, 1, "SAI", nil, nil, nil, nil, 1 },
@@ -343,7 +410,7 @@ ns.LootData = {
     [251193] = { 1309, 2771, 3, "SI", "haste", 4400, "versatility", 2600, nil },
     [251194] = { 1309, 2771, 3, nil, "mastery", 11750, "versatility", 5750, nil },
     [251195] = { 1309, 2772, 4, "STR", "haste", 4100, "crit", 2900, nil },
-    [251196] = { 1309, 2772, 4, "STR", "crit", 4250, "versatility", 2750, nil },
+    [251196] = { 1309, 2772, 4, "SI", "crit", 4250, "versatility", 2750, nil },
     [251197] = { 1309, 2772, 4, "SI", "mastery", 4550, "versatility", 2450, nil },
     [251198] = { 1309, 2772, 4, "AI", "versatility", 4400, "mastery", 2600, nil },
     [251199] = { 1309, 2772, 4, "INT", "mastery", 4400, "crit", 2600, nil },
@@ -360,7 +427,7 @@ ns.LootData = {
     [251147] = { 1311, 2776, 1, "INT", "mastery", 4250, "versatility", 2750, nil },
     [251148] = { 1311, 2776, 1, nil, "versatility", 10500, "crit", 7000, nil },
     [251149] = { 1311, 2777, 2, "AGI", "mastery", 4100, "haste", 2900, nil },
-    [251150] = { 1311, 2777, 2, "STR", "haste", 4400, "mastery", 2600, nil },
+    [251150] = { 1311, 2777, 2, "SI", "haste", 4400, "mastery", 2600, nil },
     [251151] = { 1311, 2777, 2, "SI", "crit", 4550, "mastery", 2450, nil },
     [251152] = { 1311, 2777, 2, "AI", "haste", 4100, "versatility", 2900, nil },
     [251153] = { 1311, 2777, 2, "AI", "haste", 4400, "crit", 2600, nil },

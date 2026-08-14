@@ -20,8 +20,19 @@ ns.Config = {
     --           the ramp climbs through amber and gold
     -- Midnight 12.1 Season 2 raises rewards by 46 item levels. Keep
     -- the 12.0 color semantics by shifting the whole window by 46:
-    -- Season 2 starts at 266, regular Myth tops at 334, Ascendant
-    -- Venomstones reach 341, and Myth-9-equivalent loot caps at 344.
+    -- Season 2 starts at 266 (Adventurer 1), regular Myth tops at 334
+    -- (Myth 6) and the track's real ceiling is 344 (Myth 9).
+    --
+    -- Read out of the client data 2026-08-14, not from a guide: the Myth
+    -- ladder for this season is 318/321/324/328/331/334/337/340/344
+    -- (bonus list group 618). Re-derive with the recipe in CLAUDE.md,
+    -- "12.1 upgrade tracks" -- it is a table lookup, not a measurement.
+    --
+    -- An earlier version of this comment claimed Ascendant Venomstones
+    -- reach 341. There is no item level 341 anywhere in the 12.1 data,
+    -- and the "Venomcursed" bonus grants an effect, no item level at
+    -- all. It came from the same pre-season set as the crafted number
+    -- below. MAX = 344 is the one number here that was measured in game.
     -- Tune the three numbers per season, each moves independently.
     GRADIENT_MIN_ILVL    = 262,
     GRADIENT_ORANGE_ILVL = 326,
@@ -207,13 +218,38 @@ ns.Config = {
     GEAR_TOP_BONUS_ID  = 13848,
     -- Ceiling for max-quality crafted gear, shown on the wrist and back
     -- rows. Wrist and back cannot be pushed further: Ascendant Venomstones
-    -- only apply to weapons, trinkets and necklaces.
+    -- only apply to weapons, trinkets and necklaces. (^ Unverified, and
+    -- from the same source set as the number below -- the client data has
+    -- no "Venomstone" in it at all, only a "Venomcursed" bonus that grants
+    -- an effect and no item level.)
     --
-    -- Owner's call 2026-08-14: use 331. Noted for whoever revisits this --
-    -- every source quoting 331 also quoted Myth 9/6 as 337, and 344 was
-    -- observed in game the same day, so this number comes from the same
-    -- pre-season data set that was wrong about the other one. It is here
-    -- because he decided it is close enough, not because it was verified.
+    -- Owner's call 2026-08-14: use 331, knowing it was never verified --
+    -- every source quoting 331 also quoted the Myth ceiling as 337, and
+    -- 344 was observed in game the same day.
+    --
+    -- Dug into the client data 2026-08-14, and the number looks worse
+    -- than "unverified":
+    --   * Exactly ONE bonus list in the whole build sets an absolute
+    --     item level of 331: 12853, which is Myth 5 of 9. No upgrade
+    --     track ends at 331.
+    --   * 337 is Myth 7 of 9. So those sources were reading real ladder
+    --     values off the wrong rank, not inventing numbers.
+    --   * Crafted gear is not on an upgrade track at all this season:
+    --     zero bonus tree nodes with the TradeSkill item context (13)
+    --     reach groups 607/614-618. They reach crafting-QUALITY groups
+    --     instead (591 = +0/+3/+6/+9/+13 item levels over the base).
+    -- SCOPE, so nobody over-reads this: the search covered the two
+    -- mechanisms the tracks use to SET an item level. Item levels can
+    -- also be reached as a delta off a base item (ItemBonus type 1),
+    -- which cannot be resolved without naming the base item -- so this
+    -- is "the data does not support 331", not "331 is impossible".
+    -- What the real crafted ceiling is, the data did not say either.
+    --
+    -- Owner reviewed all of the above 2026-08-14 and kept 331 anyway.
+    -- Recording that as a decision, not an oversight: do not "fix" this
+    -- to nil on the strength of the comment above, it has been read.
+    -- (nil IS supported here -- the panel then prints the note with no
+    -- figure -- so switching costs one word if he ever changes his mind.)
     GEAR_CRAFTED_ITEM_LEVEL = 331,
 
     -- secondary stat grid colors (fixed column order: vers, haste,

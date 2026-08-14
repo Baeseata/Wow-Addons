@@ -96,6 +96,74 @@ local ARMOR_TYPE_SLOTS = {
     INVTYPE_WAIST = true, INVTYPE_LEGS = true, INVTYPE_FEET = true,
 }
 
+------------------------------------------------------------------
+-- Weapon shape -- what a spec actually puts in each hand
+------------------------------------------------------------------
+-- Two halves here, and confusing them is the whole trap:
+--   CAN    ns.SpecWeapons / ns.SpecShield in Data/Loot.lua, DERIVED from
+--          SkillLine + SkillLineAbility.ClassMask. Never hand-edit those.
+--   SHOULD the table below, HAND-WRITTEN and not derivable from anything:
+--          an arms warrior CAN equip a one-hander and a shield, he just
+--          must not, and no DB2 column says so.
+--
+-- Shapes, written as (main hand / off hand):
+--   ONEHAND_SHIELD  1H / shield
+--   DUAL_1H         1H / 1H
+--   DUAL_2H         2H / 2H            fury warrior, Titan's Grip
+--   TWOHAND         2H / nothing
+--   RANGED          bow, gun, crossbow / nothing
+--   DUAL_OR_2H      1H or 2H; off hand takes a 1H, empty when two-handed
+--   OFFHAND_OR_2H   1H or 2H; off hand takes a held item, empty when 2H
+--   SHIELD_OR_2H    as above, and the off hand may also be a shield
+--
+-- The last three are AMBIGUOUS and the two panel rows are COUPLED: pick a
+-- two-hander and the off-hand row has no answer at all. The panel offers a
+-- two-hand / one-hand switch and moves both rows together, because ranking
+-- them independently recommends a staff in one row and a held item in the
+-- other -- a pair that cannot exist on a character.
+local WEAPON_SHAPE = {
+    [65]   = "ONEHAND_SHIELD", -- Holy paladin
+    [66]   = "ONEHAND_SHIELD", -- Protection paladin
+    [73]   = "ONEHAND_SHIELD", -- Protection warrior
+    [259]  = "DUAL_1H",        -- Assassination
+    [260]  = "DUAL_1H",        -- Outlaw
+    [261]  = "DUAL_1H",        -- Subtlety
+    [263]  = "DUAL_1H",        -- Enhancement
+    [577]  = "DUAL_1H",        -- Havoc
+    [581]  = "DUAL_1H",        -- Vengeance
+    [1480] = "DUAL_1H",        -- Devourer
+    [72]   = "DUAL_2H",        -- Fury
+    [70]   = "TWOHAND",        -- Retribution
+    [71]   = "TWOHAND",        -- Arms
+    [103]  = "TWOHAND",        -- Feral
+    [104]  = "TWOHAND",        -- Guardian
+    [250]  = "TWOHAND",        -- Blood
+    [252]  = "TWOHAND",        -- Unholy
+    [253]  = "RANGED",         -- Beast Mastery
+    [254]  = "RANGED",         -- Marksmanship
+    [251]  = "DUAL_OR_2H",     -- Frost death knight
+    [255]  = "DUAL_OR_2H",     -- Survival
+    [268]  = "DUAL_OR_2H",     -- Brewmaster
+    [269]  = "DUAL_OR_2H",     -- Windwalker
+    [62]   = "OFFHAND_OR_2H",  -- Arcane
+    [63]   = "OFFHAND_OR_2H",  -- Fire
+    [64]   = "OFFHAND_OR_2H",  -- Frost mage
+    [102]  = "OFFHAND_OR_2H",  -- Balance
+    [105]  = "OFFHAND_OR_2H",  -- Restoration druid
+    [256]  = "OFFHAND_OR_2H",  -- Discipline
+    [257]  = "OFFHAND_OR_2H",  -- Holy priest
+    [258]  = "OFFHAND_OR_2H",  -- Shadow
+    [265]  = "OFFHAND_OR_2H",  -- Affliction
+    [266]  = "OFFHAND_OR_2H",  -- Demonology
+    [267]  = "OFFHAND_OR_2H",  -- Destruction
+    [270]  = "OFFHAND_OR_2H",  -- Mistweaver
+    [1467] = "OFFHAND_OR_2H",  -- Devastation
+    [1468] = "OFFHAND_OR_2H",  -- Preservation
+    [1473] = "OFFHAND_OR_2H",  -- Augmentation
+    [262]  = "SHIELD_OR_2H",   -- Elemental
+    [264]  = "SHIELD_OR_2H",   -- Restoration shaman
+}
+
 -- Chest is the one slot the game spells two ways.
 local EQUIP_ALIASES = {
     INVTYPE_CHEST = { INVTYPE_CHEST = true, INVTYPE_ROBE = true },
@@ -165,6 +233,102 @@ local function ItemShape(itemID)
     return equipLoc, classID, subclassID
 end
 
+-- Which panel row is which hand. These two slot keys are the reason
+-- MatchesSlot is not enough on its own: for armor the character slot and
+-- the item's equipLoc are the same string, for weapons they are not
+-- (a one-hander is INVTYPE_WEAPON, never INVTYPE_WEAPONMAINHAND, and
+-- INVTYPE_WEAPONOFFHAND has zero items in the whole season).
+local WEAPON_SLOT_HAND = {
+    INVTYPE_WEAPONMAINHAND = "main",
+    INVTYPE_WEAPONOFFHAND  = "off",
+}
+
+local LOC = {
+    ONE_MAIN    = { INVTYPE_WEAPON = true, INVTYPE_WEAPONMAINHAND = true },
+    ONE_OFF     = { INVTYPE_WEAPON = true, INVTYPE_WEAPONOFFHAND = true },
+    TWO         = { INVTYPE_2HWEAPON = true },
+    -- Ranged locations belong to the RANGED shape ONLY. Rogues and
+    -- warriors do have bow/gun proficiency, but a ranged weapon takes the
+    -- main hand and costs them dual wield, so nobody equips one -- listing
+    -- them would be a worse error than the one this costs, which is that
+    -- the season's single caster wand never appears.
+    RANGED      = { INVTYPE_RANGED = true, INVTYPE_RANGEDRIGHT = true },
+    SHIELD      = { INVTYPE_SHIELD = true },
+    HELD        = { INVTYPE_HOLDABLE = true },
+    SHIELD_HELD = { INVTYPE_SHIELD = true, INVTYPE_HOLDABLE = true },
+}
+
+local AMBIGUOUS_SHAPE = {
+    DUAL_OR_2H = true, OFFHAND_OR_2H = true, SHIELD_OR_2H = true,
+}
+
+-- The shape name, or nil for an unknown spec. Exported so a test can tell
+-- "this spec has one configuration" apart from "this spec is missing from
+-- the table" -- WeaponShapeAmbiguous deliberately answers false to both,
+-- which is right for callers and useless for coverage checking.
+function ns.WeaponShape(specID)
+    return WEAPON_SHAPE[specID or -1]
+end
+
+-- Does this spec get the two-hand / one-hand switch? nil spec, unknown
+-- spec and unambiguous spec all answer false, so the caller never has to
+-- distinguish "no switch" from "no data".
+function ns.WeaponShapeAmbiguous(specID)
+    return AMBIGUOUS_SHAPE[WEAPON_SHAPE[specID or -1] or ""] == true
+end
+
+function ns.IsWeaponSlot(slotKey)
+    return WEAPON_SLOT_HAND[slotKey or ""] ~= nil
+end
+
+-- Equip locations allowed in one hand for one spec, or nil when that hand
+-- holds nothing at all in this configuration (a two-hander leaves the off
+-- hand with no answer, and that is a different thing from an empty list).
+-- mode is "twohand" or "onehand" and is ignored by unambiguous shapes.
+function ns.WeaponPool(specID, slotKey, mode)
+    local hand = WEAPON_SLOT_HAND[slotKey or ""]
+    if not hand then return nil end
+    local shape = WEAPON_SHAPE[specID or -1]
+    if not shape then return nil end
+    local twoHanded = (mode ~= "onehand")
+    if shape == "ONEHAND_SHIELD" then
+        return hand == "main" and LOC.ONE_MAIN or LOC.SHIELD
+    elseif shape == "DUAL_1H" then
+        return hand == "main" and LOC.ONE_MAIN or LOC.ONE_OFF
+    elseif shape == "DUAL_2H" then
+        return LOC.TWO
+    elseif shape == "TWOHAND" then
+        return hand == "main" and LOC.TWO or nil
+    elseif shape == "RANGED" then
+        return hand == "main" and LOC.RANGED or nil
+    elseif shape == "DUAL_OR_2H" then
+        if twoHanded then return hand == "main" and LOC.TWO or nil end
+        return hand == "main" and LOC.ONE_MAIN or LOC.ONE_OFF
+    elseif shape == "OFFHAND_OR_2H" then
+        if twoHanded then return hand == "main" and LOC.TWO or nil end
+        return hand == "main" and LOC.ONE_MAIN or LOC.HELD
+    elseif shape == "SHIELD_OR_2H" then
+        if twoHanded then return hand == "main" and LOC.TWO or nil end
+        return hand == "main" and LOC.ONE_MAIN or LOC.SHIELD_HELD
+    end
+    return nil
+end
+
+-- Can this spec's CLASS equip the item at all? Answers the derived half.
+-- Held off-hand items are armor subclass 0 and need no proficiency, which
+-- is why this returns true rather than false for anything unrecognised --
+-- the equip-location pool has already decided the item belongs in the row.
+function ns.WeaponProficient(specID, classID, subclassID)
+    if classID == 2 then
+        local set = ns.SpecWeapons and ns.SpecWeapons[specID]
+        return (set and set[subclassID]) == true
+    end
+    if classID == 4 and subclassID == 6 then -- shield
+        return (ns.SpecShield and ns.SpecShield[specID]) == true
+    end
+    return true
+end
+
 local function MatchesSlot(equipLoc, slotKey)
     if not equipLoc or equipLoc == "" then return false end
     local aliases = EQUIP_ALIASES[slotKey]
@@ -180,11 +344,25 @@ end
 -- chest, which return in the Mythic+ pool) are kept and flagged rather
 -- than dropped: an item vanishing from a list reads as missing data,
 -- while a flagged row tells the truth.
-function ns.SlotCandidates(slotKey, specID, subTreeID, content)
+-- mode ("twohand" / "onehand") only matters for the weapon rows and only
+-- for the ambiguous shapes; everything else ignores it.
+function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
     if not ns.LootData or not ns.SpecGear then return nil end
     local spec = ns.SpecGear[specID]
     if not spec then return nil end
     local armorType, primaryStat = spec[1], spec[2]
+
+    -- Weapon rows resolve their own equip locations from the spec's shape,
+    -- because the character slot and the item's equipLoc are different
+    -- vocabularies there. A nil pool means this hand holds nothing in this
+    -- configuration, which is an answer, not missing data -- the panel
+    -- asks ns.WeaponPool itself to tell those two apart.
+    local weaponRow = ns.IsWeaponSlot(slotKey)
+    local pool
+    if weaponRow then
+        pool = ns.WeaponPool(specID, slotKey, mode)
+        if not pool then return {}, 0 end
+    end
 
     local order = ns.StatPriorityOrder and
                   ns.StatPriorityOrder(specID, subTreeID, content)
@@ -196,15 +374,28 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content)
 
     for itemID, entry in pairs(ns.LootData) do
         local equipLoc, classID, subclassID = ItemShape(itemID)
-        if MatchesSlot(equipLoc, slotKey) then
+        local inSlot
+        if weaponRow then
+            inSlot = equipLoc ~= nil and pool[equipLoc] == true
+        else
+            inSlot = MatchesSlot(equipLoc, slotKey)
+        end
+        if inSlot then
             local keep = true
+            -- Weapon rows filter twice as well, on the other two axes:
+            -- proficiency (derived -- can this class hold it) and primary
+            -- stat (an Intellect staff is not a rogue's problem). The
+            -- handedness axis was already spent picking the pool above.
+            if weaponRow then
+                keep = ns.WeaponProficient(specID, classID, subclassID)
+                       and ns.PrimaryFits(primaryStat, entry[4])
             -- Armor slots filter twice: the armor type keeps other classes
             -- out, the primary stat keeps the other users of the same
             -- armor type out. The second filter is currently a no-op on
             -- most slots because this tier gives plate SI and leather AI
             -- rather than pure stats, but it is the filter that armor type
             -- structurally cannot do, so it stays.
-            if ARMOR_TYPE_SLOTS[equipLoc] and classID == 4
+            elseif ARMOR_TYPE_SLOTS[equipLoc] and classID == 4
                and ARMOR_SUBCLASS[subclassID] then
                 keep = ARMOR_SUBCLASS[subclassID] == armorType
                        and ns.PrimaryFits(primaryStat, entry[4])

@@ -48,6 +48,25 @@ SECONDARY = {32: "crit", 36: "haste", 40: "versatility", 49: "mastery"}
 PRIMARY = {3: "AGI", 4: "STR", 5: "INT",
            71: "SAI", 72: "SA", 73: "AI", 74: "SI"}
 
+# The game writes "usable by more than one primary stat" two different
+# ways: as a single hybrid stat id (74 = Strength-or-Intellect), or as two
+# separate entries naming each stat. Reading only the first form is why
+# every shield this season came out tagged Strength -- they use the second
+# (STR:5259 + INT:16132), and taking the first entry dropped the Intellect
+# half, hiding all six from holy paladins and restoration shamans.
+#
+# Fold by expanding each code to the stats it covers and mapping back.
+PRIMARY_PARTS = {
+    "STR": frozenset(("S",)),
+    "AGI": frozenset(("A",)),
+    "INT": frozenset(("I",)),
+    "SA":  frozenset(("S", "A")),
+    "AI":  frozenset(("A", "I")),
+    "SI":  frozenset(("S", "I")),
+    "SAI": frozenset(("S", "A", "I")),
+}
+PARTS_TO_PRIMARY = {parts: code for code, parts in PRIMARY_PARTS.items()}
+
 # Armor subclass 5 is Cosmetic: transmog-only, item level 1, no stats.
 COSMETIC_SUBCLASS = "5"
 GEAR_CLASSES = ("2", "4")  # weapons, armor
@@ -142,6 +161,95 @@ def build_spec_gear():
     return out, problems
 
 
+# Weapon subclass -> the SkillLine that grants proficiency for it. Matched
+# on SkillLine.DisplayName_lang rather than hardcoding line ids, so a
+# renumbering cannot silently drop a weapon type. A RENAME still would,
+# which is what the missing-line check below is for -- without it this
+# whole table would just quietly shrink and every spec would look more
+# restricted than it is.
+WEAPON_SUBCLASS_SKILL_LINE = {
+    0: "Axes", 1: "Two-Handed Axes", 2: "Bows", 3: "Guns",
+    4: "Maces", 5: "Two-Handed Maces", 6: "Polearms", 7: "Swords",
+    8: "Two-Handed Swords", 9: "Warglaives", 10: "Staves",
+    13: "Fist Weapons", 15: "Daggers", 18: "Crossbows", 19: "Wands",
+}
+SHIELD_SKILL_LINE = "Shield"
+CLASS_BITS = 13  # Warrior..Evoker; higher mask bits are not player classes
+
+
+def build_spec_weapons(spec_gear):
+    """specID -> weapon subclasses the spec's CLASS can equip, + shield use.
+
+    Proficiency is a class fact and it is fully derivable: SkillLineAbility
+    carries a ClassMask per weapon skill line. What is NOT derivable is
+    INTENT -- a warrior can equip a one-hander and a shield, arms just
+    should not -- so the handedness shape stays hand-written in GearRank.
+    Keep the halves apart: this one must never be hand-edited, that one can
+    never be generated.
+
+    !! Do not try to answer "can this spec dual wield" from
+    SpecializationSpells alone. Dual Wield is granted at TWO levels: class
+    (SkillLineAbility spell 674, ClassMask 2573 = warrior/hunter/rogue/
+    monk/demon hunter) and spec (frost death knight, enhancement shaman).
+    Querying either source by itself returns a clean, confident, wrong
+    answer -- the spec table reports "no" for every rogue.
+    """
+    lines = fetch("SkillLine")
+    abilities = fetch("SkillLineAbility")
+    specs = fetch("ChrSpecialization")
+
+    line_id = {}
+    for row in lines:
+        name = (row.get("DisplayName_lang") or "").strip()
+        if name:
+            line_id.setdefault(name, row["ID"])
+
+    mask_by_line = collections.defaultdict(int)
+    for row in abilities:
+        mask_by_line[row["SkillLine"]] |= int(row["ClassMask"])
+
+    problems = []
+
+    def classes_for(skill_name):
+        lid = line_id.get(skill_name)
+        if lid is None:
+            problems.append("no SkillLine named %r (renamed?)" % skill_name)
+            return set()
+        mask = mask_by_line.get(lid, 0)
+        if not mask:
+            problems.append("skill line %r has no ClassMask" % skill_name)
+            return set()
+        return {c for c in range(1, CLASS_BITS + 1) if mask >> (c - 1) & 1}
+
+    by_class = collections.defaultdict(set)
+    for subclass, name in sorted(WEAPON_SUBCLASS_SKILL_LINE.items()):
+        for class_id in classes_for(name):
+            by_class[class_id].add(subclass)
+    shield_classes = classes_for(SHIELD_SKILL_LINE)
+
+    weapons, shields = {}, set()
+    for spec in specs:
+        spec_id = int(spec["ID"])
+        if spec_id not in spec_gear:
+            continue
+        class_id = int(spec["ClassID"])
+        if not by_class.get(class_id):
+            problems.append("spec %d maps to class %d, which has no weapon "
+                            "proficiency at all" % (spec_id, class_id))
+            continue
+        weapons[spec_id] = by_class[class_id]
+        if class_id in shield_classes:
+            shields.add(spec_id)
+
+    # The two spec tables have to cover exactly the same specs, or some
+    # spec gets an armor filter and no weapon filter (or the reverse) and
+    # the panel silently changes behaviour for that one spec only.
+    if set(weapons) != set(spec_gear):
+        problems.append("SpecWeapons covers %d specs, SpecGear covers %d"
+                        % (len(weapons), len(spec_gear)))
+    return weapons, shields, problems
+
+
 def fetch(table):
     req = urllib.request.Request(BASE % table, headers=UA)
     raw = urllib.request.urlopen(req).read().decode("utf-8")
@@ -206,7 +314,7 @@ def read_stats(item_ids):
     req = urllib.request.Request(BASE % "ItemSparse", headers=UA)
     stream = io.TextIOWrapper(urllib.request.urlopen(req), encoding="utf-8")
     reader = csv.DictReader(stream)
-    out, multi_primary = {}, {}
+    out, multi_primary, unfoldable = {}, {}, {}
     for row in reader:
         if row["ID"] not in item_ids:
             continue
@@ -217,23 +325,35 @@ def read_stats(item_ids):
             if amount in ("0", "-1"):
                 continue
             if stat in PRIMARY:
-                # Weapons and off-hands carry a second, much larger entry
-                # in this array on top of the real primary stat. The first
-                # one is the primary stat; later ones are not.
                 primaries.append((PRIMARY[stat], int(amount)))
-                if primary is None:
-                    primary = PRIMARY[stat]
             elif stat in SECONDARY:
                 secondary.append((SECONDARY[stat], int(amount)))
-        if len(primaries) > 1:
+
+        # Two entries mean one of two opposite things, and telling them
+        # apart is the whole job here:
+        #   SAME stat twice   a scaling artefact on weapons and off-hands
+        #                     (Int:5259 alongside Int:25370). First wins.
+        #   DIFFERENT stats   the item is genuinely usable by both, written
+        #                     out long-hand instead of as a hybrid id. Fold
+        #                     them, or half its users lose the item.
+        names = [name for name, _ in primaries]
+        if not names:
+            primary = None
+        elif len(set(names)) == 1:
+            primary = names[0]
+        else:
+            covered = frozenset().union(*(PRIMARY_PARTS[n] for n in names))
+            primary = PARTS_TO_PRIMARY.get(covered)
             multi_primary[row["ID"]] = primaries
+            if primary is None:
+                unfoldable[row["ID"]] = names
         # Highest share first so the addon never has to sort a two-element
         # list at runtime.
         secondary.sort(key=lambda s: -s[1])
         out[row["ID"]] = (primary, secondary)
         if len(out) == len(item_ids):
             break
-    return out, multi_primary
+    return out, multi_primary, unfoldable
 
 
 LUA_HEADER = '''-- DodoInspect - Data/Loot.lua
@@ -271,7 +391,8 @@ local _, ns = ...
 '''
 
 
-def emit(source, stats, effects, build, today, spec_gear):
+def emit(source, stats, effects, build, today, spec_gear,
+         spec_weapons, spec_shields):
     lines = [LUA_HEADER]
 
     lines.append("-- specID -> armor type and primary stat, derived from\n")
@@ -286,6 +407,33 @@ def emit(source, stats, effects, build, today, spec_gear):
         armor, primary, name = spec_gear[spec_id]
         lines.append('    [%d] = { "%s", "%s" }, -- %s\n'
                      % (spec_id, armor, primary, name))
+    lines.append("}\n\n")
+
+    lines.append("-- specID -> the weapon subclass ids that spec's CLASS is\n")
+    lines.append("-- allowed to equip, derived from SkillLine +\n")
+    lines.append("-- SkillLineAbility.ClassMask. This answers CAN, never\n")
+    lines.append("-- SHOULD: a warrior appears here with daggers and bows.\n")
+    lines.append("-- Which of them a spec actually wants is the hand-written\n")
+    lines.append("-- weapon shape in GearRank.lua. Subclass ids are Blizzard's\n")
+    lines.append("-- (0 axe, 1 2h-axe, 2 bow, 3 gun, 4 mace, 5 2h-mace,\n")
+    lines.append("--  6 polearm, 7 sword, 8 2h-sword, 9 warglaive, 10 staff,\n")
+    lines.append("--  13 fist, 15 dagger, 18 crossbow, 19 wand).\n")
+    lines.append("ns.SpecWeapons = {\n")
+    for spec_id in sorted(spec_weapons):
+        subs = sorted(spec_weapons[spec_id])
+        name = spec_gear[spec_id][2]
+        lines.append("    [%d] = { %s }, -- %s\n"
+                     % (spec_id,
+                        ", ".join("[%d] = true" % s for s in subs), name))
+    lines.append("}\n\n")
+
+    lines.append("-- specIDs whose class has shield proficiency. Separate\n")
+    lines.append("-- from the table above because a shield is armor, not a\n")
+    lines.append("-- weapon subclass, and the off-hand pool needs both.\n")
+    lines.append("ns.SpecShield = {\n")
+    for spec_id in sorted(spec_shields):
+        lines.append("    [%d] = true, -- %s\n"
+                     % (spec_id, spec_gear[spec_id][2]))
     lines.append("}\n\n")
 
     lines.append("ns.LootMeta = {\n")
@@ -344,21 +492,26 @@ def main():
         print("items on more than one loot table: %d (earliest boss kept)"
               % len(multi))
 
-    stats, multi_primary = read_stats(set(source))
+    stats, multi_primary, unfoldable = read_stats(set(source))
 
-    # The "first entry wins" rule above is only safe because armor never
-    # carries a second primary-stat entry. Assert it rather than trust it:
-    # if that ever changes, armor primary stats silently become wrong and
-    # the panel starts showing plate wearers each other's gear.
-    armor_multi = [i for i in multi_primary
-                   if items.get(i, {}).get("SubclassID") in ("1", "2", "3", "4")
-                   and items.get(i, {}).get("ClassID") == "4"]
-    if armor_multi:
-        print("ERROR: %d armor pieces have more than one primary stat entry, "
-              "so the primary stat filter cannot be trusted: %s"
-              % (len(armor_multi), armor_multi[:8]), file=sys.stderr)
+    # This check used to read "armor must never carry a second primary-stat
+    # entry", scoped to ClassID 4 with SubclassID 1-4. That scope WAS the
+    # bug: shields are SubclassID 6, so they sat outside it and quietly took
+    # the weapon treatment -- first entry wins -- which tagged all six of
+    # this season's Strength-or-Intellect shields as Strength and hid them
+    # from every Intellect user. The guard was right; its reach was not.
+    #
+    # The rule is now "every multi-entry item must fold into a known primary
+    # code", which needs no scope at all: it covers armor, shields, weapons
+    # and anything the next season invents.
+    if unfoldable:
+        print("ERROR: %d items have primary-stat entries that do not fold "
+              "into a known code, so their primary stat is unknown rather "
+              "than merely approximate: %s"
+              % (len(unfoldable), list(unfoldable.items())[:6]),
+              file=sys.stderr)
         return 1
-    print("multiple primary-stat entries (weapons and off-hands only): %d"
+    print("items usable by more than one primary stat (folded): %d"
           % len(multi_primary))
 
     missing = [i for i in source if i not in stats]
@@ -399,8 +552,30 @@ def main():
               % len(spec_gear), file=sys.stderr)
         return 1
 
+    spec_weapons, spec_shields, weapon_problems = build_spec_weapons(spec_gear)
+    for problem in weapon_problems:
+        print("ERROR: %s" % problem, file=sys.stderr)
+    if weapon_problems:
+        return 1
+    # Two sanity anchors on the derived proficiency table. They are cheap
+    # and they fail loudly: without them a renamed skill line would just
+    # shrink everyone's weapon list, which reads like a stricter filter
+    # rather than like broken data.
+    #   rogue subtlety (261) must NOT have staves (10)
+    #   demon hunter havoc (577) MUST have warglaives (9)
+    if 10 in spec_weapons.get(261, ()):
+        print("ERROR: derived proficiency gives rogues staves", file=sys.stderr)
+        return 1
+    if 9 not in spec_weapons.get(577, ()):
+        print("ERROR: derived proficiency denies demon hunters warglaives",
+              file=sys.stderr)
+        return 1
+    print("weapon proficiency derived for %d specs, %d can use shields"
+          % (len(spec_weapons), len(spec_shields)))
+
     today = datetime.date.today().isoformat()
-    text = emit(source, stats, effects, build, today, spec_gear)
+    text = emit(source, stats, effects, build, today, spec_gear,
+                spec_weapons, spec_shields)
 
     here = os.path.dirname(os.path.abspath(__file__))
     target = os.path.join(here, os.pardir, "Data", "Loot.lua")
@@ -423,4 +598,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # sys.exit, not a bare call: every guard in main() reports by
+    # returning 1, and a bare main() throws that away -- the
+    # process exited 0 even when it refused to write the file.
+    sys.exit(main())
