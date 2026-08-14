@@ -163,14 +163,19 @@ local function CreateRow(parent, index)
     row.name = NewCell(row)
     row.source = NewCell(row)
 
-    -- Two stat columns, filled in the item's own value order. Colors and
-    -- abbreviations still match the character side panel; the column
-    -- POSITIONS deliberately no longer do -- there the column identifies
-    -- the stat, here it identifies the rank. That is the trade for not
-    -- carrying two permanently empty columns on every row.
-    row.stats = {}
+    -- Two stat columns, filled in the item's own value order. Colors,
+    -- abbreviations and the dominant-stat underline all still match the
+    -- character side panel; the column POSITIONS deliberately no longer do
+    -- -- there the column identifies the stat, here it identifies the
+    -- rank. That is the trade for not carrying two permanently empty
+    -- columns on every row.
+    row.stats, row.statLines = {}, {}
     for i = 1, STAT_COLS do
         row.stats[i] = NewCell(row, "CENTER")
+        local line = row:CreateTexture(nil, "OVERLAY")
+        line:SetHeight(1)
+        line:Hide()
+        row.statLines[i] = line
     end
 
     LayoutRow(row, index)
@@ -249,13 +254,20 @@ local function DedupeByName(candidates)
 end
 
 -- Two stat columns, filled in the item's own value order: bigger
--- secondary first. Abbreviations and colors are still the side panel's,
--- but the column no longer identifies the STAT, it identifies the RANK --
--- which is also why the dominant-stat underline is gone: being in column
--- one already says it. Deliberately no percentages; the list order
--- already carries the fit.
+-- secondary first. Abbreviations, colors and the dominant-stat underline
+-- are all still the side panel's; the column no longer identifies the
+-- STAT, it identifies the RANK.
+--
+-- Position and underline now say the same thing, and that redundancy is
+-- deliberate (owner's call): the underline is read at a glance, while
+-- "column one means bigger" is a rule you have to know. Ties get no
+-- underline -- with two equal values there is no bigger one to point at.
+-- Deliberately no percentages; the list order already carries the fit.
 local function SetStatCells(row, entryRow)
-    for i = 1, STAT_COLS do row.stats[i]:Hide() end
+    for i = 1, STAT_COLS do
+        row.stats[i]:Hide()
+        row.statLines[i]:Hide()
+    end
 
     -- Items with no secondaries at all (the ilvl 59 BfA azerite pieces)
     -- get an explicit dash: blank columns read as missing data.
@@ -282,6 +294,28 @@ local function SetStatCells(row, entryRow)
         return (rank[a[1]] or 99) < (rank[b[1]] or 99)
     end)
 
+    -- Latin two-letter abbreviations carry side bearings that make a
+    -- full-width underline look wider than the glyphs; a CJK glyph fills
+    -- its box. Same correction the side panel applies.
+    local underL, underR = 0, 0
+    local sample = (ns.L and ns.L.stats and ns.L.stats.versatility) or ""
+    if not (strlenutf8 and #sample > strlenutf8(sample)) then
+        underL = math.floor(FS * 0.06 + 0.5)
+        underR = math.floor(FS * 0.17 + 0.5)
+    end
+
+    -- Only column one can carry the underline, and only when it is
+    -- STRICTLY bigger. A single-secondary item still gets it -- it is the
+    -- dominant stat by default -- while two equal values get none, same
+    -- as the side panel's tie handling.
+    -- ⚠ Measured 2026-08-14: of 247 two-secondary items in the season's
+    -- data, ZERO have equal values, so the tie branch never executes and
+    -- has never been seen on screen. It is kept because a future season
+    -- can produce one, not because it was verified. The 19 single-
+    -- secondary items do exercise the other branch.
+    local dominant = ranked[1]
+                     and (not ranked[2] or ranked[1][2] > ranked[2][2])
+
     for i = 1, math.min(#ranked, STAT_COLS) do
         local key = ranked[i][1]
         local fs = row.stats[i]
@@ -289,6 +323,14 @@ local function SetStatCells(row, entryRow)
         fs:SetText((ns.L and ns.L.stats and ns.L.stats[key]) or key)
         fs:SetTextColor(c[1], c[2], c[3], c[4])
         fs:Show()
+        if i == 1 and dominant then
+            local line = row.statLines[1]
+            line:SetColorTexture(c[1], c[2], c[3], 0.9)
+            line:ClearAllPoints()
+            line:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", underL, 1)
+            line:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", -underR, 1)
+            line:Show()
+        end
     end
 end
 
