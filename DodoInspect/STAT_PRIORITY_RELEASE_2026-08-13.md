@@ -2,7 +2,7 @@
 
 日期：2026-08-13
 
-实现版本：1.9.0（本机，尚未发布）
+发布版本：1.9.0（2026-08-13 已发布；tag `DodoInspect-v1.9.0`；CurseForge file [8643276](https://www.curseforge.com/wow/addons/dodoinspect/files/8643276)）
 
 当前结果：**40/40 个专精可显示：26 个已基本收敛，14 个暂定基线**
 

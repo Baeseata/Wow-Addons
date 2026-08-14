@@ -6,6 +6,9 @@
 
 结论状态：暂不恢复显示，`Config.STAT_PRIORITY_DATA_CURRENT` 继续保持 `false`
 
+> **历史快照：**本结论已于 2026-08-13 被逐专精放行策略取代；当前状态以
+> [`STAT_PRIORITY_RELEASE_2026-08-13.md`](STAT_PRIORITY_RELEASE_2026-08-13.md) 为准。
+
 ## 本轮范围
 
 - 审计全部 40 个专精。
