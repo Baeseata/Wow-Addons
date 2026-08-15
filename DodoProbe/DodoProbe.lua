@@ -23,12 +23,147 @@ local function probe(label, fn)
     out[#out + 1] = string.format("  %-34s %s", label, tag(ok, v))
 end
 
+local function sname(id)
+    if not id then return nil end
+    local ok, n = pcall(C_Spell.GetSpellName, id)
+    return ok and n or nil
+end
+
+-- Two spell ids this probe needs by name, NOT verified at the time of writing -- the probe
+-- prints GetSpellName() next to each so a wrong id is obvious on sight instead of quietly
+-- producing an empty result that reads like "the feature doesn't work".
+-- Override in-game: /dp dot <id>   /dp exec <id>
+P.dotID = 34914   -- 吸血鬼之触? (used by probe B's includeSpellIDs filter)
+P.execID = 32379  -- 暗言术:灭?  (used by probe C)
+
 -- Pull one real rotational spell id so cooldown/aura probes hit something that exists.
 local function firstRotationSpell()
     if not C_AssistedCombat or not C_AssistedCombat.GetRotationSpells then return nil end
     local ok, t = pcall(C_AssistedCombat.GetRotationSpells)
     if ok and type(t) == "table" and t[1] then return t[1] end
     return nil
+end
+
+-- 聊天框读不了这么长的输出(而且滚上去截图很痛苦)。这个窗把最后一次结果原样端出来,
+-- Ctrl+A / Ctrl+C 一把带走。颜色码要剥掉,否则复制出去全是 |cffff8800 这种噪音。
+local function StripColors(s)
+    return (s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+end
+
+local function ShowCopyBox(text)
+    if not P.copyFrame then
+        local f = CreateFrame("Frame", "DodoProbeCopyFrame", UIParent, "BackdropTemplate")
+        f:SetSize(720, 480)
+        f:SetPoint("CENTER")
+        f:SetFrameStrata("DIALOG")
+        f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+                        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        f:SetBackdropColor(0, 0, 0, 0.92)
+        f:SetBackdropBorderColor(1, 0.6, 0, 1)
+        f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOP", 0, -8)
+        title:SetText("DodoProbe  —  Ctrl+A 全选, Ctrl+C 复制, Esc 关闭 (可拖动)")
+
+        local sf = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+        sf:SetPoint("TOPLEFT", 12, -30)
+        sf:SetPoint("BOTTOMRIGHT", -32, 12)
+
+        local eb = CreateFrame("EditBox", nil, sf)
+        eb:SetMultiLine(true)
+        eb:SetFontObject(ChatFontNormal)
+        eb:SetWidth(660)
+        eb:SetAutoFocus(false)
+        eb:SetScript("OnEscapePressed", function() f:Hide() end)
+        sf:SetScrollChild(eb)
+        f.eb = eb
+        P.copyFrame = f
+    end
+    P.copyFrame.eb:SetText(text)
+    P.copyFrame:Show()
+    P.copyFrame.eb:SetFocus()
+    P.copyFrame.eb:HighlightText()
+end
+
+-- ===== B. CustomAuraContainer 绑 "target" + includeSpellIDs 精确筛 =====
+-- 两个问题一次量:① 这个容器能不能绑 unit token "target"(= 完全不经名条)
+-- ② candidateFilters.includeSpellIDs 在**敌方目标的 debuff** 上到底生不生效。
+-- 源码说生效(AuraContainerUtil.CanApplyIdentityCandidateFilters 只禁「友方身上的 debuff」和
+-- 「敌方身上的 buff」,我们这个组合两条都不沾),但那是契约,不是实测。
+local function EnsureAuraProbe()
+    if P.auraBuilt ~= nil then return P.auraBuilt end
+    P.auraBuilt = false
+    if not (C_XMLUtil and C_XMLUtil.GetTemplateInfo
+            and C_XMLUtil.GetTemplateInfo("CustomAuraContainerTemplate")) then
+        P.auraErr = "没有 CustomAuraContainerTemplate"
+        return false
+    end
+
+    -- bucket 收集本组创建过的按钮,好在报告里数「现在显示着几个」。
+    -- ⚠ 数字只是佐证,**判据是屏幕** —— 池子里的按钮什么时候被回收不归我们管。
+    local function makeInit(bucket)
+        return function(button)
+            local icon = button:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints(button)
+            button:SetIcon(icon)
+            -- 倒计时归暴雪画 —— 插件自己的 SetCooldown 吃不下 secret,这正是走这条路的全部理由。
+            local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+            cd:SetAllPoints(icon)
+            cd:SetReverse(true)
+            button:SetDurationCooldown(cd)
+            button:SetSize(32, 32)
+            bucket[#bucket + 1] = button
+        end
+    end
+
+    local function mk(suffix, yOff, label, filterStr, filters)
+        local c = CreateFrame("AuraContainer", "DodoProbeAura" .. suffix,
+            UIParent, "CustomAuraContainerTemplate")
+        c.dpButtons = {}
+        c:SetSize(240, 34)
+        c:SetPoint("TOPLEFT", UIParent, "TOP", -40, yOff)
+        c:SetFlowLayoutAnchorPoint("TOPLEFT")
+        c:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Down)
+        c:SetFlowLayoutMaximumLineSize(math.huge)
+        c:SetUnit("target")
+        c:AddAuraGroup("g", filterStr, {
+            maxFrameCount = 6,
+            sortMethod = AuraContainerSortMethod.Expiration,
+            sortDirection = AuraContainerSortDirection.Normal,
+            candidateFilters = filters,
+            initializeFrame = makeInit(c.dpButtons),
+            layout = { elementSpacing = 2, elementWidth = 32, elementHeight = 32, layoutIndex = 1 },
+        })
+        -- 🔴 这个标签**不能**锚到容器上。实测(12.1.0.69299):
+        --   FontString:SetPoint(): Anchoring disallowed as dependent object would inherit
+        --   forbidden aspects: UntrustedLayoutScriptExecution
+        -- CustomAuraContainer 带着 forbidden aspect ⇒ 插件自己的对象往它身上锚 = 直接被拒,
+        -- 而它是在 pcall 里抛的,表现成「整个探针建不起来」,看着像容器这条路不通。
+        -- 反方向是允许的:容器 SetParent/SetPoint 到插件的框体上(DodoNameplate 一直这么用)。
+        local fs = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPRIGHT", UIParent, "TOP", -46, yOff - 9)
+        fs:SetText(label)
+        c:SetEnabled(true)
+        return c
+    end
+
+    -- 三行,不是两行。第三行(最宽的 "HARMFUL")专门为了拆开「上行是 0」这个最容易读反的结果:
+    -- 三行全 0 = 绑 target 这条路不通;只有这行有 = 是 |PLAYER 或 |INCLUDE_NAME_PLATE_ONLY 出的问题,
+    -- 跟容器本身无关。少了它,一个 0 会被当成「这条路死了」直接写进结论。
+    local NP = "|INCLUDE_NAME_PLATE_ONLY"
+    local ok, err = pcall(function()
+        P.auraAny = mk("Any", -100, "任何 harmful >", "HARMFUL" .. NP, nil)
+        P.auraAll = mk("All", -140, "我上的全部 >", "HARMFUL|PLAYER" .. NP, nil)
+        P.auraOne = mk("One", -180, "只要这一个 >", "HARMFUL|PLAYER" .. NP,
+            { includeSpellIDs = { [P.dotID] = true } })
+    end)
+    if not ok then P.auraErr = tostring(err); return false end
+    P.auraBuilt = true
+    P.auraShown = true
+    return true
 end
 
 function P:Run(phase)
@@ -145,12 +280,20 @@ function P:Run(phase)
     -- 6c. Own buffs: RequiresNonSecretAura returns nothing instead of erroring, and the
     -- docs say individual spells can be flagged never-secret. So count hits, don't guess.
     local hit, tried = 0, 0
+    local hitNames = {}
     local okR2, rl2 = pcall(C_AssistedCombat.GetRotationSpells)
     if okR2 and type(rl2) == "table" then
         for i = 1, #rl2 do
             tried = tried + 1
             local ok, a = pcall(C_UnitAuras.GetPlayerAuraBySpellID, rl2[i])
-            if ok and a ~= nil then hit = hit + 1 end
+            if ok and a ~= nil then
+                hit = hit + 1
+                -- A count answers "how many", and "how many" is useless when 1 of 12 survives
+                -- combat -- the whole question is WHICH one. rl2[i] is a plain number (measured),
+                -- so it can be named without ever touching the aura table itself.
+                local okn, n = pcall(C_Spell.GetSpellName, rl2[i])
+                hitNames[#hitNames + 1] = (okn and n) and tostring(n) or ("#" .. tostring(rl2[i]))
+            end
         end
     end
     local byIndex = 0
@@ -160,6 +303,9 @@ function P:Run(phase)
     end
     out[#out + 1] = string.format("  %-34s BySpellID %d/%d   ByIndex %d/8",
         "自身 buff 拿到几个", hit, tried, byIndex)
+    out[#out + 1] = string.format("  %-34s %s", "  -> BySpellID 命中的是",
+        #hitNames > 0 and ("|cff00ff00" .. table.concat(hitNames, ", ") .. "|r")
+                       or "|cff888888(一个都没有)|r")
 
     -- 6d. Target DoTs: the index walk already errors. Try the other two shapes before
     -- writing it off - "one call failed" is not "the whole channel is shut".
@@ -199,9 +345,33 @@ function P:Run(phase)
                 local okN2, nm  = pcall(C_Spell.GetSpellName, id)
                 local okCd, cdL = pcall(C_Secrets.GetSpellCooldownSecrecy, id)
                 local okAu, auL = pcall(C_Secrets.GetSpellAuraSecrecy, id)
-                out[#out + 1] = string.format("  %-18s CD=%-24s Aura=%s",
-                    (okN2 and nm) or ("#" .. tostring(id)), lv(okCd, cdL), lv(okAu, auL))
+                -- U 列:IsSpellUsable 实测是明文布尔(没被封)。它值钱的地方在于——
+                -- 如果「暗言术: 灭」这行会随目标血量翻面,那斩杀线就是明文可读的,
+                -- 插件能拿它做任何运算。对满血目标和残血目标各跑一次,比这一列。
+                local okUs, us = pcall(C_Spell.IsSpellUsable, id)
+                out[#out + 1] = string.format("  %-18s CD=%-20s Aura=%-20s U=%s",
+                    (okN2 and nm) or ("#" .. tostring(id)),
+                    lv(okCd, cdL), lv(okAu, auL), tag(okUs, us))
             end
+
+            -- 施法条整个建在 Cast 上,而上面那张表只打了 CD 和 Aura —— 没打 Cast。
+            -- 谓词是按**单位**判的(查 player 不满足条件 ⇒ 明文),但契约末尾留了
+            -- 「个别法术可被单独标成永远 secret」的口子。所以不用逐行加一列把表挤爆,
+            -- 只列**例外**:理想输出是「一个都没有」。
+            local castOdd = {}
+            for i = 1, #rl3 do
+                local okCa, caL = pcall(C_Secrets.GetSpellCastSecrecy, rl3[i])
+                if okCa and caL ~= 0 then
+                    local okn, n = pcall(C_Spell.GetSpellName, rl3[i])
+                    castOdd[#castOdd + 1] = ((okn and n) or ("#" .. tostring(rl3[i])))
+                        .. "=" .. (LV[caL] or tostring(caL))
+                elseif not okCa then
+                    castOdd[#castOdd + 1] = "#" .. tostring(rl3[i]) .. "=ERR"
+                end
+            end
+            out[#out + 1] = string.format("  %-34s %s", "施法 secrecy 非 Never 的",
+                #castOdd > 0 and ("|cffff8800" .. table.concat(castOdd, " ") .. "|r")
+                              or "|cff00ff00一个都没有(全 Never)|r")
         end
 
         if Enum and Enum.PowerType then
@@ -225,7 +395,11 @@ function P:Run(phase)
 
     -- 5. Can a secret be turned into a visible colour? (the display escape hatch)
     probe("ColorCurve create",        function() return C_CurveUtil.CreateColorCurve() ~= nil end)
-    probe("EvalColorFromBoolean",     function()
+    -- NOTE: this row feeds a PLAINTEXT bool - `hp ~= nil` is a nil check, not a comparison
+    -- of the secret, so it never exercised the secret path. Kept as the plaintext control;
+    -- the real test lives in section 8 below. (Measuring something immune to the question
+    -- you are asking looks exactly like a pass.)
+    probe("EvalColorFromBoolean(明文对照)", function()
         local hp = UnitHealth("player")
         local c = C_CurveUtil.EvaluateColorFromBoolean(hp ~= nil,
             CreateColor(1, 0, 0, 1), CreateColor(0, 1, 0, 1))
@@ -258,6 +432,13 @@ function P:Run(phase)
         P.iconTex:SetAllPoints()
         P.cd = CreateFrame("Cooldown", nil, P.iconHolder, "CooldownFrameTemplate")
         P.cd:SetAllPoints()
+
+        -- 专给「量程能不能是 secret」用的一次性条。不能借用上面那根 P.bar:
+        -- 它的量程是创建时写死的明文 0..100,改掉就把资源条那几行的读数弄脏了。
+        P.probeBar = CreateFrame("StatusBar", nil, P.holder)
+        P.probeBar:SetSize(1, 1)
+        P.probeBar:SetPoint("TOPLEFT", P.holder, "TOPLEFT")
+        P.probeBar:Hide()
     end
     probe("FontString:SetText(secret HP)", function()
         P.fs:SetText(UnitHealth("player"))
@@ -278,8 +459,154 @@ function P:Run(phase)
         end)
     end
 
+    -- 8. Threshold cues for a self-drawn resource bar. Bar LENGTH needs no math
+    -- (SetMinMaxValues + SetValue both take secrets), but "go red near overcap" needs a
+    -- path from a secret NUMBER to a visual. The generated contract says both curve
+    -- Evaluate methods are AllowedWhenUntainted = addons cannot feed them. Contract has
+    -- been wrong once already (GetSpellCooldown), so measure it instead of quoting it.
+    out[#out + 1] = "|cffffff00--- HUD 阈值提示可行性 ---|r"
+
+    local okCC, curve = pcall(C_CurveUtil.CreateColorCurve)
+    if okCC and curve then
+        pcall(function()
+            curve:AddPoint(0, CreateColor(0.2, 0.6, 1.0, 1))
+            curve:AddPoint(100, CreateColor(1.0, 0.2, 0.1, 1))
+        end)
+        -- Plaintext x first. Without it, a failure on the secret row could just mean
+        -- "my curve was built wrong" - which reads identical to "secrets are blocked".
+        probe("Curve:Evaluate(明文 50) 负对照", function()
+            return curve:Evaluate(50) ~= nil and "ok" or "nil"
+        end)
+        probe("Curve:Evaluate(secret 资源)", function()
+            return curve:Evaluate(UnitPower("player")) ~= nil and "ok" or "nil"
+        end)
+        probe("curve:HasSecretValues()", function() return curve:HasSecretValues() end)
+    end
+
+    -- EvaluateColorFromBoolean IS AllowedWhenTainted - but an addon has to obtain a secret
+    -- BOOLEAN first, and comparing a secret number is a hard error. So: which API hands
+    -- one out? IsSpellUsable is the candidate that matters (execute-range cue).
+    if sid then
+        local okU, usable = pcall(C_Spell.IsSpellUsable, sid)
+        out[#out + 1] = string.format("  %-34s %s", "IsSpellUsable 给的是不是 secret bool",
+            tag(okU, usable))
+        probe("EvalColorFromBoolean(那个返回值)", function()
+            local u = C_Spell.IsSpellUsable(sid)
+            return C_CurveUtil.EvaluateColorFromBoolean(u,
+                CreateColor(1, 0, 0, 1), CreateColor(0, 1, 0, 1)) ~= nil and "ok" or "nil"
+        end)
+    end
+
+    -- 血条的唯一闸门。资源条走通了**不替血条背书**:那次的量程是明文(UnitPowerMax=100),
+    -- 而 UnitHealthMax 很可能是 secret ⇒ 血条走的是 SetMinMaxValues(0, secret),没测过。
+    -- ⚠ 这几行要**选中一个目标**才有意义;没目标时 UnitHealthMax 返 nil,读起来像被封了。
+    probe("UnitHealthMax(target)", function() return UnitHealthMax("target") end)
+    probe("UnitHealthMax(player)", function() return UnitHealthMax("player") end)
+    if UnitExists("target") then
+        probe("SetMinMaxValues(0, secret 血上限)", function()
+            P.probeBar:SetMinMaxValues(0, UnitHealthMax("target"))
+            return "set-ok"
+        end)
+        -- 回读:set-ok 只说明「调用没被拒」。最阴的失败是**默默不接受**(当成 0)——
+        -- 那样条会恒满或恒空,零报错。回读拿到 SECRET 才说明它真收下了那个值。
+        probe("-> GetMinMaxValues() 回读上限", function()
+            local _, hi = P.probeBar:GetMinMaxValues()
+            return hi
+        end)
+    else
+        out[#out + 1] = "  |cffff8800(没选目标 —— 血条那几行跳过了,选个怪再跑一次)|r"
+    end
+
+    -- Two more secret-eating setters off the whitelist. Both clamp to 0..1 and we feed a
+    -- 0..100 resource, so the SCREEN tells you nothing here - the only question this row
+    -- answers is "does the call go through with a secret at all".
+    probe("StatusBar:SetStatusBarDesaturation", function()
+        P.bar:SetStatusBarDesaturation(UnitPower("player"))
+        return "set-ok"
+    end)
+    probe("Texture:SetRadialProgressBarPercent", function()
+        P.iconTex:SetRadialProgressBarPercent(UnitPower("player"))
+        return "set-ok"
+    end)
+
+    -- ===== B. 报告(容器本体见文件上方 EnsureAuraProbe)=====
+    out[#out + 1] = "|cffffff00--- B. AuraContainer + SetUnit(\"target\") ---|r"
+    out[#out + 1] = string.format("  被筛的 DoT id=%d 名字=%s |cff888888(名字不对就 /dp dot <id>)|r",
+        P.dotID, tostring(sname(P.dotID)))
+    if not EnsureAuraProbe() then
+        out[#out + 1] = "  |cffff3333建不起来: " .. tostring(P.auraErr) .. "|r"
+    else
+        -- 🔴 「数出显示着几个」办不到:`button:IsShown()` 返回 **secret boolean**,一做布尔测试
+        -- 就是 "attempt to perform boolean test on a secret boolean value"(2026-08-15 实测,
+        -- 第一版就是这么炸的,还把它后面的 A / C 两组一起带没了)。
+        -- 合理 —— 可见性本身就泄露「这个光环在不在」。⇒ 本组的判据**只能是眼睛看屏幕**,
+        -- 跟「挡的是读了去算,不挡画给人看」是同一件事的两面。
+        -- 池大小是明文,但它只说「暴雪替这一组备过几个按钮」,不说现在显示几个。
+        pcall(function()
+            P.auraAny:UpdateAllAuras(); P.auraAll:UpdateAllAuras(); P.auraOne:UpdateAllAuras()
+        end)
+        out[#out + 1] = string.format("  1 任何 harmful       按钮池 %d", #P.auraAny.dpButtons)
+        out[#out + 1] = string.format("  2 我上的全部         按钮池 %d", #P.auraAll.dpButtons)
+        out[#out + 1] = string.format("  3 只要这一个         按钮池 %d", #P.auraOne.dpButtons)
+        probe("button:IsShown() 的类型", function()
+            local b = P.auraAny.dpButtons[1]
+            return b and b:IsShown()
+        end)
+        out[#out + 1] = "  |cffffff00判据在屏幕上(中上三行图标),不在这几个数字里:|r"
+        out[#out + 1] = "  |cffffff00  2 有 3 个、3 只有 1 个(吸血鬼之触) = includeSpellIDs 生效|r"
+        out[#out + 1] = "  |cffffff00  三行都空 = 容器绑 \"target\" 不通 / 1 有而 2 空 = 过滤串的问题|r"
+        out[#out + 1] = "  |cff888888顺带看图标上转不转圈 —— 那是我们自己画不出来的那样东西|r"
+    end
+
+    -- ===== A. C_CooldownViewer 数据集:暴雪自己会不会追「我打在目标身上的光环」 =====
+    -- 实现侧证据说会(CooldownViewerItemData.lua:1 `scanUnits = {"player","target"}`;:17
+    -- 要求 `auraData.sourceUnit == "player"`;:1094 `return self:GetAuraDataUnit() == "target"`)。
+    -- 这里量的是**那两个 DoT 在不在它的数据表里** —— 不在的话上面那条实现证据对我们没用。
+    -- ⚠ 每行末尾的「N 项」是口径验证:全 0 = 我枚举方式错了,不是「暴雪没数据」。
+    out[#out + 1] = "|cffffff00--- A. C_CooldownViewer 数据集 ---|r"
+    if not (C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet) then
+        out[#out + 1] = "  |cffff3333C_CooldownViewer 不存在|r"
+    else
+        local nonSelf = {}
+        for cname, cval in pairs(Enum.CooldownViewerCategory or {}) do
+            local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, cval, true)
+            if not ok or type(ids) ~= "table" then
+                out[#out + 1] = string.format("  %-24s |cffff3333查不到|r", cname)
+            else
+                for _, id in ipairs(ids) do
+                    local ok2, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, id)
+                    if ok2 and info and info.hasAura and not info.selfAura then
+                        -- 分类是这里唯一还缺的那个字段:它决定这几个 DoT 能不能被单独摆位置
+                        -- (布局 blob 里没有 x/y,分开摆只能走分类)。
+                        nonSelf[#nonSelf + 1] = string.format("    %s  spellID=%s  分类=%s  cdID=%d",
+                            tostring(sname(info.spellID) or "?"), tostring(info.spellID), cname, id)
+                    end
+                end
+                -- 只报计数,不再把整个分类的法术名串出来 —— 那一串会把后面的结论挤出聊天框。
+                -- 计数仍然是口径验证:全 0 = 我枚举方式错了,不是「暴雪没数据」。
+                out[#out + 1] = string.format("  %-26s %d 项", cname, #ids)
+            end
+        end
+        out[#out + 1] = "  |cffffff00hasAura 且 NOT selfAura(= 追的是别人身上的光环):|r"
+        if #nonSelf == 0 then
+            out[#out + 1] = "    |cff888888一个都没有|r"
+        else
+            for _, l in ipairs(nonSelf) do out[#out + 1] = l end
+        end
+    end
+
+    -- ===== C. 斩杀技的 usable 会不会随目标血量翻面 =====
+    -- 验法:对**满血**目标跑一次、对**残血**目标再跑一次,只比这一行。翻面 = 斩杀线明文可读,
+    -- HUD 那条 20% 线就能从「一根静态刻度」升级成「真的会闪」。
+    out[#out + 1] = "|cffffff00--- C. 斩杀技 usable 翻面 ---|r"
+    out[#out + 1] = string.format("  斩杀技 id=%d 名字=%s |cff888888(名字不对就 /dp exec <id>)|r",
+        P.execID, tostring(sname(P.execID)))
+    probe("IsSpellUsable(斩杀技)", function() return C_Spell.IsSpellUsable(P.execID) end)
+    probe("目标存在", function() return UnitExists("target") end)
+
     for _, line in ipairs(out) do print(line) end
-    say("done. Copy the block above.")
+    P.lastOut = StripColors(table.concat(out, "\n"))
+    say("done.  |cffffff00/dp copy|r 弹出可复制的窗口(聊天框滚不动的话用它)")
 end
 
 -- Silent by default: this addon ships in the monorepo and syncs to every machine,
@@ -287,6 +614,11 @@ end
 P:RegisterEvent("PLAYER_ENTERING_WORLD")
 P:RegisterEvent("PLAYER_REGEN_DISABLED")
 P:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+-- The container registers UNIT_AURA for its own unit token but NOT PLAYER_TARGET_CHANGED,
+-- so on a target swap it keeps showing the previous target's auras until the new target's
+-- next aura event. Blizzard exposes UpdateAllAuras for exactly this ("e.g. target changes"
+-- -- AuraContainerSharedMixin). Doing it here also puts that fix under test.
+P:RegisterEvent("PLAYER_TARGET_CHANGED")
 
 P:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -307,6 +639,12 @@ P:SetScript("OnEvent", function(_, event, ...)
                 end
             end)
         end
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        if P.auraBuilt then
+            pcall(function()
+                P.auraAny:UpdateAllAuras(); P.auraAll:UpdateAllAuras(); P.auraOne:UpdateAllAuras()
+            end)
+        end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, _, spellID = ...
         if unit == "player" and P.watchCast then
@@ -319,9 +657,40 @@ end)
 SLASH_DODOPROBE1 = "/dp"
 SLASH_DODOPROBE2 = "/dodoprobe"
 SlashCmdList.DODOPROBE = function(msg)
-    if string.find(string.lower(msg or ""), "arm") then
+    local cmd, arg = string.lower(msg or ""):match("^%s*(%a*)%s*(%d*)")
+    arg = tonumber(arg)
+    if cmd == "copy" then
+        if P.lastOut then
+            ShowCopyBox(P.lastOut)
+        else
+            say("nothing captured yet -- run /dp first.")
+        end
+    elseif cmd == "arm" then
         P.armed, P.watchCast = true, true
         say("armed. Pull a mob -- runs once 3s into combat, then disarms itself.")
+    elseif cmd == "dot" and arg then
+        P.dotID = arg
+        if P.auraBuilt then
+            pcall(function()
+                P.auraOne:SetAuraGroupCandidateFilters("g", { includeSpellIDs = { [P.dotID] = true } })
+            end)
+        end
+        say("dot id -> " .. P.dotID .. "  (" .. tostring(sname(P.dotID)) .. ")")
+    elseif cmd == "exec" and arg then
+        P.execID = arg
+        say("exec id -> " .. P.execID .. "  (" .. tostring(sname(P.execID)) .. ")")
+    elseif cmd == "aura" then
+        if P.auraBuilt then
+            P.auraShown = not P.auraShown
+            pcall(function()
+                P.auraAny:SetEnabled(P.auraShown)
+                P.auraAll:SetEnabled(P.auraShown)
+                P.auraOne:SetEnabled(P.auraShown)
+            end)
+            say("aura probe rows -> " .. (P.auraShown and "on" or "off"))
+        else
+            say("aura probe not built yet -- run /dp once out of combat first.")
+        end
     else
         P.watchCast = true
         P:Run("MANUAL")

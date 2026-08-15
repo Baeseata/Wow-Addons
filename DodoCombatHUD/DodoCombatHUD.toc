@@ -1,0 +1,11 @@
+## Interface: 120005, 120007, 120100
+## Group: Dodo
+## OptionalDeps: Dodo
+## Title: DodoCombatHUD
+## Notes: dodo的战斗监控HUD(自绘;目标血条+疯狂条+施法引导条,带刻度)
+## Author: Doodo
+## Version: 0.7.2
+## SavedVariables: DodoCombatHUDDB
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+
+DodoCombatHUD.lua

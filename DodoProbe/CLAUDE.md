@@ -79,6 +79,11 @@ curl -s https://raw.githubusercontent.com/Gethe/wow-ui-source/live/Interface/Add
 
 ## 已知结论（2026-08-14 扫 12.1.0 build 69299 — **下个补丁重扫，别照抄**）
 
+> ⚠ **2026-08-15 又跑了一轮，下面若干条被推翻或补充了** —— 例如「战斗中 per-spell `Aura=Never`
+> 也失效」是**错的**（实测 `BySpellID 1/12`，命中的正是那个 `Never` 的；死的是枚举不是定点查）；
+> `SetMinMaxValues` 吃 secret 已证；`GetSpellCooldown` 的字段确认是 secret。
+> **完整且会继续更新的一份在 canon `rules/wow-addons.md`**，本节是当时那一次的快照。
+
 > **活体实测已跑**(暗牧,受限地图,脱战 + 战斗中各一次)。下面 🟢/🔴 是**实跑结果**,不是只读契约。
 
 **🟢 出招通道整条明文,战斗中不降级** —— 这是本次最重要的结论:
