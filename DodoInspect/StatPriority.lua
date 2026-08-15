@@ -122,6 +122,26 @@ end
 
 local GRAY   = "|cff808080"
 local CYAN   = "|cff40d9d9"           -- matches the slot abbreviation color
+-- Gold, deliberately NOT the cyan the Raid/M+ labels use: those say
+-- which content the line is for, this one says where the line came
+-- from. Two different facts must not share one signal.
+local GOLD   = "|cffffd100"
+
+-- Size of the gear button that opens the editor, derived from the panel
+-- font so it stays legible at every font-slider setting instead of
+-- shrinking into a speck next to large text. The text lines reserve
+-- this much on their right so a long priority can never run under it.
+-- Landed on 1.35x after two rounds of owner feedback: a flat 14 was too
+-- small to notice, 1.7x (20 at the default font) was too heavy next to
+-- a single line of text. Keep it derived rather than a literal so the
+-- font slider cannot shrink it back into a speck.
+local CONFIG_BTN_MIN, CONFIG_BTN_MAX = 15, 22
+local function ConfigButtonSize(fontSize)
+    local size = math.floor((tonumber(fontSize) or 12) * 1.35 + 0.5)
+    if size < CONFIG_BTN_MIN then size = CONFIG_BTN_MIN end
+    if size > CONFIG_BTN_MAX then size = CONFIG_BTN_MAX end
+    return size
+end
 local SEP_GT = GRAY .. " > " .. "|r"  -- strictly better
 local SEP_EQ = GRAY .. " = " .. "|r"  -- roughly equal (sources' ">=")
 
@@ -216,6 +236,9 @@ local function GoalData(specData, subTreeID)
     end
     return specData
 end
+-- Exported for StatPriorityConfig, which seeds a new override with
+-- whatever targets the shipped entry carries for this hero tree.
+ns.StatPriorityGoalData = GoalData
 
 -- Resolve the effective priority for a spec given the active hero
 -- talent sub-tree. Freshness is per spec: stale entries do not resolve;
@@ -223,8 +246,7 @@ end
 -- build-specific matrix row wins. A build-only entry has
 -- no arbitrary fallback while the hero tree is unknown, so it hides
 -- instead of showing the other tree's advice during inspect loading.
-local function Resolve(specID, subTreeID)
-    if ns.Config.STAT_PRIORITY_FEATURE_ENABLED ~= true then return nil end
+local function ResolveDefault(specID, subTreeID)
     local specData = specID and ns.StatPriority and ns.StatPriority[specID]
     if not specData or specData.current ~= true then return nil end
     if specData.builds then
@@ -234,6 +256,26 @@ local function Resolve(specID, subTreeID)
         if not specData.raid then return nil end
     end
     return specData, specData
+end
+-- The shipped answer, ignoring any player override. Exported so the
+-- customization window can pre-fill itself with what we ship.
+ns.StatPriorityDefault = ResolveDefault
+
+-- Third return value is true when the answer came from the player's own
+-- saved override rather than from the shipped data.
+--
+-- The override is looked up FIRST and deliberately skips the
+-- current=true freshness gate. That gate stops US from showing stale
+-- advice; a line the player typed in themselves is not stale in that
+-- sense. Letting it through also means a spec whose shipped data has
+-- not caught up with a new season stays usable -- they fill it in.
+local function Resolve(specID, subTreeID)
+    if ns.Config.STAT_PRIORITY_FEATURE_ENABLED ~= true then return nil end
+    local custom = ns.StatPriorityCustomFor
+        and ns.StatPriorityCustomFor(specID, subTreeID)
+    if custom then return custom, custom, true end
+    local data, specData = ResolveDefault(specID, subTreeID)
+    return data, specData, false
 end
 
 -- True when the renderer is globally available and the user toggle is on.
@@ -268,7 +310,17 @@ end
 
 -- Cheap per-spec freshness check for callers that already have a safe
 -- specID. This avoids hero-tree API work for intentionally hidden specs.
+--
+-- A player override counts as "there is something to show" even when
+-- the shipped entry is stale or absent, because Resolve would hand that
+-- override back. Gating on shipped freshness alone here would hide the
+-- player's own line -- the panels call THIS before they call Resolve,
+-- so a narrower answer here is the last word, not a first pass.
+-- The hero tree is not known at this point, so this asks "any tree".
 function ns.StatPrioritySpecCurrent(specID)
+    if ns.StatPriorityCustomTrees and ns.StatPriorityCustomTrees(specID) then
+        return true
+    end
     local data = specID and ns.StatPriority and ns.StatPriority[specID]
     return data and data.current == true or false
 end
@@ -278,12 +330,20 @@ end
 ------------------------------------------------------------------
 
 local function OnHeaderEnter(self)
-    local data, specData = Resolve(self.specID, self.subTreeID)
+    local data, specData, isCustom = Resolve(self.specID, self.subTreeID)
     if not data then return end
     local L = ns.L or {}
 
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(L.priTitle or "Stat Priority", 1, 0.82, 0)
+
+    -- Said before anything else: on the inspect panel the rest of this
+    -- tooltip describes the viewed player's spec, and the reader has to
+    -- know up front that the ORDER below is one they wrote themselves.
+    if isCustom then
+        GameTooltip:AddLine(L.priCustomLine or "Your own setting",
+            1.00, 0.82, 0.00)
+    end
 
     -- which hero talent build these numbers are for (when detected)
     if self.heroName then
@@ -340,12 +400,47 @@ local function OnHeaderEnter(self)
         end
     end
 
-    local goalData = GoalData(specData, self.subTreeID)
-    if goalData and goalData.goals then
-        AddGoals(nil, goalData.goals)
-    elseif goalData and goalData.contentGoals then
-        AddGoals(L.priRaid or "Raid", goalData.contentGoals.raid)
-        AddGoals(L.priMythic or "M+", goalData.contentGoals.mythic)
+    -- Player targets are stored per stat per bound, which is not the
+    -- shape the shipped goals use, so they get their own renderer
+    -- instead of a lossy conversion into a read-only format.
+    -- goalSet[stat] = { min = <number>, max = <number> }. Deliberately
+    -- unitless -- see the note at the top of StatPriorityConfig.lua.
+    local function AddBound(contentLabel, stat, value, fmt, fallback)
+        if type(value) ~= "number" then return end
+        local shown = ns.FormatStatTarget
+            and ns.FormatStatTarget(value) or tostring(value)
+        local text = string.format(fmt or fallback, FullLabel(stat), shown)
+        if contentLabel then text = contentLabel .. " - " .. text end
+        GameTooltip:AddLine(text, 0.8, 0.8, 0.8)
+    end
+
+    local function AddCustomGoals(contentLabel, goalSet)
+        if type(goalSet) ~= "table" then return end
+        for _, stat in ipairs(GOAL_DISPLAY_ORDER) do
+            local bounds = goalSet[stat]
+            if type(bounds) == "table" then
+                AddBound(contentLabel, stat, bounds.min,
+                    L.priGoalMinFmt, "%s at least %s")
+                AddBound(contentLabel, stat, bounds.max,
+                    L.priGoalMaxFmt, "%s at most %s")
+            end
+        end
+    end
+
+    if isCustom then
+        -- Always labeled, even when only one side is filled in: an
+        -- unlabeled target would read as applying to both.
+        local goals = data.goals or {}
+        AddCustomGoals(L.priRaid or "Raid", goals.raid)
+        AddCustomGoals(L.priMythic or "M+", goals.mythic)
+    else
+        local goalData = GoalData(specData, self.subTreeID)
+        if goalData and goalData.goals then
+            AddGoals(nil, goalData.goals)
+        elseif goalData and goalData.contentGoals then
+            AddGoals(L.priRaid or "Raid", goalData.contentGoals.raid)
+            AddGoals(L.priMythic or "M+", goalData.contentGoals.mythic)
+        end
     end
 
     if data.provisional == true
@@ -366,6 +461,14 @@ local function OnHeaderEnter(self)
     -- disclaimer: aggregated public data, reference only (wraps)
     if L.priDisclaimer then
         GameTooltip:AddLine(L.priDisclaimer, 0.45, 0.45, 0.45, true)
+    end
+
+    -- Only the character panel offers the editor. On the inspect panel
+    -- this line can be describing another player, and inviting a click
+    -- there would read as "edit his".
+    if self.configurable then
+        GameTooltip:AddLine(L.priCustomHint or "Click to customize",
+            0.55, 0.80, 1.00)
     end
     GameTooltip:Show()
 end
@@ -389,6 +492,10 @@ function ns.SetupStatPriorityHeader(panel)
     -- re-anchors it every refresh because the indent (see below) can be
     -- set after this frame is built.
     h:SetPoint("TOPLEFT", panel, "TOPLEFT", 6, -6)
+    -- Declared by the owning panel rather than assumed here: the inspect
+    -- panel shows this same header for another player, and offering to
+    -- edit there would read as editing his.
+    h.configurable = (panel.dodoPriorityConfigurable == true)
 
     local function NewFS()
         local fs = h:CreateFontString(nil, "OVERLAY")
@@ -396,8 +503,18 @@ function ns.SetupStatPriorityHeader(panel)
         fs:SetShadowOffset(1, -1)
         fs:SetShadowColor(0, 0, 0, 1)
         if fs.SetWordWrap then fs:SetWordWrap(false) end
+        -- Belt and braces with the width set in the update: a wrapped
+        -- line here would draw over the gear rows below it.
+        if fs.SetMaxLines then fs:SetMaxLines(1) end
         return fs
     end
+
+    -- Behind the text and sized to the frame, so it needs no maintenance
+    -- when the header grows to two lines or the font size changes.
+    h.hover = h:CreateTexture(nil, "BACKGROUND")
+    h.hover:SetAllPoints(h)
+    h.hover:SetColorTexture(0.25, 0.85, 0.85, 0.10)
+    h.hover:Hide()
 
     h.line1 = NewFS()
     h.line2 = NewFS()
@@ -405,9 +522,79 @@ function ns.SetupStatPriorityHeader(panel)
     h.divider:SetColorTexture(0.4, 0.4, 0.4, 0.8)
     h.divider:SetHeight(1)
 
-    h:SetScript("OnEnter", OnHeaderEnter)
-    h:SetScript("OnLeave", OnHeaderLeave)
+    -- The tooltip does say "click to customize", but a tooltip only
+    -- answers a question the player already thought to ask. The hover
+    -- wash is what raises it -- same reason the slot labels got a
+    -- visible affordance instead of just a working click.
+    local function SetHovered(hovered)
+        if not h.configurable then return end
+        h.hover:SetShown(hovered)
+        if hovered then
+            h.divider:SetColorTexture(0.25, 0.85, 0.85, 1.0)
+        else
+            h.divider:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+        end
+    end
+
+    -- Reads h, not the caller's self: this is also wired to the gear
+    -- button below, whose self is the button.
+    local function OpenEditor()
+        if not h.configurable then return end
+        if ns.ToggleStatPriorityConfig then
+            ns.ToggleStatPriorityConfig(h.specID, h.subTreeID, h.heroName)
+        end
+    end
+
+    h:SetScript("OnEnter", function(self)
+        SetHovered(true)
+        OnHeaderEnter(self)
+    end)
+    h:SetScript("OnLeave", function(self)
+        SetHovered(false)
+        OnHeaderLeave(self)
+    end)
+    h:SetScript("OnMouseUp", function(self, button)
+        if button ~= "LeftButton" then return end
+        OpenEditor()
+    end)
     h:EnableMouse(true)
+
+    -- The visible way in. The hover wash above only speaks once the
+    -- cursor is already on the line, and a player who does not know the
+    -- line is configurable never puts it there -- so the affordance has
+    -- to be something you can see without touching anything.
+    h.config = CreateFrame("Button", nil, h)
+    h.config:SetSize(CONFIG_BTN_MIN, CONFIG_BTN_MIN)
+    -- Centred on the line rather than pinned to its top corner: the
+    -- button is taller than the text it sits beside, so anchoring it
+    -- centred spreads that overhang into the padding above and below
+    -- instead of dropping all of it onto the gear rows underneath.
+    h.config:SetPoint("RIGHT", h, "RIGHT", 0, 0)
+    h.config:SetNormalTexture("Interface\\Buttons\\UI-OptionsButton")
+    h.config:SetHighlightTexture("Interface\\Buttons\\UI-OptionsButton")
+    local highlight = h.config:GetHighlightTexture()
+    if highlight then highlight:SetBlendMode("ADD") end
+    h.config:SetScript("OnClick", OpenEditor)
+    h.config:SetScript("OnEnter", function(self)
+        -- Keep the line lit while the cursor is on the button: it is a
+        -- child frame, so the header itself has just taken an OnLeave.
+        SetHovered(true)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(ns.L and ns.L.priCustomHint
+            or "Click to customize", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    h.config:SetScript("OnLeave", function()
+        SetHovered(false)
+        GameTooltip:Hide()
+    end)
+    -- Never shown on the inspect panel; that header describes someone
+    -- else, and this button would read as editing his.
+    h.config:SetShown(h.configurable)
+    -- Hiding the frame under the cursor never fires OnLeave, so the wash
+    -- would still be on the next time it appears. The side panel hides
+    -- this header on collapse, which is exactly that case.
+    h:SetScript("OnHide", function(self) self.hover:Hide() end)
 
     panel.dodoPri = h
     return h
@@ -424,8 +611,14 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
         return 0
     end
 
-    local data = (specID and ns.IsEnabled("showStatPriority"))
-        and Resolve(specID, subTreeID) or nil
+    -- The middle value is declared local on purpose: this file's chunk
+    -- vararg is `local _, ns = ...`, so a bare `_` here would assign to
+    -- the addon name instead of being discarded.
+    local data, isCustom
+    if specID and ns.IsEnabled("showStatPriority") then
+        local resolved, _, custom = Resolve(specID, subTreeID)
+        data, isCustom = resolved, custom
+    end
     if not data then
         h:Hide()
         panel.dodoPriorityHeight = 0
@@ -435,6 +628,7 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
     h.specID = specID
     h.subTreeID = subTreeID
     h.heroName = heroName
+    h.isCustom = isCustom and true or false
     -- Panels that put a control in their top-left corner declare how much
     -- room it needs; this line then starts to the right of it instead of
     -- underneath it. Zero for panels with nothing up there (the inspect
@@ -447,6 +641,16 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
 
     ns.SetOverlayFont(fs1, fontSize, "OUTLINE")
     ns.SetOverlayFont(fs2, fontSize, "OUTLINE")
+    -- Keep the text clear of the gear button in the corner, so a long
+    -- priority clips rather than running underneath it.
+    local textW = width
+    if h.configurable then
+        local buttonSize = ConfigButtonSize(fontSize)
+        if h.config then h.config:SetSize(buttonSize, buttonSize) end
+        textW = math.max(20, width - buttonSize - 4)
+    end
+    fs1:SetWidth(textW)
+    fs2:SetWidth(textW)
     fs1:ClearAllPoints()
     fs1:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
 
@@ -454,11 +658,20 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
     local raidLine = BuildOrder(data.raid, AbbrevLabel)
     local lines, lastFS = 1, fs1
 
+    -- Marks the whole block, so it goes on the first line only. On the
+    -- inspect panel this is the ONLY thing distinguishing "what this
+    -- spec is generally told to stack" from "what you personally set
+    -- for it", and the panel is showing someone else's character.
+    local tag = ""
+    if isCustom then
+        tag = GOLD .. (ns.L.priCustomTag or "C") .. "|r "
+    end
+
     if RulesEqual(data) then
-        fs1:SetText(raidLine)
+        fs1:SetText(tag .. raidLine)
         fs2:Hide()
     else
-        fs1:SetText(CYAN .. (ns.L.priRaid or "R") .. "|r "
+        fs1:SetText(tag .. CYAN .. (ns.L.priRaid or "R") .. "|r "
             .. raidLine)
         fs2:ClearAllPoints()
         fs2:SetPoint("TOPLEFT", fs1, "BOTTOMLEFT", 0, -2)
@@ -487,6 +700,11 @@ end
 -- Toggle handler: refresh both panels in place (the update reclaims or
 -- yields the top space and re-flows the rows).
 function ns.ApplyStatPriorityEnabled()
+    -- Switching the feature off takes the editor with it, rather than
+    -- leaving it open on a line that is no longer on screen anywhere.
+    if ns.CloseStatPriorityConfig and not ns.StatPriorityActive() then
+        ns.CloseStatPriorityConfig()
+    end
     if ns.UpdateSidePanel then ns.UpdateSidePanel() end
     if ns.UpdateInspectPanel then ns.UpdateInspectPanel() end
 end

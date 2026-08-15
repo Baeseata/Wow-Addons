@@ -697,6 +697,10 @@ function ns.SetupSidePanel()
     -- rather than hardcoded there, so the inspect panel -- which has no
     -- such button -- keeps its full width.
     panel.dodoPriorityIndent = COLLAPSE_BTN + 4
+    -- This panel always shows the player's own character, so this is the
+    -- header that may open the priority editor. The inspect panel leaves
+    -- this unset and its header stays read-only.
+    panel.dodoPriorityConfigurable = true
 
     ns.SetupStatPriorityHeader(panel)
 
@@ -756,10 +760,24 @@ end
 function ns.UpdateSidePanel()
     if not panel or not panel:IsShown() then return end
 
+    -- Collapsed hides every row regardless of what it would otherwise show.
+    -- Without this any refresh -- an equipment change is enough -- pops the
+    -- rows back out of a panel the player has put away, because the branch
+    -- below shows them unconditionally.
+    local collapsed = ns.SidePanelCollapsed()
+
     -- Same gate-before-lookup shape as InspectPanel. Your own spec is
     -- never secret, so here it only avoids pointless work while the
     -- feature is off -- but keep the two panels reading identically.
-    if ns.StatPriorityActive() then
+    --
+    -- Collapsed is checked here for the same reason the rows check it
+    -- below, and it was missing: ApplyCollapsed hides the header, but it
+    -- only runs on the toggle, while UpdateStatPriorityHeader ends in
+    -- h:Show(). Any later refresh -- one equipment change is enough --
+    -- put the priority line back on screen, floating over a collapsed
+    -- stub barely taller than the button. Passing nil is the existing
+    -- "nothing to show" path and also zeroes dodoPriorityHeight.
+    if ns.StatPriorityActive() and not collapsed then
         local specID = ns.PlayerSpecID()
         if ns.StatPrioritySpecCurrent(specID) then
             local heroSub, heroName = ns.PlayerHeroSubTree()
@@ -770,12 +788,6 @@ function ns.UpdateSidePanel()
     else
         ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
     end
-
-    -- Collapsed hides every row regardless of what it would otherwise show.
-    -- Without this any refresh -- an equipment change is enough -- pops the
-    -- rows back out of a panel the player has put away, because the branch
-    -- below shows them unconditionally.
-    local collapsed = ns.SidePanelCollapsed()
 
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped

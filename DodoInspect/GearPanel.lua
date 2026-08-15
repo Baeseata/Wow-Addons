@@ -468,8 +468,15 @@ function ns.RefreshGearPanel()
     end
     -- provisional lives on the spec entry, not on the resolved build, and
     -- StatPrioritySpecCurrent only answers "is this spec live at all".
+    --
+    -- Dropped once the player has overridden this (spec, tree): the rows
+    -- above are then ordered by THEIR priority, while "sources disagree"
+    -- describes the shipped guidance that is no longer being used. It
+    -- would read as our disclaimer attached to their answer.
     local specData = specID and ns.StatPriority and ns.StatPriority[specID]
-    if specData and specData.provisional == true then
+    local overridden = ns.StatPriorityCustomFor
+        and ns.StatPriorityCustomFor(specID, subTree)
+    if not overridden and specData and specData.provisional == true then
         notes[#notes + 1] = ns.L.gearProvisional or ""
     end
     panel.note:SetText(table.concat(notes, "  "))

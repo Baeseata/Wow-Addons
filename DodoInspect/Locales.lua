@@ -110,6 +110,20 @@ ns.Locales = {
         gearNoOffHandSpec = "This specialization does not use an off hand",
         gearNoOffHandTwo = "A two-handed weapon leaves this slot empty",
         priBuild      = "Build: %s",
+        -- stat priority: player customization
+        priCustomTag   = "C",
+        priCustomLine  = "Your own setting",
+        priCustomHint  = "Click to customize",
+        priGoalMinFmt  = "%s at least %s",
+        priGoalMaxFmt  = "%s at most %s",
+        priCfgTitle    = "Stat Priority",
+        priCfgTree     = "Hero talent: %s",
+        priCfgNoTree   = "No hero talent selected",
+        priCfgTreeNote = "Applies to the hero talent above only.",
+        priCfgMin      = "Min",
+        priCfgMax      = "Max",
+        priCfgReset    = "Restore defaults",
+        priCfgCopy     = "Copy to other trees",
     },
 
     cn = {
@@ -195,6 +209,20 @@ ns.Locales = {
         gearNoOffHandSpec = "该专精不使用副手",
         gearNoOffHandTwo = "使用双手武器时该栏空置",
         priBuild      = "构建: %s",
+        -- stat priority: player customization
+        priCustomTag   = "自",
+        priCustomLine  = "你自己的设置",
+        priCustomHint  = "点击自定义",
+        priGoalMinFmt  = "%s下限 %s",
+        priGoalMaxFmt  = "%s上限 %s",
+        priCfgTitle    = "属性优先级",
+        priCfgTree     = "英雄天赋：%s",
+        priCfgNoTree   = "未选择英雄天赋",
+        priCfgTreeNote = "本设置只适用于上面这棵英雄天赋。",
+        priCfgMin      = "下限",
+        priCfgMax      = "上限",
+        priCfgReset    = "恢复默认",
+        priCfgCopy     = "复制到其它天赋",
     },
 
     fr = {
@@ -280,6 +308,20 @@ ns.Locales = {
         gearNoOffHandSpec = "Cette specialisation n'utilise pas de main gauche",
         gearNoOffHandTwo = "Une arme a deux mains laisse cet emplacement vide",
         priBuild      = "Build : %s",
+        -- stat priority: player customization
+        priCustomTag   = "P",
+        priCustomLine  = "Votre propre reglage",
+        priCustomHint  = "Cliquez pour personnaliser",
+        priGoalMinFmt  = "%s au moins %s",
+        priGoalMaxFmt  = "%s au plus %s",
+        priCfgTitle    = "Priorite des stats",
+        priCfgTree     = "Talent de heros : %s",
+        priCfgNoTree   = "Aucun talent de heros selectionne",
+        priCfgTreeNote = "Uniquement pour le talent de heros ci-dessus.",
+        priCfgMin      = "Min",
+        priCfgMax      = "Max",
+        priCfgReset    = "Valeurs par defaut",
+        priCfgCopy     = "Copier aux autres",
     },
 
     es = {
@@ -365,6 +407,20 @@ ns.Locales = {
         gearNoOffHandSpec = "Esta especializacion no usa mano izquierda",
         gearNoOffHandTwo = "Un arma a dos manos deja esta ranura vacia",
         priBuild      = "Build: %s",
+        -- stat priority: player customization
+        priCustomTag   = "P",
+        priCustomLine  = "Tu propia configuracion",
+        priCustomHint  = "Clic para personalizar",
+        priGoalMinFmt  = "%s al menos %s",
+        priGoalMaxFmt  = "%s como maximo %s",
+        priCfgTitle    = "Prioridad de stats",
+        priCfgTree     = "Talento de heroe: %s",
+        priCfgNoTree   = "Ningun talento de heroe seleccionado",
+        priCfgTreeNote = "Solo para el talento de heroe de arriba.",
+        priCfgMin      = "Min",
+        priCfgMax      = "Max",
+        priCfgReset    = "Valores por defecto",
+        priCfgCopy     = "Copiar a los otros",
     },
 }
 
