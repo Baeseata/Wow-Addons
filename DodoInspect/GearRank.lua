@@ -395,11 +395,16 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
     local weights = ns.StatWeights(order)
     if not weights then return nil end
 
-    -- Trinkets rank from simulation, not stat fit. A nil table here means
-    -- the source covers no data for this spec at all; the panel reports
-    -- that in words rather than presenting an arbitrary order as a ranking.
+    -- Trinkets rank from simulation, not stat fit. No table means the source
+    -- covers nothing for this spec, and there is no second-best order to
+    -- fall back on: 33 of the 42 trinkets have no secondary stats, so a
+    -- stat sort would return them in an order that means nothing while
+    -- looking exactly like every ranked list in this panel. Answer with
+    -- "nothing here" and let the panel say why, same as an off hand that
+    -- holds nothing in this configuration.
     local trinketRow = (slotKey == ns.TRINKET_SLOT)
     local trinketRank = trinketRow and ns.TrinketOrder(specID) or nil
+    if trinketRow and not trinketRank then return {}, 0 end
 
     local fits = PRIMARY_FIT[primaryStat]
     local out, unranked = {}, 0
@@ -454,6 +459,20 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
                     unranked = isUnranked,
                     simRank = simRank,
                     topItemLevel = ns.ReachesTopItemLevel(entry),
+                    -- Two facts that used to ride on `unranked` because on
+                    -- armor they always coincided: a piece with no
+                    -- secondaries was also a piece off the current upgrade
+                    -- track (the ilvl 59 azerite ones). Trinkets split them
+                    -- apart -- 33 of 42 have no secondaries while sitting on
+                    -- this season's track -- so they are stated separately
+                    -- rather than inferred from each other.
+                    statless = (score == nil),
+                    -- Off-track items get no upgrade bonus id, so their
+                    -- tooltip renders the base item. Every trinket in the
+                    -- pool drops this season and takes the current track,
+                    -- including the returning ones, whose static item level
+                    -- is meaningless for exactly that reason.
+                    offTrack = (not trinketRow) and (score == nil) or false,
                 }
             end
         end

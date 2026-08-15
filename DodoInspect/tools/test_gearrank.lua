@@ -608,22 +608,60 @@ do
 end
 
 do
-    -- The uncovered spec must still list its trinkets. An item vanishing
-    -- reads as missing data; every row flagged plus the panel's note reads
-    -- as what it is.
+    -- An uncovered spec gets NOTHING, and the panel says why. The first
+    -- version listed the trinkets with every row flagged; on a live holy
+    -- priest that still read as a ranking, because a list of items under
+    -- this panel's header is what a ranking looks like. There is no
+    -- second-best order to fall back on here.
     orderUnderTest = { "haste", "crit", "mastery", "versatility" }
     local rows, unranked = ns.SlotCandidates("INVTYPE_TRINKET", 71, nil, "raid")
-    check(rows and #rows > 0,
-          "an uncovered spec still sees its trinkets rather than an empty list")
-    checkEqual(unranked, #rows,
-               "with no simulation data every trinket row is flagged unranked")
+    check(rows ~= nil,
+          "uncovered spec returns a list rather than nil (nil means 'cannot "
+          .. "rank this slot at all' and prints a different message)")
+    checkEqual(#rows, 0, "uncovered spec returns no trinket rows at all")
+    checkEqual(unranked, 0, "and reports no unranked count for rows it never built")
+end
+
+do
+    -- Regression from live use (holy priest, 2026-08-14). `unranked` was
+    -- quietly driving three unrelated things: the sort, the stat column's
+    -- dash, and whether the tooltip gets an upgrade bonus id. On armor the
+    -- three coincided, so nothing caught the overload -- on trinkets it
+    -- stripped the bonus id off every row and the tooltip rendered the bare
+    -- item, showing a returning trinket's original item level instead of
+    -- this season's ceiling.
+    orderUnderTest = { "haste", "crit", "mastery", "versatility" }
+
+    local rows = ns.SlotCandidates("INVTYPE_TRINKET", 258, nil, "raid")
+    local offTrack, statless, statlessOnTrack = 0, 0, 0
     for i = 1, #rows do
-        if rows[i].simRank ~= nil then
-            checkEqual(rows[i].simRank, nil,
-                       "no row carries a simRank when the spec is uncovered")
-            break
+        if rows[i].offTrack then offTrack = offTrack + 1 end
+        if rows[i].statless then statless = statless + 1 end
+        if rows[i].statless and not rows[i].offTrack then
+            statlessOnTrack = statlessOnTrack + 1
         end
     end
+    checkEqual(offTrack, 0,
+               "no trinket is ever off-track -- every one drops this season, "
+               .. "so its tooltip must carry an upgrade bonus id")
+    check(statless > 0,
+          "the pool really does contain statless trinkets (without this the "
+          .. "check below would pass on an empty set)")
+    checkEqual(statlessOnTrack, statless,
+               "statless and off-track are independent on the trinket row")
+
+    -- The other half of 'fix the class, not the case': armor must be
+    -- untouched, where both flags still mean 'no secondary stats'.
+    local head = ns.SlotCandidates("INVTYPE_HEAD", 258, nil, "raid")
+    local drift = 0
+    for i = 1, #head do
+        if head[i].statless ~= (head[i].score == nil) then drift = drift + 1 end
+        if head[i].offTrack ~= (head[i].score == nil) then drift = drift + 1 end
+    end
+    check(#head > 0, "the armor control set is not empty")
+    checkEqual(drift, 0,
+               "on armor both flags still track 'no secondary stats' exactly "
+               .. "as before -- the trinket split changed nothing here")
 end
 
 print(string.format("\n%d checks, %d failures", checks, failures))

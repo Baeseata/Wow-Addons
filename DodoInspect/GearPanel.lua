@@ -177,10 +177,16 @@ local LINK_EMPTY_FIELDS = string.rep(":", 11)
 -- Which ceiling this row is being shown at has to come from the caller:
 -- the item level column has already picked one, and a row labelled 344
 -- whose tooltip renders 334 is worse than either number on its own.
--- Unranked rows get no bonus id -- they are not on a current upgrade
--- track, which is exactly why their item level cell is left blank too.
-local function TooltipLink(itemID, top, unranked)
-    if unranked then return nil end
+-- Off-track rows get no bonus id: they are not on a current upgrade track,
+-- so quoting a ceiling at them would invent one.
+--
+-- This used to take `unranked` instead, which was the same thing right up
+-- until trinkets arrived: most trinkets cannot be stat-ranked yet sit on
+-- this season's track, and feeding the ranking flag in here stripped the
+-- bonus id off every one of them -- the tooltip then rendered the bare
+-- item, which for a returning trinket is a several-hundred item level lie.
+local function TooltipLink(itemID, top, offTrack)
+    if offTrack then return nil end
     local cfg = ns.Config
     local bonus = top and cfg.GEAR_TOP_BONUS_ID or cfg.GEAR_MYTH_BONUS_ID
     if not bonus then return nil end
@@ -219,7 +225,7 @@ local function CreateRow(parent, index)
         if not self.itemID then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local link = TooltipLink(self.itemID, self.trackTop,
-                                 self.trackUnranked)
+                                 self.trackOffTrack)
         if link then
             GameTooltip:SetHyperlink(link)
         else
@@ -299,9 +305,12 @@ local function SetStatCells(row, entryRow)
         row.statLines[i]:Hide()
     end
 
-    -- Items with no secondaries at all (the ilvl 59 BfA azerite pieces)
-    -- get an explicit dash: blank columns read as missing data.
-    if entryRow.unranked then
+    -- Items with no secondaries at all (the ilvl 59 BfA azerite pieces, and
+    -- most trinkets) get an explicit dash: blank columns read as missing
+    -- data. Keyed off statless, NOT off unranked -- on the trinket row
+    -- unranked means "the simulation skipped this one", which says nothing
+    -- about whether it has stats to print.
+    if entryRow.statless then
         local fs, c = row.stats[1], ns.Config.GEAR_MUTED_COLOR
         fs:SetText("-")
         fs:SetTextColor(c[1], c[2], c[3], c[4])
@@ -369,7 +378,7 @@ local function SetRow(row, index, entryRow, equippedID)
     -- Carried onto the row so the tooltip quotes the same ceiling the
     -- item level cell below is about to print.
     row.trackTop = entryRow.topItemLevel
-    row.trackUnranked = entryRow.unranked
+    row.trackOffTrack = entryRow.offTrack
     local name = C_Item.GetItemInfo(entryRow.id)
     local isEquipped = (equippedID == entryRow.id)
 
@@ -457,15 +466,6 @@ function ns.RefreshGearPanel()
         end
         notes[#notes + 1] = note
     end
-    -- The trinket row is ordered by simulation, and the source does not
-    -- cover every spec. Saying so is the point: the rows below are still
-    -- worth showing (they are what drops for this slot), but presenting
-    -- them in an arbitrary order under the same header as every ranked
-    -- list would be a confident lie about which one is better.
-    if state.slotKey == ns.TRINKET_SLOT and specID
-       and not ns.TrinketOrder(specID) then
-        notes[#notes + 1] = ns.L.gearNoTrinketSim or ""
-    end
     -- provisional lives on the spec entry, not on the resolved build, and
     -- StatPrioritySpecCurrent only answers "is this spec live at all".
     local specData = specID and ns.StatPriority and ns.StatPriority[specID]
@@ -487,6 +487,14 @@ function ns.RefreshGearPanel()
             -- looking for an off-hand that does not exist for him.
             message = ambiguous and (ns.L.gearNoOffHandTwo or "")
                                 or (ns.L.gearNoOffHandSpec or "")
+        elseif state.slotKey == ns.TRINKET_SLOT
+               and not ns.TrinketOrder(specID) then
+            -- Same shape as the off-hand case above: a fact about the
+            -- SOURCE, not about the season. Trinkets are ordered by
+            -- simulation and this spec has none, so there is nothing to
+            -- show -- listing them in stat order would look identical to
+            -- every ranked list in this panel while meaning nothing.
+            message = ns.L.gearNoTrinketSim or ""
         else
             message = ns.L.gearNoCandidates or ""
         end
