@@ -2,7 +2,7 @@
 ## Title: DodoInspect
 ## Notes: Item level overlays for bags, the character frame and the inspect window, gear summary side panels, per-slot upgrade candidates and a target info line, with a Raider.IO style gradient.
 ## Author: Doodo
-## Version: 1.10.0
+## Version: 1.11.0
 ## SavedVariables: DodoInspectDB
 ## IconTexture: Interface\AddOns\DodoInspect\Media\Dodo.tga
 ## X-Category: Bags and Inventory

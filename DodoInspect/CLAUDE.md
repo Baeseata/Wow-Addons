@@ -142,8 +142,10 @@ spec 那条没有。⇒ **同一条高危路径上可以有两种完全不同的
 **新增文件**:`Data/Loot.lua`(生成物)· `LootSource.lua` · `GearRank.lua` · `GearPanel.lua`
 · `tools/gen_loot.py`(生成器)· `tools/test_gearrank.lua` + `tools/fixture_itemshape.lua`(离线测试)。
 
-**两个功能,都默认关**(`AddOptInCheckbox`,新加的 opt-in 变体 —— 老的 `ns.IsEnabled`
-未设置时**默认开**,对赛季数据不合适):
+**两个功能默认都是开的** —— ⚠ **这里原来写的是「都默认关」(opt-in),那句已作废**:
+2026-08-14 Jerry 拍板改成默认 ON,`AddOptInCheckbox` 已删(见下面「HOME 续作」那节)。
+本节没跟着改,于是 2026-08-14 晚上有人照它去 ESC 里找开关勾——**doc 里同一件事写两处,
+一处更新一处没更新,先读到的那处就是坑**:
 - `showLootSource`:物品 tooltip 加一行来源。团本 `副本名 #N Boss名`,大秘境只给副本名。
 - `showGearPanel`:两个侧栏最左列部位名变可点,点开右侧挂载窗口列该部位候选,按属性契合排序。
 
@@ -449,7 +451,16 @@ ItemBonusListGroupEntry   ItemBonusListGroupID -> ItemBonusListID + SequenceValu
 本节开头长期停在 1.9.0,那时 1.10.0 已经上了 CurseForge)。
 **现版本查这三处**:`git tag -l 'DodoInspect-v*'` · TOC 的 `## Version` · `PUBLISHING.md` §8。
 
-## 1.10.0:掉落来源 tooltip + 部位候选面板首发
+## 1.11.0:武器主手 / 副手进候选面板
+内容全在上面「2026-08-14 OMEN 第三轮:武器两行」那节,这里不重复。三条:
+- 武器主手/副手从 `UNRANKED_SLOTS` 放出来,**两行按专精真实配装形态耦合**排序
+  (CAN 从 `SkillLine` 推导、SHOULD 手写 `WEAPON_SHAPE`);21 个模糊专精出「双手 | 单手」切换,
+  切一下两行一起变 ⇒ 结构上构造不出「法杖 + 圣物」这种不可能组合。
+- 修:**所有盾被标成力量**,智力职业副手一件看不到(神圣骑空)。多主属性有两种编码方式,
+  生成器只认单条混合码,两条分写的取第一条就把 INT 丢了。
+- 修:`gen_loot.py` 的护栏全部以 exit 0 结束(裸 `main()`)——开发工具,玩家侧无影响。
+
+## 历史:1.10.0(tag `DodoInspect-v1.10.0`):掉落来源 tooltip + 部位候选面板首发
 内容全在上面那几节(掉落来源 / 部位候选面板 / bonusID tooltip / 面板瘦身 + 权重曲线),
 这里不重复。
 
