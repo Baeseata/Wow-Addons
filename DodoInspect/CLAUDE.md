@@ -169,7 +169,9 @@ lua tools/test_gearrank.lua       # 60 项离线测试,必须 0 failures
 > ② ~~不看装等~~ → Jerry 拍板让 344 档进排序,而且装等后来查得到了(见 `ItemScalingConfig` 那节);
 > ③ ~~饰品不排序(价值在特效)~~ → **那个理由已被证伪** —— sim 数据本来就把特效算进去了,
 > 而且存在可用的免费结构化数据源。调研与判据见
-> [`TRINKET_DATA_RESEARCH_2026-08-14.md`](TRINKET_DATA_RESEARCH_2026-08-14.md);**做不做仍未拍板**。
+> [`TRINKET_DATA_RESEARCH_2026-08-14.md`](TRINKET_DATA_RESEARCH_2026-08-14.md)。
+> **2026-08-14 晚 Jerry 拍板并已施工**(全开按钮 + 没数据显式文案 / 钉死单目标 /
+> 跟赛季手动重抓)—— 见下面「饰品排序」那节。**这条边界现在整条作废,三条全部作废了。**
 >
 > 🔑 心法:**「设计上就不做」的理由会过期,而写下它的那句话不会自己更新。**
 > 每条边界都该能说出**它依赖的那个前提**,下次碰到时先问那个前提还在不在。
@@ -356,7 +358,9 @@ ItemBonusListGroupEntry   ItemBonusListGroupID -> ItemBonusListID + SequenceValu
 
 ### 2026-08-14 OMEN 第二轮:面板瘦身 + 权重曲线(Jerry 看过真机后提的 4 条)
 
-1. **武器 / 饰品这期不做** —— `GearPanel.UNRANKED_SLOTS` 里的 3 个 key
+1. **武器 / 饰品这期不做** —— ⚠ **本条已整条作废**:武器 1.11.0 放出来了,饰品 1.12.0 放出来了,
+   `UNRANKED_SLOTS` **现在是空的**。留着是因为下面那句「不建按钮而不是给空列表」的理由仍然有效。
+   〔原文〕`GearPanel.UNRANKED_SLOTS` 里的 3 个 key
    (`INVTYPE_TRINKET` / `WEAPONMAINHAND` / `WEAPONOFFHAND`)**不给部位按钮**。
    过滤放在 `AttachSlotButton` 一处,同时覆盖侧栏和检视面板。
    ⚠ 做法是**不建按钮**而不是"点开后给空列表" —— 看着能点、点开是空的比不能点更糟。
@@ -445,13 +449,57 @@ ItemBonusListGroupEntry   ItemBonusListGroupID -> ItemBonusListID + SequenceValu
 元素萨(262)· 恢复萨(264)· 术士 3(265/266/267)· 酒仙(268)· 踏风(269)· **织雾(270)** ·
 唤魔师 3(1467/1468/1473)。⚠ **织雾僧容易被漏掉** —— 交接口述清单里就漏过一次,数出来只有 20 个。
 
+## 饰品排序(1.12.0)—— 唯一一个不按副属性排的部位
+
+**为什么非要外部数据**:42 件饰品里 **33 件零副属性** ⇒ `ns.StatFit` 对它们全返回 nil,
+排其他所有部位的那套逻辑**结构上无从下手**。价值在 on-item 效果(42/42 都有),
+而效果正是 sim 定价、副属性排序永远看不见的东西。
+
+**换赛季怎么重跑**(跟 `gen_loot.py` 一个节奏,手动):
+```
+python tools/gen_trinkets.py --dry-run    # 先看覆盖率,不写文件
+python tools/gen_trinkets.py              # 重写 Data/Trinkets.lua
+lua tools/test_gearrank.lua               # 必须 0 failures
+```
+
+**生成器里那三条断言别删**,每条对应一个实测过的坑:
+1. **spec slug 从 bloodmallet 自己的 `classes_specs.js` 取,不手打** —— slug 写错和该专精真没数据
+   **返回一模一样的 `{"status":"error"}`**,手打清单会产出读起来完全像真缺口的假阴性。
+2. **所有 payload 的 `simc_settings.tier` 必须一致** —— 🔴 端点会**不吭声地端出上赛季数据**
+   (实测德鲁伊平衡的 `phials` 是 `tier=MID1`),HTTP 200、格式全对、没有任何字段说它过期。
+   漏了这条就会静默发布上赛季的排名。
+3. **specID 必须跟 `ns.SpecGear` 逐个对上** —— 两份手写的专精清单必然漂。
+
+**三个设计决定**(Jerry 2026-08-14 拍板,理由与实测量在
+[`TRINKET_DATA_RESEARCH_2026-08-14.md`](TRINKET_DATA_RESEARCH_2026-08-14.md)):
+- **钉死单目标**(`castingpatchwerk`)。⚠ `castingpatchwerk5` **不是第三个选项**,它是单目标那批的
+  **严格子集**(15/40),拿它当 AOE 口径会同时丢覆盖率和两个专精。
+- **40 个专精全给按钮**;没数据的**照常列出该部位的饰品**(每行标 unranked)+ 上方一行说明。
+  ⚠ 不列 = 「装备从列表里消失读起来像数据不全」,跟 azerite 那 14 件保留并标记同一条理由。
+- **sim 名次压过 344 装等档**。sim 已经拿每件在**它自己的装等上限**上比过,再套 344 提升
+  = **把那十点装等算两遍**。A/B 实测:去掉那个分支,270173 当场跳到第一。
+
+⚠ **别拿某个装等去横向比** —— 每件饰品只在**它自己那条轨道**上有数据点(14 件只有 298),
+没有任何一个装等能比全部。用 `sorted_data_keys`(= 每件在自己上限上比),它已经解决了这个问题。
+
+⚠ **同一个 itemID 会出现多行**(`Ruby Whelp Shell` 四种配置各一行)—— 生成器取名次最好那个变体。
+
 ## 版本历史 —— ⚠ **「当前是哪版」别在这儿读**
 
 这份 doc 记的是**每版做了什么**(内容不变),不是**现在发到哪版**(会烂,而且烂过:
 本节开头长期停在 1.9.0,那时 1.10.0 已经上了 CurseForge)。
 **现版本查这三处**:`git tag -l 'DodoInspect-v*'` · TOC 的 `## Version` · `PUBLISHING.md` §8。
 
-## 1.11.0:武器主手 / 副手进候选面板
+## 1.12.0:饰品进候选面板(按模拟数据排)
+内容全在上面「饰品排序」那节,这里不重复。三条:
+- 饰品从 `UNRANKED_SLOTS` 放出来 —— 那张表**现在空了**,所有部位都有按钮。排序来自
+  bloodmallet.com 的 SimulationCraft 结果(新增 `Data/Trinkets.lua` + `tools/gen_trinkets.py`)。
+- **覆盖不全是这个功能的形状,不是 bug**:数据源只覆盖一部分专精,覆盖到的专精列表基本是满的
+  (只漏 1~2 件),没覆盖的**照常列出饰品 + 明说「暂无模拟数据」**。⚠ **治疗一个都没有。**
+- Options 那条开关的说明改了 —— 原文写着「trinket procs are not scored」,**对饰品行已经不成立**,
+  顺带加了 bloodmallet 署名(它的许可要求)。
+
+## 历史:1.11.0:武器主手 / 副手进候选面板
 内容全在上面「2026-08-14 OMEN 第三轮:武器两行」那节,这里不重复。三条:
 - 武器主手/副手从 `UNRANKED_SLOTS` 放出来,**两行按专精真实配装形态耦合**排序
   (CAN 从 `SkillLine` 推导、SHOULD 手写 `WEAPON_SHAPE`);21 个模糊专精出「双手 | 单手」切换,

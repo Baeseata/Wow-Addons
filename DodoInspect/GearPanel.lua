@@ -457,6 +457,15 @@ function ns.RefreshGearPanel()
         end
         notes[#notes + 1] = note
     end
+    -- The trinket row is ordered by simulation, and the source does not
+    -- cover every spec. Saying so is the point: the rows below are still
+    -- worth showing (they are what drops for this slot), but presenting
+    -- them in an arbitrary order under the same header as every ranked
+    -- list would be a confident lie about which one is better.
+    if state.slotKey == ns.TRINKET_SLOT and specID
+       and not ns.TrinketOrder(specID) then
+        notes[#notes + 1] = ns.L.gearNoTrinketSim or ""
+    end
     -- provisional lives on the spec entry, not on the resolved build, and
     -- StatPrioritySpecCurrent only answers "is this spec live at all".
     local specData = specID and ns.StatPriority and ns.StatPriority[specID]
@@ -661,8 +670,12 @@ local HOVER = { 0.45, 1.00, 1.00 }
 -- label that looks clickable and then opens an empty window is worse than
 -- one that was never interactive. Deleting a key here is all it takes to
 -- bring the slot back.
+-- Deliberately empty: trinkets were the last entry and left when they got
+-- a simulation-backed order (ns.TrinketOrder). Kept rather than deleted --
+-- it is the one place that withholds a slot button, and the reasoning
+-- above is what a future slot would need. Adding a key here is still all
+-- it takes.
 local UNRANKED_SLOTS = {
-    INVTYPE_TRINKET = true,
 }
 
 local function ApplyButtonLook(button)

@@ -166,7 +166,7 @@ function ns.RegisterOptions()
             AddFeatureCheckbox(category,
                 "DODO_INSPECT_GEAR_PANEL", "showGearPanel",
                 "Slot candidate panel",
-                "Make the slot labels in the gear side panels clickable. Clicking one opens a list of this season's drops for that slot, ranked by how well their secondary stats match the stat priority. It is a stat-fit ranking, not a best-in-slot list: item level, tier bonuses, on-item effects and trinket procs are not scored.",
+                "Make the slot labels in the gear side panels clickable. Clicking one opens a list of this season's drops for that slot. Most slots are ranked by how well their secondary stats match the stat priority -- a stat-fit ranking, not a best-in-slot list, with tier bonuses and on-item effects flagged beside a row but never scored. Trinkets are the exception: most carry no secondary stats at all, so their order comes from SimulationCraft results published by bloodmallet.com, single target. Specs bloodmallet has not simulated say so in the panel instead of guessing.",
                 function()
                     ns.CloseGearPanel()
                     ns.UpdateSlotButtonStates()

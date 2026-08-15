@@ -531,5 +531,100 @@ do
           "InspectSpecID never hands a non-string unit to the client API")
 end
 
+--------------------------------------------------------------------
+-- Trinkets: the one slot ordered by simulation instead of stat fit.
+--
+-- The interesting cases are both about ABSENCE. The source covers only
+-- part of the spec list, and 33 of the 42 trinkets carry no secondary
+-- stats -- so "no rank" and "no stats" are two different states that the
+-- old code would have collapsed into one.
+--------------------------------------------------------------------
+loadAddonFile("Data/Trinkets.lua")
+
+do
+    -- Every spec in the generated table must exist in ns.SpecGear. The two
+    -- lists are written by different tools; this is the only place they meet.
+    local unknown = {}
+    for specID in pairs(ns.TrinketRank) do
+        if not ns.SpecGear[specID] then unknown[#unknown + 1] = specID end
+    end
+    checkEqual(#unknown, 0,
+               "every spec id in Data/Trinkets.lua exists in ns.SpecGear")
+
+    -- Covered vs uncovered must be distinguishable, and "uncovered" must be
+    -- nil rather than an empty table -- the panel says different things.
+    local covered = ns.TrinketOrder(258)          -- shadow priest
+    check(covered ~= nil, "TrinketOrder answers for a covered spec (258)")
+    check(ns.TrinketOrder(71) == nil,
+          "TrinketOrder returns nil, not an empty table, for an uncovered "
+          .. "spec (71 arms warrior has no simulation data)")
+    check(ns.TrinketOrder(nil) == nil, "TrinketOrder tolerates a nil specID")
+
+    -- Reverse assertion: without this, an empty ns.TrinketRank would pass
+    -- every check above while proving nothing.
+    local ranks = 0
+    for _ in pairs(covered) do ranks = ranks + 1 end
+    check(ranks > 10,
+          "the covered spec actually carries a substantial order "
+          .. "(guards against an empty or truncated data file)")
+
+    local first = ns.TrinketRank[258][1]
+    checkEqual(covered[first], 1, "rank 1 maps to the first listed item id")
+end
+
+do
+    orderUnderTest = { "haste", "crit", "mastery", "versatility" }
+
+    local ranked = ns.SlotCandidates("INVTYPE_TRINKET", 258, nil, "raid")
+    check(ranked and #ranked > 0, "trinket row returns candidates for 258")
+
+    -- Simulation order drives the list, and it must beat the 344 item level
+    -- promotion: the simulation already compared each trinket at its own
+    -- ceiling, so letting topItemLevel jump the queue prices those ten item
+    -- levels twice. A/B: delete the simRank branch in the comparator and
+    -- this flips to the 344 piece.
+    checkEqual(ranked[1].id, ns.TrinketRank[258][1],
+               "the sim's best trinket sorts first, ahead of any 344 piece")
+    checkEqual(ranked[1].simRank, 1, "first row carries simRank 1")
+
+    local lastRanked, firstUnranked
+    for i = 1, #ranked do
+        if ranked[i].simRank then lastRanked = i
+        elseif not firstUnranked then firstUnranked = i end
+    end
+    check(not firstUnranked or firstUnranked > lastRanked,
+          "trinkets the simulation did not cover sink below the ranked ones")
+
+    -- Most trinkets have no secondary stats, so scoring by stat fit would
+    -- flag nearly the whole list. Under simulation they are properly ranked.
+    local statless, flagged = 0, 0
+    for i = 1, #ranked do
+        if ranked[i].score == nil then statless = statless + 1 end
+        if ranked[i].unranked then flagged = flagged + 1 end
+    end
+    check(statless > flagged,
+          "a statless trinket is still ranked -- 'unranked' on this row "
+          .. "means the sim skipped it, not that it has no secondaries")
+end
+
+do
+    -- The uncovered spec must still list its trinkets. An item vanishing
+    -- reads as missing data; every row flagged plus the panel's note reads
+    -- as what it is.
+    orderUnderTest = { "haste", "crit", "mastery", "versatility" }
+    local rows, unranked = ns.SlotCandidates("INVTYPE_TRINKET", 71, nil, "raid")
+    check(rows and #rows > 0,
+          "an uncovered spec still sees its trinkets rather than an empty list")
+    checkEqual(unranked, #rows,
+               "with no simulation data every trinket row is flagged unranked")
+    for i = 1, #rows do
+        if rows[i].simRank ~= nil then
+            checkEqual(rows[i].simRank, nil,
+                       "no row carries a simRank when the spec is uncovered")
+            break
+        end
+    end
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

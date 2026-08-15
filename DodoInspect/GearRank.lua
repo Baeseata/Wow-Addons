@@ -70,6 +70,32 @@ function ns.ReachesTopItemLevel(entry)
     return (positions and positions[entry[3]]) == true
 end
 
+-- The one slot whose order comes from simulation instead of stat fit.
+--
+-- 33 of the 42 trinkets in Data/Loot.lua have no secondary stats at all, so
+-- ns.StatFit returns nil for them and the sort that orders every other slot
+-- has nothing to work with. Their value sits in the on-item effect, which a
+-- simulation prices and a stat sort structurally cannot see. Data/Trinkets.lua
+-- carries that order; see TRINKET_DATA_RESEARCH_2026-08-14.md.
+ns.TRINKET_SLOT = "INVTYPE_TRINKET"
+
+-- specID -> { [itemID] = rank }, or nil when the source has no data for
+-- this spec. nil and "ranked nothing" are different answers and the panel
+-- says different things about them, so this never returns an empty table.
+function ns.TrinketOrder(specID)
+    if not specID or not ns.TrinketRank then return nil end
+    local order = ns.TrinketRank[specID]
+    if not order or #order == 0 then return nil end
+    local rank = {}
+    for i = 1, #order do
+        -- First listing wins: the generator already collapsed a trinket's
+        -- several simulated configurations down to its best-placed one, and
+        -- a second pass here would silently prefer the worst.
+        if rank[order[i]] == nil then rank[order[i]] = i end
+    end
+    return rank
+end
+
 -- Which item primary stats a spec can actually use. An item tagged SI
 -- (Strength or Intellect) is usable by both, so the plate healer and the
 -- plate DPS share it, while a pure STR item is warriors-only.
@@ -369,6 +395,12 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
     local weights = ns.StatWeights(order)
     if not weights then return nil end
 
+    -- Trinkets rank from simulation, not stat fit. A nil table here means
+    -- the source covers no data for this spec at all; the panel reports
+    -- that in words rather than presenting an arbitrary order as a ranking.
+    local trinketRow = (slotKey == ns.TRINKET_SLOT)
+    local trinketRank = trinketRow and ns.TrinketOrder(specID) or nil
+
     local fits = PRIMARY_FIT[primaryStat]
     local out, unranked = {}, 0
 
@@ -402,13 +434,25 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
             end
             if keep then
                 local score = ns.StatFit(entry, weights)
-                if not score then unranked = unranked + 1 end
+                -- On the trinket row "unranked" has to mean "the simulation
+                -- did not cover this one". Reusing the stat-fit meaning
+                -- there would flag 33 of 42 trinkets as unrankable while
+                -- they sit in a perfectly good simulated order.
+                local simRank = trinketRank and trinketRank[itemID] or nil
+                local isUnranked
+                if trinketRow then
+                    isUnranked = (simRank == nil)
+                else
+                    isUnranked = (score == nil)
+                end
+                if isUnranked then unranked = unranked + 1 end
                 out[#out + 1] = {
                     id = itemID,
                     score = score,
                     entry = entry,
                     effect = entry[9] == 1,
-                    unranked = (score == nil),
+                    unranked = isUnranked,
+                    simRank = simRank,
                     topItemLevel = ns.ReachesTopItemLevel(entry),
                 }
             end
@@ -419,6 +463,15 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
     -- top stat is, then on item id so the order never shuffles between
     -- two openings of the same panel.
     table.sort(out, function(a, b)
+        -- Simulation rank outranks everything, including the item level
+        -- tier below -- the simulation already compared each trinket at its
+        -- own item level ceiling, so applying the 344 promotion on top
+        -- would price those ten item levels in twice. Only the trinket row
+        -- ever carries simRank, so no other slot can reach this branch.
+        if a.simRank ~= b.simRank then
+            if a.simRank and b.simRank then return a.simRank < b.simRank end
+            return a.simRank ~= nil
+        end
         -- Item level tier first: 344 beats any stat fit at 334. Applied
         -- before the unranked check so a statless 344 piece would still
         -- outrank a statless 334 one, and after nothing at all.
