@@ -676,25 +676,156 @@ local HOVER = { 0.45, 1.00, 1.00 }
 --
 -- Enforced by withholding the button, not by hiding the panel later: a
 -- label that looks clickable and then opens an empty window is worse than
--- one that was never interactive. Deleting a key here is all it takes to
--- bring the slot back.
--- Deliberately empty: trinkets were the last entry and left when they got
--- a simulation-backed order (ns.TrinketOrder). Kept rather than deleted --
--- it is the one place that withholds a slot button, and the reasoning
--- above is what a future slot would need. Adding a key here is still all
--- it takes.
+-- one that was never interactive.
+--
+-- Deliberately empty since trinkets got a simulation-backed order and left
+-- as the last entry. Kept rather than deleted: it is the one place that
+-- withholds a slot button, and the reasoning above is what a future slot
+-- would need. Adding a key here is still all it takes.
 local UNRANKED_SLOTS = {
 }
 
+-- The slot label's button face. Blizzard's own panel-button art, three
+-- sliced so the rounded caps keep their shape at any label width.
+--
+-- Drawn on the ROW at ARTWORK, not on the button frame: a child frame
+-- renders above its parent's regions, so a texture parented to the button
+-- would sit on top of the label it is supposed to sit behind. The existing
+-- underline is on the row for the same reason.
+--
+-- Verified at runtime rather than assumed. If the texture ever stops
+-- shipping, SetTexture fails silently and leaves nothing on screen -- so
+-- the caps are dropped and the middle becomes a flat chip instead. That
+-- degrades to "plainer button", never to "invisible button", which is the
+-- failure this whole change exists to fix.
+-- Texture coordinates copied from Blizzard's own UIPanelButtonTemplate,
+-- NOT derived from the file's dimensions.
+--
+-- The button art occupies only the left ~62% of the 128px texture. An
+-- earlier version assumed it filled the width and sliced it 0/0.09,
+-- 0.09/0.91, 0.91/1.0 -- so the right cap sampled blank pixels and the
+-- real right bevel ended up somewhere inside the stretched middle. The
+-- rect stayed perfectly symmetric (measured: face and text both centred on
+-- 24.0) while the drawing inside it sat left, which reads as the label
+-- being pushed right. Measuring geometry can never catch that; only
+-- looking at it can.
+local BUTTON_ART = "Interface\\Buttons\\UI-Panel-Button-Up"
+local ART_V0, ART_V1 = 0, 0.6875
+local ART_LEFT = { 0, 0.09375 }
+local ART_MID = { 0.09375, 0.53125 }
+local ART_RIGHT = { 0.53125, 0.62109375 }
+local CAP_W = 12
+
+-- Room the face needs on either side of the label text. Both panels widen
+-- their slot column by this, and the face then spans that column exactly.
+-- Declared once, here with the drawing code, because two panels sizing a
+-- column around a number a third file draws to is how the two quietly
+-- drift apart.
+--
+-- Reserved even when the feature is off: a few pixels of unused column
+-- beats the panel changing width the moment someone ticks the option.
+ns.SLOT_FACE_PAD = 6
+
+-- Gap after the slot column, as a multiple of the panel font size. Wider
+-- than it used to be: the original 0.3 was chosen when the slot was plain
+-- text, where sitting close to the first stat read as one tidy group. A
+-- raised button bevel needs air around it or the two columns look jammed
+-- together. Kept font-relative so small panel fonts do not end up with a
+-- gap wider than their own text.
+ns.SLOT_GAP_FACTOR = 0.8
+
+local function SkinSlotLabel(row, button)
+    local left = row:CreateTexture(nil, "ARTWORK")
+    local mid = row:CreateTexture(nil, "ARTWORK")
+    local right = row:CreateTexture(nil, "ARTWORK")
+
+    left:SetTexture(BUTTON_ART)
+    local ok = left:GetTexture() ~= nil
+    if ok then
+        mid:SetTexture(BUTTON_ART)
+        right:SetTexture(BUTTON_ART)
+        left:SetTexCoord(ART_LEFT[1], ART_LEFT[2], ART_V0, ART_V1)
+        mid:SetTexCoord(ART_MID[1], ART_MID[2], ART_V0, ART_V1)
+        right:SetTexCoord(ART_RIGHT[1], ART_RIGHT[2], ART_V0, ART_V1)
+        left:SetWidth(CAP_W)
+        right:SetWidth(CAP_W)
+    else
+        left:Hide()
+        right:Hide()
+        mid:SetColorTexture(0.25, 0.25, 0.3, 0.9)
+    end
+
+    -- Built outward from the CENTRE of the label cell, and sized to the
+    -- text (FitFace below) rather than to the cell.
+    --
+    -- The first two attempts anchored it to the cell's edges instead, and
+    -- both looked wrong for the same reason: the cell is sized for two
+    -- Latin characters, while a Chinese label is one glyph. A button twice
+    -- the width of its own text reads as a bar with something adrift in
+    -- it, and any pixel of asymmetry anywhere then shows up as the text
+    -- "not being centred". Growing from the middle cannot be lopsided.
+    mid:SetPoint("CENTER", row.slot, "CENTER", 0, 0)
+    mid:SetPoint("TOP", row.slot, "TOP", 0, 3)
+    mid:SetPoint("BOTTOM", row.slot, "BOTTOM", 0, -3)
+    if ok then
+        left:SetPoint("RIGHT", mid, "LEFT", 0, 0)
+        left:SetPoint("TOP", mid, "TOP", 0, 0)
+        left:SetPoint("BOTTOM", mid, "BOTTOM", 0, 0)
+        right:SetPoint("LEFT", mid, "RIGHT", 0, 0)
+        right:SetPoint("TOP", mid, "TOP", 0, 0)
+        right:SetPoint("BOTTOM", mid, "BOTTOM", 0, 0)
+    end
+
+    button.skin = { left, mid, right }
+    button.skinArt = ok
+end
+
+-- Size the face to the label's RENDERED width, not to the cell it sits in.
+-- Has to be re-run whenever the text or the font changes, which is why
+-- ApplyButtonLook does it: that already runs on every state refresh.
+--
+-- GetStringWidth answers 0 before the string has been laid out, so an
+-- early call leaves the previous width alone rather than collapsing the
+-- face to nothing.
+-- Small, because the caps already contribute 12px of bevel on each side.
+local FACE_TEXT_PAD = 2
+
+local function FitFace(button)
+    if not button.skin then return end
+    local textW = button.label:GetStringWidth()
+    if not textW or textW <= 0 then return end
+    local cellW = button.label:GetWidth() or 0
+    local caps = button.skinArt and CAP_W * 2 or 0
+    local widest = cellW - caps
+    local want = textW + FACE_TEXT_PAD
+    if widest > 8 and want > widest then want = widest end
+    button.skin[2]:SetWidth(math.max(8, want))
+end
+
 local function ApplyButtonLook(button)
-    local open = ns.GearPanelActive()
+    FitFace(button)
+    local enabled = ns.GearPanelActive()
+    local open = enabled
                  and ns.GearPanelSlotKey() == button.slotKey
                  and button.owner == state.anchor
     local lit = open or button.hovered
     local color = lit and HOVER or IDLE
     button.label:SetTextColor(color[1], color[2], color[3], 1)
     button.underline:SetColorTexture(color[1], color[2], color[3], open and 1 or 0.6)
-    button.underline:SetShown(lit and ns.GearPanelActive())
+    button.underline:SetShown(lit and enabled)
+
+    -- The face is shown whenever the feature is on, not only on hover:
+    -- the whole point is that a player who has never hovered it can tell
+    -- it is a button. It disappears with the feature, because a control
+    -- that looks pressable and does nothing is worse than plain text.
+    if button.skin then
+        local tint = open and 1.35 or (button.hovered and 1.15 or 1)
+        for i, tex in ipairs(button.skin) do
+            -- index 2 is the middle, the only piece the fallback uses.
+            tex:SetShown(enabled and (button.skinArt or i == 2))
+            if button.skinArt then tex:SetVertexColor(tint, tint, tint, 1) end
+        end
+    end
 end
 
 function ns.UpdateSlotButtonStates()
@@ -750,6 +881,9 @@ function ns.AttachSlotButton(row, ownerPanel, unit)
     button.underline:SetPoint("TOPLEFT", row.slot, "BOTTOMLEFT", 0, 1)
     button.underline:SetPoint("TOPRIGHT", row.slot, "BOTTOMRIGHT", 0, 1)
     button.underline:Hide()
+
+    SkinSlotLabel(row, button)
+    ApplyButtonLook(button)
 
     button:SetScript("OnEnter", function(self)
         self.hovered = true

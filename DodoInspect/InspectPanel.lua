@@ -26,9 +26,12 @@ local SLOT_W, ILVL_X, ILVL_W, STAT_X, STAT_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
     FS        = ns.InspectPanelFontSize()
-    SLOT_W    = math.floor(FS * 2.0)
-    -- item level column, between the slot box and the stat grid
-    ILVL_X    = SLOT_W + math.floor(FS * 0.3)
+    -- Same reservation the character side panel makes: this column also
+    -- carries a clickable slot button, and its face spans the whole cell.
+    SLOT_W    = math.floor(FS * 2.0) + (ns.SLOT_FACE_PAD or 0) * 2
+    -- Item level column, between the slot button and the stat grid. Same
+    -- gap the character panel uses; this column also carries a button now.
+    ILVL_X    = SLOT_W + math.floor(FS * (ns.SLOT_GAP_FACTOR or 0.3))
     ILVL_W    = math.floor(FS * 2.2)
     STAT_X    = ILVL_X + ILVL_W + math.floor(FS * 0.9)
     STAT_STEP = math.floor(FS * 1.6)
@@ -103,8 +106,10 @@ local function CreateRow(parent, slotInfo)
         return fs
     end
 
-    -- slot abbreviation (left edge of the row; width set by geometry)
-    row.slot = NewText("LEFT")
+    -- Slot abbreviation (left edge of the row; width set by geometry).
+    -- Centered for the same reason as the character panel: the button face
+    -- spans the cell, and a label against its left bevel looks like text.
+    row.slot = NewText("CENTER")
     row.slot:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
@@ -393,6 +398,10 @@ function ns.UpdateInspectPanel()
             row:Hide()
         end
     end
+
+    -- After the text is in place: the slot button faces size themselves to
+    -- the rendered label, and GetStringWidth only answers once it is set.
+    if ns.UpdateSlotButtonStates then ns.UpdateSlotButtonStates() end
 
     LayoutRows()
 end

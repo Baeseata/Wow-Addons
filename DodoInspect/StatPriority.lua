@@ -385,6 +385,9 @@ function ns.SetupStatPriorityHeader(panel)
     if panel.dodoPri then return panel.dodoPri end
 
     local h = CreateFrame("Frame", nil, panel)
+    -- Anchored here only as a starting position; UpdateStatPriorityHeader
+    -- re-anchors it every refresh because the indent (see below) can be
+    -- set after this frame is built.
     h:SetPoint("TOPLEFT", panel, "TOPLEFT", 6, -6)
 
     local function NewFS()
@@ -432,7 +435,14 @@ function ns.UpdateStatPriorityHeader(panel, specID, subTreeID, heroName, fontSiz
     h.specID = specID
     h.subTreeID = subTreeID
     h.heroName = heroName
-    local width = (panelW or panel:GetWidth() or 200) - 12
+    -- Panels that put a control in their top-left corner declare how much
+    -- room it needs; this line then starts to the right of it instead of
+    -- underneath it. Zero for panels with nothing up there (the inspect
+    -- panel), so they are unaffected.
+    local indent = panel.dodoPriorityIndent or 0
+    h:ClearAllPoints()
+    h:SetPoint("TOPLEFT", panel, "TOPLEFT", 6 + indent, -6)
+    local width = (panelW or panel:GetWidth() or 200) - 12 - indent
     local fs1, fs2, div = h.line1, h.line2, h.divider
 
     ns.SetOverlayFont(fs1, fontSize, "OUTLINE")

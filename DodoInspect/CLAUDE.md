@@ -135,8 +135,11 @@ spec 那条没有。⇒ **同一条高危路径上可以有两种完全不同的
 
 > ⚠ **本节的横幅原来写的是「🚧 未发版 / 游戏内零验证」—— 那句已经不成立**
 > (HOME 真机跑过一部分,之后发了版)。**发版状态一律别在这份 doc 里读**:查
-> `Wow-Addons/PUBLISHING.md` §8 那张表 + `git tag -l 'DodoInspect-v*'`
+> `gh run list --repo Baeseata/Wow-Addons`(**CI 的运行记录是一次性写入的,不会被编辑**,
+> 比 tag 和 doc 都可靠;点进去看 CurseForge 那步回的 file id 就是上传回执)
 > + `git ls-remote --tags origin 'DodoInspect-*'`(有 `^{}` peel 行才是 annotated)。
+> ⚠ 原文这里指向 `Wow-Addons/PUBLISHING.md` §8 —— **那个文件在 repo 里不存在**
+> (2026-08-14 `git ls-files` 实查,带负对照)。别再去找它。
 > 本节只留技术内容;还欠着的真机验证见下面那张清单。
 
 **新增文件**:`Data/Loot.lua`(生成物)· `LootSource.lua` · `GearRank.lua` · `GearPanel.lua`
@@ -484,6 +487,33 @@ lua tools/test_gearrank.lua               # 必须 0 failures
 
 ⚠ **同一个 itemID 会出现多行**(`Ruby Whelp Shell` 四种配置各一行)—— 生成器取名次最好那个变体。
 
+### 🔴 三切片纹理:texcoord 必须**抄暴雪的模板**,别按图片尺寸推(2026-08-14,烧了四轮)
+
+给部位标签加暴雪按钮面时,我按「128px 宽的图,左右各切一小条」推出
+`0/0.09` · `0.09/0.91` · `0.91/1.0`。**错的** —— `UI-Panel-Button-Up` 的按钮 art
+**只占左边约 62%**,右边是空的。`UIPanelButtonTemplate` 的真值:
+
+| 块 | texcoord(横) | 原生宽 |
+|---|---|---|
+| 左帽 | `0 → 0.09375` | 12 |
+| 中段 | `0.09375 → 0.53125` | 拉伸 |
+| 右帽 | `0.53125 → 0.62109375` | 12 |
+
+竖直一律 `0 → 0.6875`。
+
+🔑 **这条最值钱的是它的症状,不是那几个数**:**矩形完美对称,而画面偏。**
+我实测过 —— 文字格 `0→48` 居中、按钮面 `2.17→45.83` 中心 24.0、字左右各空 11.0px,
+**几何严格对称**;而 Jerry 眼里字一直偏右。因为右帽采到的是**空白**,真正的右侧立体边缘
+被塞在拉伸的"中段"里、出现在偏左的位置 ⇒ 可见按钮左移 ⇒ 字看着右移。
+
+⇒ **判据:量出来对称、看上去偏 ⇒ 别再调几何,去查矩形里画的是什么。**
+我在横轴上白调了三轮(改对齐、改列宽、改成从中心往外长),因为我一直假设
+「看着偏 = 位置偏」。**位置和图像是两回事,而只有后者用眼睛才看得见。**
+
+⚠ 连带教训:`ipairs({frame:GetRegions()})` **中间遇到 nil 会当场停**,一条都不打 ——
+我头两条诊断命令因此完全静默,而「没输出」被读成了「结构跟我想的不一样」。
+量 region 用定长 `for i=1,N`。**又是探针自己报的"没有"。**
+
 ### 🔴 首日就撞的坑:`unranked` 一个字段背着三件事(2026-08-14,Jerry 真机抓到)
 
 `entryRow.unranked` 当时同时驱动 **① 排序 ② 属性列打 `-` ③ tooltip 给不给升级 bonusID**。
@@ -509,16 +539,34 @@ lua tools/test_gearrank.lua               # 必须 0 failures
 
 这份 doc 记的是**每版做了什么**(内容不变),不是**现在发到哪版**(会烂,而且烂过:
 本节开头长期停在 1.9.0,那时 1.10.0 已经上了 CurseForge)。
-**现版本查这三处**:`git tag -l 'DodoInspect-v*'` · TOC 的 `## Version` · `PUBLISHING.md` §8。
+**现版本查这三处**:`gh run list --repo Baeseata/Wow-Addons`(最可靠 —— 运行记录不可编辑)
+· `git ls-remote --tags origin 'DodoInspect-*'` · TOC 的 `## Version`。
+⚠ **不是 `PUBLISHING.md`,那个文件不存在**(2026-08-14 实查)。
 
-## 1.12.0:饰品进候选面板(按模拟数据排)
-内容全在上面「饰品排序」那节,这里不重复。三条:
+## 1.12.0:饰品进候选面板 + 侧栏收起 + 部位做成真按钮
+
+**饰品**(技术内容全在上面「饰品排序」那节):
 - 饰品从 `UNRANKED_SLOTS` 放出来 —— 那张表**现在空了**,所有部位都有按钮。排序来自
   bloodmallet.com 的 SimulationCraft 结果(新增 `Data/Trinkets.lua` + `tools/gen_trinkets.py`)。
-- **覆盖不全是这个功能的形状,不是 bug**:数据源只覆盖一部分专精,覆盖到的专精列表基本是满的
-  (只漏 1~2 件),没覆盖的**照常列出饰品 + 明说「暂无模拟数据」**。⚠ **治疗一个都没有。**
+- **覆盖不全是这个功能的形状,不是 bug**:数据源只覆盖一部分专精。覆盖到的列表基本是满的
+  (只漏 1~2 件);**没覆盖的专精什么都不列,只出一行「本专精暂无模拟数据」**。
+  ⚠ **治疗一个都没有。** ⚠ 第一版是「照常列出 + 每行标 unranked」,真机上**照样读成一个排名**
+  (一堆物品挂在这个面板的标题下,那就是排名的样子),Jerry 当场推翻 —— 这里没有次优顺序可退。
 - Options 那条开关的说明改了 —— 原文写着「trinket procs are not scored」,**对饰品行已经不成立**,
   顺带加了 bloodmallet 署名(它的许可要求)。
+
+**侧栏收起 / 展开**(`SidePanel.lua`):左上角 `UIPanelButtonTemplate` 按钮,状态存
+`DodoInspectDB.sidePanelCollapsed`,跨登录保持。三个要点:
+- 收起时**下锚点要摘掉**,否则只改宽度会留一条跟角色框等高的窄条。
+- **候选面板不是侧栏的子帧**,收缩带不走它 ⇒ 显式 `CloseGearPanel()`。
+- `UpdateSidePanel` 里那行 `row:Show()` 是**无条件**的 ⇒ 收起后换件装备行就全弹回来了。
+  已改 `SetShown(not collapsed)`。
+- 属性优先级行靠 `panel.dodoPriorityIndent` 给按钮让位(检视面板不设 ⇒ 宽度不变)。
+
+**部位标签做成暴雪按钮**:旋钮全在 `GearPanel.lua` 顶上 ——
+`ns.SLOT_GAP_FACTOR`(列间距) · `ns.SLOT_FACE_PAD`(列给面留的余量) ·
+`FACE_TEXT_PAD`(面比文字宽多少) · `CAP_W`(**别动,跟 texcoord 绑死**) ·
+`SidePanel.COLLAPSE_BTN`。⚠ 三切片 texcoord 的坑见上面那节,**烧了四轮**。
 
 ## 历史:1.11.0:武器主手 / 副手进候选面板
 内容全在上面「2026-08-14 OMEN 第三轮:武器两行」那节,这里不重复。三条:

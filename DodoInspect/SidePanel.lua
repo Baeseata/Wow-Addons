@@ -81,11 +81,15 @@ local SOCKET_SIZE, SOCKET_STEP, ROW_H, PANEL_W
 
 local function ComputeGeometry()
     FS          = ns.SidePanelFontSize()
-    SLOT_W      = math.floor(FS * 2.0)
-    -- gap from the slot box to the centered stat grid; kept tight so
-    -- the slot abbreviation sits close to the first stat (the 2-letter
-    -- Latin abbreviations still clear each other at this distance)
-    STAT_X      = SLOT_W + math.floor(FS * 0.3)
+    -- The label cell also has to hold the slot button's face, so it
+    -- reserves the padding that face needs on either side. Without this
+    -- the face still rendered -- it just overhung the cell and crowded the
+    -- stat grid, because everything downstream accumulates from SLOT_W.
+    SLOT_W      = math.floor(FS * 2.0) + (ns.SLOT_FACE_PAD or 0) * 2
+    -- Gap from the slot button to the stat grid. See ns.SLOT_GAP_FACTOR --
+    -- it is deliberately wider than the original 0.3, which was set when
+    -- this column was plain text rather than a bevelled button.
+    STAT_X      = SLOT_W + math.floor(FS * (ns.SLOT_GAP_FACTOR or 0.3))
     STAT_STEP   = math.floor(FS * 1.6)
     ILVL_X      = STAT_X + STAT_STEP * 3 + math.floor(FS * 0.9)
     ILVL_W      = math.floor(FS * 2.2)
@@ -302,8 +306,10 @@ local function CreateRow(parent, slotInfo)
         return hit
     end
 
-    -- slot abbreviation (left edge of the row; width set by geometry)
-    row.slot = NewText("LEFT")
+    -- Slot abbreviation (left edge of the row; width set by geometry).
+    -- Centered, not left-aligned: the button face spans the whole cell, and
+    -- a label shoved against its left bevel does not read as a button.
+    row.slot = NewText("CENTER")
     row.slot:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.slot:SetTextColor(0.25, 0.85, 0.85, 1)
 
@@ -373,6 +379,9 @@ end
 -- on very short frames fall back to an even spread.
 local function LayoutRows()
     if not panel or not rows then return end
+    -- Collapsed: the rows are hidden and the panel is a sliver. Laying out
+    -- into that width would leave them wrongly placed for the expand.
+    if ns.SidePanelCollapsed and ns.SidePanelCollapsed() then return end
     local height = panel:GetHeight()
     if not height or height <= 0 then return end
 
@@ -589,6 +598,67 @@ local function ApplyTabVisibility()
     end
 end
 
+------------------------------------------------------------------
+-- Collapse / expand
+------------------------------------------------------------------
+
+-- The toggle sits in the panel's top-left corner and the panel shrinks to
+-- just that corner, so the control that put it away is the control that
+-- brings it back -- in the same place, which is why the stat priority line
+-- is indented to leave the corner free rather than the button being moved.
+local COLLAPSE_BTN = 26
+local COLLAPSED_W = COLLAPSE_BTN + 12
+
+function ns.SidePanelCollapsed()
+    return DodoInspectDB and DodoInspectDB.sidePanelCollapsed == true
+end
+
+local function ApplyCollapsed()
+    if not panel then return end
+    local collapsed = ns.SidePanelCollapsed()
+
+    for _, row in ipairs(rows or {}) do
+        row:SetShown(not collapsed and row.shown ~= false)
+    end
+    -- Only forced down here. Expanding does not force it back up: whether
+    -- the header shows at all depends on the spec having data, and that is
+    -- UpdateStatPriorityHeader's answer to give, not ours.
+    if collapsed and panel.dodoPri then panel.dodoPri:Hide() end
+
+    -- Collapsed, the panel is a stub around the button, not a full-height
+    -- ribbon: the bottom anchor is what ties its height to the character
+    -- frame, so it has to be dropped rather than merely made narrow.
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 2, 0)
+    if collapsed then
+        panel:SetHeight(COLLAPSE_BTN + 10)
+    else
+        panel:SetPoint("BOTTOMLEFT", CharacterFrame, "BOTTOMRIGHT", 2, 0)
+    end
+    panel:SetWidth(collapsed and COLLAPSED_W or PANEL_W)
+    if panel.collapse then
+        panel.collapse:SetText(collapsed and ">" or "<")
+    end
+
+    -- The candidate window is anchored to this panel but is NOT a child of
+    -- it, so shrinking does not take it along -- it would be left floating
+    -- beside a panel that is no longer there.
+    if collapsed then
+        ns.CloseGearPanel()
+        ns.UpdateSlotButtonStates()
+    end
+end
+
+function ns.ToggleSidePanelCollapsed()
+    if not DodoInspectDB then return end
+    DodoInspectDB.sidePanelCollapsed = not ns.SidePanelCollapsed()
+    ApplyCollapsed()
+    if not ns.SidePanelCollapsed() then
+        ns.UpdateSidePanel()
+        LayoutRows()
+    end
+end
+
 function ns.SetupSidePanel()
     if panel or not ns.Config.PANEL_ENABLED then return end
     if not ns.IsEnabled("showSidePanel") then return end
@@ -616,9 +686,22 @@ function ns.SetupSidePanel()
         rows[index] = CreateRow(panel, slotInfo)
     end
 
+    -- Blizzard's panel button, same template the candidate window's own
+    -- toggles use, so this reads as a control rather than as decoration.
+    panel.collapse = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    panel.collapse:SetSize(COLLAPSE_BTN, COLLAPSE_BTN)
+    panel.collapse:SetPoint("TOPLEFT", panel, "TOPLEFT", 5, -5)
+    panel.collapse:SetScript("OnClick", ns.ToggleSidePanelCollapsed)
+
+    -- Tell the stat priority line to start clear of that corner. Declared
+    -- rather than hardcoded there, so the inspect panel -- which has no
+    -- such button -- keeps its full width.
+    panel.dodoPriorityIndent = COLLAPSE_BTN + 4
+
     ns.SetupStatPriorityHeader(panel)
 
     LayoutRows()
+    ApplyCollapsed()
     panel:SetScript("OnSizeChanged", LayoutRows)
     panel:SetScript("OnShow", function()
         C_Timer.After(0, function()
@@ -659,11 +742,14 @@ function ns.RebuildSidePanel()
         return
     end
     ComputeGeometry()
-    panel:SetWidth(PANEL_W)
     for _, row in ipairs(rows) do
         ApplyRowGeometry(row)
     end
     LayoutRows()
+    -- After the row geometry, not before: this is what sets the panel
+    -- width, and a collapsed panel must stay a sliver even though
+    -- ComputeGeometry just produced a new expanded PANEL_W for it.
+    ApplyCollapsed()
     ns.UpdateSidePanel()
 end
 
@@ -685,6 +771,12 @@ function ns.UpdateSidePanel()
         ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
     end
 
+    -- Collapsed hides every row regardless of what it would otherwise show.
+    -- Without this any refresh -- an equipment change is enough -- pops the
+    -- rows back out of a panel the player has put away, because the branch
+    -- below shows them unconditionally.
+    local collapsed = ns.SidePanelCollapsed()
+
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped
         local visible = true
@@ -693,12 +785,16 @@ function ns.UpdateSidePanel()
         end
         row.shown = visible
         if visible then
-            row:Show()
+            row:SetShown(not collapsed)
             UpdateRow(row)
         else
             row:Hide()
         end
     end
+
+    -- After the text is in place: the slot button faces size themselves to
+    -- the rendered label, and GetStringWidth only answers once it is set.
+    if ns.UpdateSlotButtonStates then ns.UpdateSlotButtonStates() end
 
     LayoutRows()
 end
