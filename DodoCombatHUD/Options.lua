@@ -103,6 +103,14 @@ function ns.RegisterOptions()
             "血条左上角那排,我打在目标身上的 DoT + 倒计时。位置是固定的 —— 掉了哪个就空哪一格,后面的不会左移。",
             ns.ApplyLayout)
 
+        AddCheckbox(category, "DCH_CDS_ON", "cdsOn", "大招存续图标",
+            "施法条**下方**那排,自己开的大招还剩多久。流式排列(有几个画几个)—— 跟上面那排 DoT 不一样,它不留空位。⚠ 位置不跟着施法条显隐动:不施法时中间会恒定空着一条施法条的高度,那是拿它换「位置全稳」买的。",
+            ns.ApplyLayout)
+
+        AddCheckbox(category, "DCH_RAID_ON", "raidOn", "别人给我的增益",
+            "血条**右上角**那一竖列:最上面一格专给嗜血一族(不跟任何东西抢位置),下面两格装能量灌注 / 外部保命这些。⚠ 这两格单人基本验不出来(嗜血要有人放、能量灌注要另一个牧师)—— 用 /dch lust 和 /dch buff 列出 ID 核对。",
+            ns.ApplyLayout)
+
         AddCheckbox(category, "DCH_SECONDARY_ON", "secondaryOn", "次要资源条",
             "圣能 / 连击点 / 灵魂碎片 / 真气 / 符文 / 奥术充能 / 精华这类「数颗数」的资源,画成一排格子夹在主资源和施法条之间。没有这类资源的专精不会占位置。毁灭术的碎片会显示成「三颗半」——那一颗的进度也画得出来。",
             ns.ApplyLayout)
@@ -179,6 +187,27 @@ function ns.RegisterOptions()
 
         AddSlider(ui, "DCH_DOT_YOFF", "dotYOffset", "DoT 离血条的距离",
             "那排图标底边离血条上沿多高。", -50, 50, ns.ApplyLayout)
+
+        AddHeader(uiLayout, "大招存续图标(施法条下方)")
+
+        AddSlider(ui, "DCH_CD_W", "cdWidth", "大招图标 宽", "", 8, 120, ns.ApplyLayout)
+        AddSlider(ui, "DCH_CD_H", "cdHeight", "大招图标 高",
+            "⚠ 跟宽不相等时图标会被拉伸(光环贴图本身是方的)。", 8, 120, ns.ApplyLayout)
+        AddSlider(ui, "DCH_CD_FONT", "cdFontSize", "大招倒计时 字号",
+            "三排各有自己的字号 —— 调这个不会动 DoT 那排。", 8, 60, ns.ApplyLayout)
+        AddSlider(ui, "DCH_CD_SPACING", "cdSpacing", "大招图标间距", "", 0, 40, ns.ApplyLayout)
+        AddSlider(ui, "DCH_CD_YOFF", "cdYOffset", "大招离施法条多远",
+            "那排图标顶边离施法条下沿多少像素。", -50, 100, ns.ApplyLayout)
+
+        AddHeader(uiLayout, "别人给我的增益(血条右上角)")
+
+        AddSlider(ui, "DCH_RAID_W", "raidWidth", "增益图标 宽", "", 8, 120, ns.ApplyLayout)
+        AddSlider(ui, "DCH_RAID_H", "raidHeight", "增益图标 高", "", 8, 120, ns.ApplyLayout)
+        AddSlider(ui, "DCH_RAID_FONT", "raidFontSize", "增益倒计时 字号", "", 8, 60, ns.ApplyLayout)
+        AddSlider(ui, "DCH_RAID_SPACING", "raidSpacing", "增益图标间距",
+            "竖着排,这是上下两格之间的缝。", 0, 40, ns.ApplyLayout)
+        AddSlider(ui, "DCH_RAID_XOFF", "raidXOffset", "增益离血条多远",
+            "那一竖列左边离血条右沿多少像素。", -50, 200, ns.ApplyLayout)
 
         -- ⚠ 放在最后:子页先挂到 parent 上,再把整棵树注册进 AddOns 列表。
         Settings.RegisterAddOnCategory(category)

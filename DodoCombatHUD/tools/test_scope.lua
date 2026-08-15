@@ -15,6 +15,9 @@ local NAMES = {
     "root", "power", "health", "cast",
     "segHost", "segPool", "segsDead",
     "mainPower", "mainToken", "secondary", "DB",
+    -- 0.10 的三排 aura 容器 + 当前专精。加新的模块级 local 记得同步这张清单 ——
+    -- 不加的话这个 guard 对它**完全失明**,而那正是 0.9.0 首次真机崩掉的那条缝。
+    "cdBox", "lustBox", "raidBox", "curSpec", "FLOW_DOWN",
 }
 
 local lines = {}

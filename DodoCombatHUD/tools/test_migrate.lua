@@ -12,7 +12,19 @@ local migrate  = assert(src:match("(%-%- v0%.7.-)%s*local savedPT"),
                         "抠不到迁移块 —— 锚点漂了,先看 PLAYER_LOGIN 那段")
 assert(#defaults > 200 and #copyfn > 100 and #migrate > 300, "抠到的片段太短,锚点多半没对上")
 
-local function build(order)
+-- 0.10 起迁移块里多了两个外部依赖:`ns`(AuraSets.lua)和 `CurrentSpecID()`。
+-- 🔑 `ns` 用**真的** AuraSets.lua,不手搓一份 —— 手搓的那份会跟 bug 共享同一个误解。
+-- `CurrentSpecID` 只能 stub(它要真客户端),但它就返回一个常量,建模不了什么东西。
+local TEST_SPEC = 258
+local PREAMBLE = ([[
+local ns = {}
+assert(loadfile("AuraSets.lua"))("DodoCombatHUD", ns)
+local function CurrentSpecID() return %d end
+local curSpec
+]]):format(TEST_SPEC)
+
+local function build(order, defaultsOverride)
+    local d = defaultsOverride or defaults
     local body
     if order == "correct" then
         body = migrate .. "\n local db = CopyDefaults(DEFAULTS, saved or {}) \n return db"
@@ -20,7 +32,8 @@ local function build(order)
         body = " local db = CopyDefaults(DEFAULTS, saved or {}) \n saved = db \n"
                .. migrate .. "\n return db"
     end
-    return assert(load(defaults .. "\n" .. copyfn .. "\nreturn function(saved)\n" .. body .. "\nend"))()
+    return assert(load(PREAMBLE .. d .. "\n" .. copyfn
+        .. "\nreturn function(saved)\n" .. body .. "\nend"))()
 end
 
 local run, runBad = build("correct"), build("reversed")
@@ -70,6 +83,35 @@ print("== 从 0.8 直升:白 powerColor 搬进去后也该被删掉 ==")
 db = run({ powerColor = { 1, 1, 1 } })
 check("搬进去又删掉", db.powerColors.Insanity, nil)
 check("老键仍清掉", db.powerColor, nil)
+
+print("== 0.10:dots 从扁平数组迁进按专精的桶 ==")
+db = run({ dots = { 34914, 589, 335467 } })
+check("老形状没了", rawget(db.dots, 1), nil)
+check("进了当前专精那桶", #db.dots[TEST_SPEC], 3)
+check("桶里第一个还是 VT", db.dots[TEST_SPEC][1], 34914)
+
+print("== 0.10:CopyDefaults 不许动玩家已经分好的桶 ==")
+-- 这条断言正是"把 savedDots 那行特判删掉"的依据:DEFAULTS.dots 现在是**空表**,
+-- CopyDefaults 递归进去一个键都加不了。⚠ 下面紧跟着一条负对照证明这个断言是灵的。
+db = run({ dots = { [TEST_SPEC] = { 111 } } })
+check("桶原样", db.dots[TEST_SPEC][1], 111)
+check("桶长度 1", #db.dots[TEST_SPEC], 1)
+
+print("== 负对照:DEFAULTS.dots 要是**非空**,CopyDefaults 就会污染玩家的桶 ==")
+-- 把默认值换成非空的重跑一遍。红不了的话上面那条绿是空转 ——
+-- 它就证明不了"删掉 savedDots 特判是安全的"这件事。
+local pollutedDefaults = defaults:gsub("dots%s*=%s*{},", "dots = { 7, 8, 9 },", 1)
+assert(pollutedDefaults ~= defaults, "负对照的锚点没命中,这条等于没做")
+local runPoison = build("correct", pollutedDefaults)
+local poisoned = runPoison({ dots = { [TEST_SPEC] = { 111 } } })
+if #poisoned.dots[TEST_SPEC] == 1 and poisoned.dots[1] == nil then
+    fail = fail + 1
+    print("  FAIL 负对照没红 —— 这个测试对 DEFAULTS.dots 空不空不敏感")
+else
+    pass = pass + 1
+    print(("  OK 非空默认值确实会灌进来:dots[1]=%s 桶长度=%d")
+        :format(tostring(poisoned.dots[1]), #poisoned.dots[TEST_SPEC]))
+end
 
 print("== 负对照:顺序调反应当丢值 ==")
 local bad = runBad({ dotSize = 45, dotFontScale = 0.45, powerColor = { 0.9, 0.1, 0.8 } })
