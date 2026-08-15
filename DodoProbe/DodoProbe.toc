@@ -4,7 +4,7 @@
 ## Title: DodoProbe
 ## Notes: dodo的secret value探针(诊断用,默认静默;/dp 手动跑)
 ## Author: Doodo
-## Version: 0.11.0
+## Version: 0.12.1
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
 DodoProbe.lua

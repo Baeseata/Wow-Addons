@@ -133,6 +133,155 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 
 ---
 
+## 多职业资源条(0.9.0)—— 分两层,两层的**规矩完全相反**
+
+> 🔴 分层依据是 `C_Secrets.GetPowerTypeSecrecy` 实测(canon `rules/wow-addons.md` 有全表),
+> **不是**从 `UnitPower` 的契约标注推的 —— 那么推过一次,方向是错的,白烧一轮调研。
+
+| 层 | 是什么 | secrecy | 规矩 |
+|---|---|---|---|
+| **主资源** | `UnitPowerType` 给的那个(法力/怒气/能量/疯狂…) | `Ctx` | **一个数都别读**,喂进 StatusBar 让它自己画 |
+| **次要资源** | 离散那批(圣能/连击点/碎片/真气/符文/奥术充能/精华) | `Never` | **明文,随便读随便算** |
+
+- **主资源不再写死**:`UnitPowerType("player")` 零 secret 标注,换专精 / 德鲁伊变形自动跟上
+  (`UNIT_DISPLAYPOWER` → `RefreshResources()` + `ApplyLayout()` + `RefreshAvailability()`,
+  **三个都要调** —— 只刷显隐的话「变了形还是上一形态的颜色和格数」)。
+- **次要资源靠探测,不查专精 ID 表**:`UnitPowerMax` 对「该单位没有的资源」返明文 0。
+  ⚠ 但 `AlternateQuest` / `AlternateEncounter` 的 max **也是 100 且几乎总在**(暗牧身上就有),
+  必须显式排除(`ns.EXCLUDE`);另配一道 `max <= 12` 防守 —— 万一哪个「离散」资源 max 是 100,
+  画 100 格等于毁掉这根条,而那读起来像布局算错了。
+- 🔴 **颜色不能靠 `UnitPowerType`** —— 它那三个 rgb **实测是 nil**(不是 secret,是没值)。
+  走 `ns.ColorFor`:玩家覆盖 > 我们自己调的表 > 官方 `PowerBarColor` > 灰。
+  **故意不默认用官方色**:那是给暴雪带厚边框的框体调的,搬到裸条上会糊
+  (疯狂条就是这么退回素图 + 自选亮紫的)。
+
+### 为什么单独开一个 `Resource.lua`
+
+它**一个框体都不建、一点状态都不存** ⇒ 算法那一半能被离线测试够得着
+(`tools/test_resource.lua` 43 项 + `tools/test_migrate.lua` 16 项,`lua tools/xxx.lua` 直接跑)。
+这是本插件第一次有可自动跑的验证手段,**别把逻辑挪回主文件**。
+三个 A/B 都精确变红过:拆掉上限钳制 / 忘记减段间缝 / 把平手 tiebreak 反过来。
+
+⚠ **平手 tiebreak 那条测试是换过一次量的**:第一版三个符文 `duration` 全一样 ⇒ 平手时 `frac`
+也一样 ⇒ 顺序怎么变 fills 都相同,**那个量对乱序完全免疫**(A/B 实测:拆掉 tiebreak 照样全绿)。
+改成「remaining 相同但 frac 不同」才测得出来。
+
+### 🔴 0.9.0 首次真机就崩:`local segHost` 声明写晚了 = 赋成了全局
+
+`local segHost` 原本写在 `LayoutSegs` 那节(文件中部),而 `BuildHUD` 在它**上面**
+⇒ BuildHUD 里那句 `segHost = CreateFrame(...)` **赋的是全局变量**,
+而 `ApplyLayout` 读的 local upvalue 恒为 nil ⇒ 登录即
+`attempt to index upvalue 'segHost' (a nil value)`(骑士,0.9.0)。
+
+**为什么当时所有检查都放过它**:
+- `luac -p` —— **写全局是合法 Lua**,语法层面挑不出任何毛病
+- `tools/test_resource.lua` —— 只覆盖 `Resource.lua` 的纯函数,**够不着框体装配**
+
+两套检查各自完备,坏的是**接缝**(canon guard 家族 (i))。
+⇒ 补了 `tools/test_scope.lua`:断言模块级 local 的声明行 < 第一次被函数体赋值的行。
+A/B 验过 —— 把声明挪回原位,精确报 `第 413 行赋值,但 local 到第 488 行才声明`。
+🔑 **以后新增任何模块级状态变量,都要加进那份 `NAMES` 清单**,否则它守不到。
+
+⚠ DodoInspect 栽过同一条(`local Refresh` 前向声明被删 ⇒ 静默建全局,点一下上移箭头才炸),
+那边的守法是「断言插件不产生全局」。**同族第三次了 —— 这个坑在 Lua 里是结构性的。**
+
+### 毁灭术的「半颗豆」不需要特殊代码
+
+`UnitPower(unit, SoulShards, true)` 给 0..50、`UnitPowerDisplayMod(SoulShards)` 给 **10**
+(明文,而且**不吃 unit** —— 在暗牧身上就问得出来)⇒ `ns.ExactValue` 一除得到 3.5,
+`ns.SegmentFill(3.5, i)` 就把「前 3 格满、第 4 格半、第 5 格空」算出来了。
+其余离散资源 mod = 1,**走同一条代码路径**。
+🔑 反过来说:暴雪自己那套 `ClassPowerBar:TurnOn/TurnOff` 是布尔的,**结构上表达不了半颗**。
+
+### 符文:每格独立冷却,`GetRuneCooldown` **完全明文**
+
+⚠ **别从「CD 都是 secret」推到这里** —— 那说的是法术冷却和 `Cooldown:SetCooldown`,
+跟 `GetRuneCooldown` 是三个互不相干的机制(这个错本仓犯过)。
+`ns.RuneFills`:就绪的排前面填满,冷却中的按**剩余时间**升序、按进度部分填充
+⇒ 屏幕上永远「谁先好谁在前」。**平手必须按槽位稳定排**,否则一排格子每帧抖,
+而那看起来像渲染 bug 不像排序问题。形状对照 `VinkyDev/VFlow` 的 `BuildRuneSegmentState`。
+
+### 布局锚链是**活的**
+
+从上到下:DoT / 血条 / 主资源 / **次要资源** / 施法条。次要资源那根插在中间 ⇒
+它显示时施法条挂它下面,不显示时施法条直接挂 `root`。少这一步的症状是
+「关掉它以后中间空一条」或者「两根条叠在一起」。
+
+### 迁移:`powerColor` → `powerColors.Insanity`
+
+老键是**全局一个色**(那时只有暗牧疯狂)。**丢了他手调的紫就没了;留着当全局色则换骑士
+法力条也是紫的 —— 两头都错** ⇒ 搬进按资源分的那张表。跟 dot 那次一样,
+判据用「老键还在不在」(自证 + 幂等,不另记标记),而且**必须跑在 `CopyDefaults` 之前**。
+
+### ⚠ 真机第一次跑要确认的
+
+- `/dch res` 先看探测对不对(**换职业第一件事**)。没有它的话「次要资源条没出现」跟
+  「这专精本来就没有」分不出来。
+- **骑士**:主资源该是法力(蓝)、次要该是圣能 5 格。
+- **毁灭术**:碎片该显示成「三颗半」——**那半颗的进度画得出来**才算对。
+- **DK**(如果要验):符文 6 格,冷却中的按谁先好排在前面。
+- 关掉次要资源条,施法条该**贴上来**(不是留一条空隙)。
+- 德鲁伊变形(如果有号):形态一换,颜色和格数该当场跟着变。
+
+## ESC 选项面板(`Options.lua`)
+
+ESC → 选项 → 插件 → DodoCombatHUD,两层:**主页 = 「要显示什么」· UI 子页 = 「显示成多大」**。
+子页用 `Settings.RegisterVerticalLayoutSubcategory(parent, name)`(**返回 `(category, layout)`
+两个值** —— 小节标题要挂子页那个 layout,挂错会把标题加到另一页去);
+`RegisterAddOnCategory` **只对顶层调一次**,而且要放在子页挂完之后。
+
+🔴 **这套 API 只造得出四种控件:checkbox / slider / dropdown / colorswatch —— 没有任何文本输入。**
+(查的是 `Blizzard_Settings_Shared/Blizzard_Settings.lua` 的导出函数表,不是 wiki。)
+⇒ **DoT 法术 ID / 两根条的刻度 / 引导跳数这三样结构上进不了面板**,只能留 `/dch`。
+主页最底下那行小标题就是干这个用的 —— 没有它,人会在面板里翻找一个不在这儿的东西,
+然后得出「这功能没做」。⚠ 颜色**能**进(有 ColorSwatch),只是这轮没做。
+
+⚠ `getValue` 里**展开写,别用 `db and db[k] ~= false or default`** —— 值确实是 `false` 时
+那个惯用法会走进 `or` 那支把默认值(true)端回去,症状是「我关掉的开关,下次打开面板又勾上了」。
+(DodoInspect 在同族的 `and/or` 写法上栽过一次,见它 CLAUDE.md 第五颗雷。)
+
+### 🔴 `dotFontScale` → `dotFontSize`:一个**被推翻**的设计决定,别当退步改回去
+
+原来的字号是「图标边长 × 比例」,理由白纸黑字写着「不写死 px,否则图标一改字就相对缩成一个点」。
+2026-08-15 改成绝对 px,**因为那条理由的前提没了**:它成立于只有 slash 命令的年代
+(改完看不见,得进游戏再来一轮反馈);ESC 面板里三个滑条并排、拖动实时预览,反馈当场闭环。
+而且宽高一拆,「乘哪条边」本身也没有答案了。
+**代价照实记着**:改完图标大小,字号不会自己跟上,得再拉一下那个滑条。
+
+⚠ 这跟 canon「控件尺寸从字号推、别写死 px」是**同一条经验的两面**,不是它的反例 ——
+那条的射程是「没有即时反馈的调参」。**换了反馈通道就要重判,别照搬结论。**
+
+### 宽高拆开 / 疯狂条开关,两处一改就半生效
+
+- `dotWidth`/`dotHeight` 有**两个消费方**:按钮自己 `SetSize` + AuraGroup 的
+  `layout.elementWidth/Height`。只改一处 = 「排列间距变了、图标没变」,半生效比不生效更难看出是 bug。
+  另外**横向步距只跟宽有关**(`(i-1)*(w+sp)`),照抄成 `h` 会让「压扁图标」把横向间距一起改掉。
+- `powerOn` 关掉时 **root 要塌成 1px**:root 的盒子**就是**疯狂条那一格
+  (`power.frame:SetAllPoints(root)` ⇒ 真正决定它高度的是 `root:SetSize`,不是 `LayoutBar` 里那个),
+  而血条锚它上沿、施法条锚它下沿 ⇒ 不塌就留一条等高空隙,读起来像「条没画出来」。
+- 显隐归 `RefreshAvailability`、盒子大小归 `ApplyLayout` —— **切 `powerOn` 要两个都调**,
+  少一个的症状是「盒子塌了、条还在」。
+
+### SavedVariables 迁移:**必须跑在 `CopyDefaults` 之前**
+
+`CopyDefaults` 一跑,`dotWidth`/`dotHeight` 就被填成默认值(非 nil)⇒ 迁移块里 `== nil` 的判据
+永远不成立 ⇒ **他调过的尺寸静默丢掉**,而症状只是「下次登录图标变回 36」,零报错。
+判据用「老键还在不在」而不是加 `uiPassXXX` 标记:老键被搬空本身就是「搬过了」,自证且幂等。
+
+**离线验过**(`scratchpad/test_migrate.lua`,15 项):从真文件里**抠出** DEFAULTS / CopyDefaults /
+迁移块来跑,不手抄第二份(手抄的那份会跟 bug 共享同一个误解)。覆盖全新用户 / 老用户带自定义值 /
+改过比例 / 幂等重跑;**第 5 条是负对照 —— 故意把顺序调反,必须丢值**(实测 45 → 36),
+否则前面四条的绿是空转。
+
+### ⚠ 真机第一次跑要确认的
+
+- **子页真的出现在左边**(`RegisterVerticalLayoutSubcategory` 的挂载形状是照源码写的,没在游戏里验过)。
+  没出现 = 这里少一次注册。
+- 关掉疯狂条,血条和施法条**靠拢**(不是留一条空隙)。
+- 面板里改完,HUD **当场**变(所有 `onChanged` 都接了 `ns.ApplyLayout`)。
+- 老 SavedVariables 里 `dotSize` 被搬进 `dotWidth`/`dotHeight` 且**老键消失**
+  (`/dch dsize` 无参会打印现在的宽 x 高)。
+
 ## 已知缺口(现在不做,判据留着)
 
 - **引导被 pushback 缩短时刻度会错**:我们是把 N 根线重新均分到新时长上,

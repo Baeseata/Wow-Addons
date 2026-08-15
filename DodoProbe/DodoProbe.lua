@@ -439,6 +439,33 @@ function P:Run(phase)
         P.probeBar:SetSize(1, 1)
         P.probeBar:SetPoint("TOPLEFT", P.holder, "TOPLEFT")
         P.probeBar:Hide()
+
+        -- 分段资源条(圣能 / 连击点 / 灵魂碎片)的可行性。
+        -- 形状:每段一个 StatusBar,量程各自是 [(i-1)*step, i*step],**五段全喂同一个值**。
+        -- 钳制和填充比例都在 C 层算 ⇒ 插件一次比较都不做。这是「逐颗点亮」
+        -- (暴雪 ClassPowerBar:TurnOn/TurnOff,需要 `i <= 当前值`)在 secret 下唯一可能的替代。
+        -- 🔴 **必须两排**:只画 secret 那排的话没有判据 —— 「全空 / 全满 / 正确」三种结果
+        --    在屏幕上长得都像「它本来就这样」。上排喂**明文 65** 当对照,判据就变成
+        --    「两排形状一不一样」,一眼读得出。顺带它还验证了我对钳制行为的理解本身对不对。
+        local function MakeSegRow(yOff, tint)
+            local row = {}
+            for i = 1, 5 do
+                local b = CreateFrame("StatusBar", nil, P.holder)
+                b:SetSize(40, 10)
+                b:SetPoint("TOPLEFT", P.holder, "BOTTOMLEFT", (i - 1) * 44, yOff)
+                b:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+                b:SetStatusBarColor(unpack(tint))
+                local bg = b:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints()
+                bg:SetColorTexture(0, 0, 0, 0.6)
+                -- 量程是**明文**,每段各占全程五分之一(疯狂 0..100 ⇒ 每段 20)
+                b:SetMinMaxValues((i - 1) * 20, i * 20)
+                row[i] = b
+            end
+            return row
+        end
+        P.segPlain  = MakeSegRow(-80, { 0.4, 0.8, 1 })   -- 明文对照(蓝)
+        P.segSecret = MakeSegRow(-94, { 1, 0.5, 0 })     -- 待验(橙)
     end
     probe("FontString:SetText(secret HP)", function()
         P.fs:SetText(UnitHealth("player"))
@@ -457,6 +484,111 @@ function P:Run(phase)
             P.cd:SetCooldown(cd.startTime, cd.duration)
             return "set-ok (看屏幕那个图标转不转圈)"
         end)
+    end
+
+    -- 分段资源条。⚠ 结论只能从**屏幕**读:GetValue 回读的是 secret,打印出来永远是 SECRET,
+    -- 那一行只证明 SetValue 没报错,不证明它画对了(跟主条那两行同一个道理)。
+    probe("段条 上排:明文 65(对照)", function()
+        for i = 1, 5 do P.segPlain[i]:SetValue(65) end
+        return "set-ok(该看到:前 3 段满 / 第 4 段 1/4 / 第 5 段空)"
+    end)
+    probe("段条 下排:secret 当前资源", function()
+        local v = UnitPower("player")
+        for i = 1, 5 do P.segSecret[i]:SetValue(v) end
+        return "set-ok(看屏幕:形状该跟上排是同一个套路)"
+    end)
+
+    -- 🔴 下排必须**持续刷新**,否则这组探针根本得不出结论:/dp 是一次快照,而
+    -- 「下排全空」既可能是「资源真的是 0」(暗牧脱战就是 0)也可能是「钳制坏了」——
+    -- **静态一帧里这两个长得一模一样**。唯一能把它们分开的判据是那条老规矩:
+    -- 别验「画出来了」,验「它跟着资源涨落而变」。
+    -- 60 秒后自停:探针不该留常驻开销(而且到时候该看的已经看完了)。
+    P.segUntil = GetTime() + 60
+    P.segTicker = P.segTicker or CreateFrame("Frame")
+    P.segTicker:SetScript("OnUpdate", function(self)
+        if GetTime() > (P.segUntil or 0) then
+            self:SetScript("OnUpdate", nil)
+            return
+        end
+        local v = UnitPower("player")
+        for i = 1, 5 do P.segSecret[i]:SetValue(v) end
+    end)
+    out[#out + 1] = "|cff88ff88段条下排会跟着资源实时变 60 秒 —— 打两下看它涨落|r"
+
+    out[#out + 1] = "|cffffff00--- 多职业资源条(主资源 / 次要资源 / 分段) ---|r"
+
+    -- 契约上 UnitPowerType **零 secret 标注** ⇒ 连官方配色都该是明文。
+    -- 真是的话:「换专精自动跟上」不用查专精 ID 表,配色也不用自己配二十来种。
+    probe("UnitPowerType(player) 主资源", function()
+        local pt, token = UnitPowerType("player")
+        return string.format("%s (%s)", tostring(pt), tostring(token))
+    end)
+    probe("-> 官方配色 rgb", function()
+        local _, _, r, g, b = UnitPowerType("player")
+        return string.format("%s / %s / %s", tostring(r), tostring(g), tostring(b))
+    end)
+    probe("UnitPower(player,nil,true) 未缩放", function()
+        return UnitPower("player", nil, true)
+    end)
+
+    -- ⚠ UnitPowerDisplayMod **不吃 unit**(契约里只有一个 powerType 参数)⇒ 在暗牧身上
+    -- 也问得出毁灭术碎片的除数。毁灭术「每颗豆带进度」的本质就是:碎片值是 0..50 而不是 0..5,
+    -- 这个数就是那个除数。它若明文,分段的量程边界就是**纯明文算术**,一次都不碰 secret。
+    for _, n in ipairs({ "SoulShards", "HolyPower", "ComboPoints", "Chi", "ArcaneCharges", "Runes" }) do
+        local pt = Enum.PowerType and Enum.PowerType[n]
+        if pt then
+            probe("DisplayMod(" .. n .. ")", function() return UnitPowerDisplayMod(pt) end)
+        end
+    end
+
+    -- 遍历 PowerType 全集,**只报这个角色真有的**:Max 对「该单位没有的资源」返明文 0
+    -- ⇒ 这一遍同时答出「本专精到底有哪些资源」,不用维护一张专精 ID 表。
+    -- 全报的话是三十多行噪音,会把真东西冲掉。
+    -- ⚠ mx 自己可能就是 secret ⇒ 比大小**之前**必须先问 issecretvalue,否则探针自己崩;
+    --   而且那种情况要如实报一行(「判不了」跟「没有这资源」是两回事)。
+    local kinds = {}
+    for n, v in pairs(Enum.PowerType or {}) do
+        if type(v) == "number" and v >= 0 then kinds[#kinds + 1] = { n, v } end
+    end
+    table.sort(kinds, function(a, b) return a[2] < b[2] end)
+    for _, e in ipairs(kinds) do
+        local n, pt = e[1], e[2]
+        local okM, mx = pcall(UnitPowerMax, "player", pt)
+        if okM and type(mx) == "number" then
+            if issecretvalue and issecretvalue(mx) then
+                probe("? " .. n .. " max=SECRET(有没有这资源判不了)", function() return mx end)
+            elseif mx > 0 then
+                probe("有 " .. n .. "  max", function() return mx end)
+                probe("   " .. n .. "  cur", function() return UnitPower("player", pt) end)
+                probe("   " .. n .. "  cur(未缩放)", function() return UnitPower("player", pt, true) end)
+            end
+        end
+    end
+
+    -- 资源配色。`UnitPowerType` 的 rgb 实测是 nil,所以颜色只能另找路 ——
+    -- `PowerBarColor` 是全局表,key 就是 UnitPowerType 给的那个 token。
+    -- ⚠ 这一组是**摸清有没有**,不是打算直接拿来用:官方色是给暴雪那种带厚金属边框 +
+    -- 不透明底的框体调的,搬到一根裸条上会糊(疯狂条就是这么从官方 atlas 退回
+    -- 素图 + 自选亮紫的,理由见 DodoCombatHUD 的 DEFAULTS.powerTexture)。
+    if type(PowerBarColor) == "table" then
+        local seen = 0
+        for _, tk in ipairs({ "MANA", "RAGE", "FOCUS", "ENERGY", "COMBO_POINTS", "RUNES",
+                              "RUNIC_POWER", "SOUL_SHARDS", "LUNAR_POWER", "HOLY_POWER",
+                              "MAELSTROM", "CHI", "INSANITY", "ARCANE_CHARGES",
+                              "FURY", "PAIN", "ESSENCE" }) do
+            local c = PowerBarColor[tk]
+            seen = seen + 1
+            probe("PowerBarColor." .. tk, function()
+                if type(c) ~= "table" then return "nil" end
+                return string.format("r=%.2f g=%.2f b=%.2f%s",
+                    c.r or -1, c.g or -1, c.b or -1,
+                    c.atlas and (" atlas=" .. tostring(c.atlas)) or "")
+            end)
+        end
+        -- 反空转:一个都没查等于这组探针没跑,而「没跑」跟「全是 nil」在输出里长得一样
+        if seen == 0 then out[#out + 1] = "  |cffff5555(PowerBarColor 一个 token 都没查 = 探针空转)|r" end
+    else
+        out[#out + 1] = "  |cffff5555PowerBarColor 这张表不存在|r"
     end
 
     -- 8. Threshold cues for a self-drawn resource bar. Bar LENGTH needs no math

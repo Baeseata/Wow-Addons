@@ -2,10 +2,12 @@
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoCombatHUD
-## Notes: dodo的战斗监控HUD(自绘;目标血条+疯狂条+施法引导条,带刻度)
+## Notes: dodo的战斗监控HUD(自绘;目标DoT+血条+主资源+次要资源分段条+施法引导条,多职业)
 ## Author: Doodo
-## Version: 0.7.2
+## Version: 0.9.2
 ## SavedVariables: DodoCombatHUDDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
+Resource.lua
 DodoCombatHUD.lua
+Options.lua

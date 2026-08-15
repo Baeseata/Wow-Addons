@@ -17,12 +17,26 @@
 --   这个组合从没测过。所以两根条各有**独立**的错误闸:血条炸了不许带走资源条。
 --   最阴的失败不是报错,是**默默不接受** ⇒ 条恒满或恒空。验收判据 = 打个怪看它跟不跟着掉。
 
-local ADDON = "DodoCombatHUD"
+-- vararg 的第一个就是插件文件夹名(值跟以前硬编码的那个字符串一样);第二个是
+-- 同插件所有文件共享的私有表 —— Options.lua 靠它拿到 ApplyLayout 这些内部函数。
+local ADDON, ns = ...
+ns = ns or {}
 local f = CreateFrame("Frame", "DodoCombatHUDFrame", UIParent)
 
--- 疯狂。只有暗牧有 —— 判据不用查专精 ID:UnitPowerMax 对「该单位没有的能量类型」
--- 返回明文 0(canon 实测),拿它当门就够,换专精自动跟上。
-local POWER = Enum.PowerType.Insanity
+-- 🔑 主资源**不再写死**(0.9.0 起,原来是 `Enum.PowerType.Insanity`)。
+-- `UnitPowerType("player")` 给当前专精的主资源,**零 secret 标注** ⇒ 换专精 / 德鲁伊变形
+-- 自动跟上(`UNIT_DISPLAYPOWER` 本来就在监听)。
+-- ⚠ 它那三个 rgb 返回值**实测是 nil**(不是 secret,是没值)⇒ 颜色只能另找路,见 PowerColor。
+local POWER_NAME = {}                       -- [Enum 值] = "Insanity" / "Mana" / …
+for n, v in pairs(Enum.PowerType or {}) do
+    if type(v) == "number" then POWER_NAME[v] = n end
+end
+
+-- 主资源(连续,`Ctx` ⇒ 只能喂给控件自己画)
+local mainPower, mainToken = nil, nil
+-- 次要资源(离散,`Never` ⇒ 明文可读可算)。nil = 这个专精没有。
+--   { pt = Enum值, name = "HolyPower", max = 5, mod = 1, isRune = bool }
+local secondary = nil
 
 local DEFAULTS = {
     x            = 0,
@@ -33,12 +47,24 @@ local DEFAULTS = {
     bgColor      = { 0.08, 0.06, 0.12, 0.85 },
     tickColor    = { 1, 1, 1, 0.9 },
     -- 下面这根:疯狂
+    -- ⚠ 关掉它时 root 的盒子要**塌成 1px**(见 ApplyLayout)。不塌的话血条和施法条之间
+    -- 会留一条跟原来等高的空隙 —— 那读起来像「条没画出来」,不像「我自己关了它」。
+    powerOn      = true,
     powerHeight  = 20,
     powerNumber  = true,
     powerTicks   = { 20, 40, 60, 80 },      -- 百分比
-    -- 亮紫:保住「暗牧 = 紫」的直觉,同时明度够高,暗场景里跳得出来。
-    -- ⚠ 只有配素图才成立 —— 配 atlas 是相乘,越乘越暗(见上面 powerTexture 那段)。
-    powerColor   = { 0.72, 0.42, 1 },
+    -- 🔑 多职业:每种资源一个颜色覆盖,key = `Enum.PowerType` 的**名字**("Mana"/"HolyPower"…)。
+    -- 空 = 走 Resource.lua 那张表(它的 Insanity 就是原来这里那个默认亮紫)。
+    -- 🔴 原来有个**单一**的 `powerColor`,是「只有暗牧疯狂」时代的遗物,**已删** ——
+    --    玩家调过的值一次性迁进 `powerColors.Insanity`(见 PLAYER_LOGIN 那块)。
+    --    留着当全局色的话,换成骑士,法力条也会是紫的。
+    -- ⚠ 亮度取向不变:配素图才成立 —— 配 atlas 是相乘,越乘越暗(见 powerTexture 那段)。
+    powerColors  = {},
+    -- 次要资源 = 离散的那批(圣能 / 连击点 / 碎片 / 真气 / 符文 / 奥术充能 / 精华)。
+    -- 自己一根条、画成 N 格,**N 格加起来仍等于其它条的总宽**(缝也算在内)。
+    secondaryOn     = true,
+    secondaryHeight = 12,
+    segGap          = 2,
     -- 上面这根:目标血量
     healthOn     = true,
     healthHeight = 20,        -- 跟 powerHeight 对齐(两根条等高)
@@ -68,10 +94,19 @@ local DEFAULTS = {
     -- 🔑 倒计时是**暴雪的 CustomAuraContainer 画的,不是我们画的**。同一次探针里
     --    `Cooldown:SetCooldown(secret)` = ERROR 而这些图标上有数字 —— 一次采样里正反对照齐了。
     dotsOn       = true,
-    dotSize      = 36,
-    -- 倒计时字号 = 图标边长 × 这个比例,**不写死 px**。写死的话 /dch dsize 一改,
-    -- 字就相对缩成一个点,同一件事得被反馈两轮(canon 里那条教训的原型就是这个)。
-    dotFontScale = 0.45,
+    -- 宽高分开(2026-08-15 拍板)。⚠ 光环图标纹理本身是方的 ⇒ 宽≠高就是拉伸,
+    -- 那是**要的效果**(压扁省竖直空间),不是画错了。
+    -- ⚠ 这两个值有**两处**消费方:按钮自己 SetSize + AuraGroup 的 layout.elementWidth/Height。
+    --    只改一处的症状是「排列间距变了、图标没变」—— 半生效比完全不生效更难看出是 bug。
+    dotWidth     = 36,
+    dotHeight    = 36,
+    -- 🔴 这里原来是 `dotFontScale`(字号 = 图标边长 × 比例),理由写的是「不写死 px,
+    -- 否则图标一改字就相对缩成一个点,同一件事得被反馈两轮」。2026-08-15 改成绝对 px,
+    -- 因为**那条理由的前提没了**:它成立于只有 slash 命令的年代(改完看不见,得进游戏
+    -- 再来一轮);现在 ESC 面板里三个滑条并排、拖动实时预览,反馈当场就闭环。
+    -- 而且宽高一拆,「乘哪条边」本身也没有答案了。
+    -- 代价照实说:改完图标大小,字号**不会**跟着走,得自己再拉一下那个滑条。
+    dotFontSize  = 16,
     dotSpacing   = 2,
     dotYOffset   = 4,
     -- 一格一个 spellID,顺序 = 屏幕上从左到右的**固定**位置。
@@ -128,7 +163,15 @@ end
 -- ---------------------------------------------------------------- 构件
 
 local root, testMode = nil, false
-local power, health, cast    -- 血量(上) / 疯狂(中) / 施法(下)
+local power, health, cast    -- 血量(上) / 主资源(中) / 施法(下)
+-- 🔴 次要资源那三个**必须在这儿前向声明**,不能等到 LayoutSegs 那节才 `local`。
+-- 0.9.0 首次真机就栽在这:声明写在 BuildHUD **下面** ⇒ BuildHUD 里那句
+-- `segHost = CreateFrame(...)` 赋的是**全局**,而 ApplyLayout 读的 local upvalue 恒为 nil
+-- ⇒ 登录即 `attempt to index upvalue 'segHost' (a nil value)`。
+-- ⚠ 这错**语法完全合法**(写全局是合法 Lua)⇒ `luac -p` 抓不到;
+--   离线测试只覆盖 Resource.lua 的纯函数,也够不着框体装配。
+--   守它的是 tools/test_scope.lua(断言声明顺序)。DodoInspect 栽过同一条。
+local segHost, segPool, segsDead = nil, {}, false
 
 -- 一个条 = 底 + StatusBar + 数字 + 刻度池 + **自己的**错误闸。
 -- dead 是逐条的:血条那条路没验过,它挂了不该把已经好用的资源条一起停掉。
@@ -146,6 +189,41 @@ local function ResolveTexture(name)
         Print("材质 |cffff8800" .. name .. "|r 不存在(atlas 名打错了?)—— 先用素图顶着")
     end
     return TEX_FALLBACK
+end
+
+-- 主/次资源的颜色。⚠ `UnitPowerType` 的 rgb 实测是 nil,所以走 Resource.lua 那张表:
+-- 玩家覆盖(DB.powerColors[名字]) > 我们自己调的表 > 官方 PowerBarColor > 灰。
+local function PowerColor(name, token)
+    return ns.ColorFor(name, token, DB and DB.powerColors)
+end
+
+-- 探测「这个专精现在有哪些资源」。**不查专精 ID 表**:
+--   主资源 → `UnitPowerType`(零 secret 标注,明文)
+--   次要资源 → `UnitPowerMax` 对「该单位没有的资源」返明文 0(canon 实测)
+-- 换专精 / 德鲁伊变形都会重跑(UNIT_DISPLAYPOWER / PLAYER_SPECIALIZATION_CHANGED)。
+local function RefreshResources()
+    local pt, token = UnitPowerType("player")
+    mainPower, mainToken = pt, token
+
+    secondary = nil
+    if not (Enum and Enum.PowerType and ns.DISCRETE_ORDER) then return end
+    for _, name in ipairs(ns.DISCRETE_ORDER) do
+        local v = Enum.PowerType[name]
+        -- 主资源不重复画一遍;`Alternate*` 那几个 max 也是 100 且几乎总在,必须排掉
+        if v and v ~= mainPower and not ns.EXCLUDE[name] then
+            local max = PlainNumber(UnitPowerMax("player", v))
+            -- ⚠ 上限 12 是防守:万一哪天某个「离散」资源的 max 是 100,
+            --   画 100 格等于把这根条毁掉,而那读起来像布局算错了。
+            if max and max > 0 and max <= 12 then
+                secondary = {
+                    pt = v, name = name, max = math.floor(max),
+                    mod = (UnitPowerDisplayMod and PlainNumber(UnitPowerDisplayMod(v))) or 1,
+                    isRune = (name == "Runes"),
+                }
+                break
+            end
+        end
+    end
 end
 
 local function MakeBar(parent)
@@ -214,14 +292,15 @@ end
 -- 倒计时数字归暴雪画,但那个 FontString 是**拿得到的**:`Cooldown:GetCountdownFontString()`
 -- (官方接口,`FrameAPICooldownDocumentation.lua`)。拿到就能任意设字号 ——
 -- 比 `SetCountdownFont(fontName)` 灵活,后者只能挑现成的 FontObject,给不了任意 px。
-local function StyleDotCountdown(cd, size)
+-- 不再吃 size 参数:字号是**它自己的**配置项了,不从图标边长推(见 DEFAULTS.dotFontSize)。
+local function StyleDotCountdown(cd)
     if not (cd and cd.GetCountdownFontString) then return end
     pcall(function()
         local fs = cd:GetCountdownFontString()
         if not fs then return end
         local path = fs:GetFont()
         fs:SetFont(path or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF",
-            math.max(8, math.floor(size * (DB.dotFontScale or 0.45) + 0.5)), "OUTLINE")
+            math.max(8, math.floor(DB.dotFontSize or 16)), "OUTLINE")
     end)
 end
 
@@ -253,8 +332,8 @@ local function MakeDotInit(bucket)
     -- 字体没设好就是 "FontString:SetText(): Font not set",而它会把整个初始化掀掉。
     -- 层数对这三个 DoT 没用,不值得为它冒这个险。
     button.dchCD = cd          -- 留个引用:改大小/字号时要回头找它
-    button:SetSize(DB.dotSize, DB.dotSize)
-    StyleDotCountdown(cd, DB.dotSize)
+    button:SetSize(DB.dotWidth, DB.dotHeight)
+    StyleDotCountdown(cd)
     bucket[#bucket + 1] = button
     end
 end
@@ -287,8 +366,8 @@ local function BuildDots()
                 sortDirection = AuraContainerSortDirection.Normal,
                 candidateFilters = DotFilters(DB.dots[i]),
                 initializeFrame = MakeDotInit(bucket),
-                layout = { elementSpacing = 0, elementWidth = DB.dotSize,
-                           elementHeight = DB.dotSize, layoutIndex = 1 },
+                layout = { elementSpacing = 0, elementWidth = DB.dotWidth,
+                           elementHeight = DB.dotHeight, layoutIndex = 1 },
             })
             return cc
         end)
@@ -330,6 +409,12 @@ local function BuildHUD()
     health.frame:SetScript("OnDragStart", startDrag)
     health.frame:SetScript("OnDragStop", stopDrag)
 
+    -- 次要资源的容器(格子按需往里建,见 EnsureSegs)。默认藏着 —— 没有次要资源的专精
+    -- 一个格子都不该占位置,而 ApplyLayout 会按探测结果决定显不显示。
+    segHost = CreateFrame("Frame", nil, root)
+    segHost:SetPoint("TOPLEFT", root, "BOTTOMLEFT", 0, -DB.gap)
+    segHost:Hide()
+
     cast = MakeBar(root)
     cast.frame:SetPoint("TOPLEFT", root, "BOTTOMLEFT", 0, -DB.gap)
     cast.left:Show()
@@ -343,23 +428,25 @@ end
 
 local function LayoutDots()
     if not dots.built then return end
-    local size, sp = DB.dotSize, DB.dotSpacing
+    local w, h, sp = DB.dotWidth, DB.dotHeight, DB.dotSpacing
     for i, slot in ipairs(dots.slots) do
         local c = slot.container
-        c:SetSize(size, size)
+        c:SetSize(w, h)
         c:ClearAllPoints()
+        -- ⚠ 横向铺开 ⇒ 步距只跟**宽**有关。宽高拆开之前这里是 (size + sp),
+        -- 照抄成 (h + sp) 的话「把图标压扁」会连横向间距一起改掉。
         -- 容器 → 锚到**我们自己的**框体,这个方向是允许的。反过来(我们的对象锚到容器)
         -- 会被拒:"Anchoring disallowed ... forbidden aspects: UntrustedLayoutScriptExecution"。
-        c:SetPoint("BOTTOMLEFT", health.frame, "TOPLEFT", (i - 1) * (size + sp), DB.dotYOffset)
+        c:SetPoint("BOTTOMLEFT", health.frame, "TOPLEFT", (i - 1) * (w + sp), DB.dotYOffset)
         pcall(function()
-            c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = size,
-                                        elementHeight = size, layoutIndex = 1 })
+            c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = w,
+                                        elementHeight = h, layoutIndex = 1 })
         end)
         -- 已经建出来的按钮要单独 resize(见 MakeDotInit 上面那段)。战斗中碰按钮可能被拒,
         -- 所以逐个 pcall —— 改大小这种事等脱战再点一下 /dch dsize 就好,不值得为它加状态机。
         for _, b in ipairs(slot.buttons) do
-            pcall(function() b:SetSize(size, size) end)
-            StyleDotCountdown(b.dchCD, size)
+            pcall(function() b:SetSize(w, h) end)
+            StyleDotCountdown(b.dchCD)
         end
         c:SetEnabled(DB.dotsOn ~= false and DB.healthOn ~= false)
     end
@@ -396,6 +483,56 @@ end
 -- 那在开关关着的时候会每帧把施法条**打开**,于是跟「用户自己用编辑模式/别的插件关掉它」
 -- 直接打架,而症状是「我关了它又回来了」,谁也想不到是这个插件干的。
 -- ⇒ 开关关着时我们一行都不碰;只有从开着切回关着的那一下,才恢复一次然后撒手。
+-- ── 次要资源(离散,画成 N 格)──────────────────────────────────
+-- 用**独立控件**而不是一根条上画刻度:离散资源的语义就是「几颗」,而且毁灭术那种
+-- 「第 4 颗填了一半」只有独立控件画得出来(一根连续条画不出颗粒边界)。
+-- ⚠ segHost / segPool / segsDead 的 `local` 在**文件上方**跟 power/health/cast 一起声明 ——
+--   放这儿的话 BuildHUD(在上面)会赋成全局,见那边的注释。别再挪回来。
+
+local function EnsureSegs(n)
+    if not segHost then return end
+    for i = #segPool + 1, n do
+        local b = CreateFrame("StatusBar", nil, segHost)
+        local bg = b:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.55)
+        b:SetMinMaxValues(0, 1)   -- 每格自己就是 0..1,填多少由 ns.SegmentFill 算
+        b:SetValue(0)
+        segPool[i] = b
+    end
+end
+
+local function LayoutSegs()
+    if not segHost then return end
+    local show = (secondary ~= nil) and (DB.secondaryOn ~= false) and not segsDead
+    segHost:SetShown(show)
+    if not show then return end
+
+    local n   = secondary.max
+    local gap = DB.segGap or 2
+    local w   = ns.SegmentGeometry(DB.width, n, gap)
+    local h   = DB.secondaryHeight or 12
+    EnsureSegs(n)
+    segHost:SetSize(DB.width, h)
+
+    local col = PowerColor(secondary.name, nil)
+    for i = 1, #segPool do
+        local b = segPool[i]
+        if i <= n then
+            b:SetSize(w, h)
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", segHost, "TOPLEFT", (i - 1) * (w + gap), 0)
+            -- ⚠ SetStatusBarTexture 会换掉那个 Texture 对象 ⇒ 颜色必须**在它之后**再设
+            --   (跟 LayoutBar 同一个坑)
+            b:SetStatusBarTexture(ResolveTexture(DB.barTexture))
+            b:SetStatusBarColor(col[1], col[2], col[3])
+            b:Show()
+        else
+            b:Hide()
+        end
+    end
+end
+
 local function ApplyBlizzCastBar(restoreNow)
     local bar = _G.PlayerCastingBarFrame
     if not bar or not bar.SetAndUpdateShowCastbar then return end
@@ -409,12 +546,18 @@ local function ApplyBlizzCastBar(restoreNow)
 end
 
 local function ApplyLayout()
-    root:SetSize(DB.width, DB.powerHeight)
+    -- 疯狂条关掉时 root **塌成 1px**:root 的盒子就是疯狂条那一格(power.frame 对它
+    -- SetAllPoints ⇒ 真正决定疯狂条高度的是这一行,不是下面 LayoutBar 那个 SetSize),
+    -- 而血条锚它上沿、施法条锚它下沿 ⇒ 不塌就留一条等高空隙,像「条没画出来」。
+    -- 用 1 不用 0:高度 0 的框体行为不一致,1px 肉眼已经看不出来。
+    root:SetSize(DB.width, (DB.powerOn ~= false) and DB.powerHeight or 1)
     root:ClearAllPoints()
     root:SetPoint("CENTER", UIParent, "CENTER", DB.x, DB.y)
     root:EnableMouse(not DB.locked)
 
-    LayoutBar(power, DB.powerHeight, DB.powerTicks, DB.powerColor, DB.powerNumber, DB.powerTexture)
+    -- 颜色跟着**当前主资源**走(暗牧紫 / 骑士法力蓝 / 猫德能量黄…),不再是写死那个紫。
+    LayoutBar(power, DB.powerHeight, DB.powerTicks,
+        PowerColor(POWER_NAME[mainPower], mainToken), DB.powerNumber, DB.powerTexture)
     LayoutBar(health, DB.healthHeight, DB.healthTicks, DB.healthColor, DB.healthNumber, DB.barTexture)
 
     health.frame:ClearAllPoints()
@@ -423,8 +566,17 @@ local function ApplyLayout()
 
     -- 施法条的刻度是**跟着当前引导现算**的(每个法术跳数不同),不能走 LayoutBar 那套静态刻度。
     LayoutBar(cast, DB.castHeight, {}, DB.castColor, false, DB.barTexture)
+
+    -- 次要资源那根插在「主资源」和「施法条」中间 ⇒ **锚链是活的**:
+    -- 它显示时施法条挂它下面,不显示时施法条直接挂 root 下面。
+    -- 少这一步的症状是「关掉它以后中间空一条」或者「两根条叠在一起」。
+    segHost:ClearAllPoints()
+    segHost:SetPoint("TOPLEFT", root, "BOTTOMLEFT", 0, -DB.gap)
+    LayoutSegs()
+
+    local castAnchor = segHost:IsShown() and segHost or root
     cast.frame:ClearAllPoints()
-    cast.frame:SetPoint("TOPLEFT", root, "BOTTOMLEFT", 0, -DB.gap)
+    cast.frame:SetPoint("TOPLEFT", castAnchor, "BOTTOMLEFT", 0, -DB.gap)
     cast.frame:EnableMouse(not DB.locked)
 
     BuildDots()
@@ -439,10 +591,14 @@ local hasPower = false
 -- 门:UnitPowerMax 对「没有的能量类型」返明文 0。万一哪天连 Max 也变 secret,
 -- 就没法比大小了 —— 此时「有值」本身说明这个资源存在,别 fail-closed 把条藏了。
 local function RefreshAvailability()
-    local raw = UnitPowerMax("player", POWER)
+    -- mainPower 为 nil 时 UnitPowerMax 按「当前主资源」解释(契约里 powerType 是 Nilable),
+    -- 所以探测还没跑过也不会炸。
+    local raw = UnitPowerMax("player", mainPower)
     local plain = PlainNumber(raw)
     if plain then hasPower = plain > 0 else hasPower = (raw ~= nil) end
-    power.frame:SetShown(hasPower or testMode)
+    -- 两个条件是不同性质的:hasPower = 「这个角色有没有这种资源」(游戏说了算),
+    -- powerOn = 「我想不想看」(玩家说了算)。任一为否都不显示,但别把它们合成一个。
+    power.frame:SetShown((hasPower or testMode) and DB.powerOn ~= false)
 end
 
 -- 每根条自己一个 pcall + 自己一个闸。血条那条路(量程是 secret)从没验过,
@@ -460,6 +616,47 @@ local function Feed(b, label, maxFn, valFn, showNumber)
         Print("|cffff3333" .. label .. " 停手了|r(只报这一次,每帧报错会刷屏)")
         Print("  原文:" .. tostring(err))
         Print("  另一根条不受影响。多半是某个 setter 不再吃 secret —— 跑 /dp 重量。")
+    end
+end
+
+-- 次要资源的驱动。这批资源实测全是 `C_Secrets` 的 `Never` ⇒ **明文,可读可算**,
+-- 不需要主资源那套「一个数都别读」的纪律。
+-- ⚠ 但仍然 PlainNumber 挡一道:哪天暴雪把某个资源收紧成 secret,`raw / mod` 那步会当场炸,
+--   而它跑在 OnUpdate 里 = 每帧刷屏。挡住的话最坏也只是这根条不动。
+local function FeedSegs()
+    if segsDead or not (segHost and secondary and segHost:IsShown()) then return end
+    local n = secondary.max
+    local ok, err = pcall(function()
+        if secondary.isRune then
+            -- 符文每格有**自己的**冷却 ⇒ 用不了 SegmentFill,走 RuneFills:
+            -- 就绪的排前面填满,冷却中的按剩余时间升序、按进度部分填充。
+            -- (`GetRuneCooldown` 零 secret 标注,三个返回值全明文 —— 契约 + VFlow 双证。)
+            local runes = {}
+            for i = 1, n do
+                local s, d, ready = GetRuneCooldown(i)
+                runes[i] = { start = s, duration = d, ready = ready }
+            end
+            local fills = ns.RuneFills(runes, GetTime())
+            for i = 1, n do
+                if segPool[i] then segPool[i]:SetValue(fills[i] or 0) end
+            end
+        else
+            -- unmodified 的原始值 / displayMod = 带小数的精确颗数(毁灭术 3.5 就是这么来的)
+            local raw = PlainNumber(UnitPower("player", secondary.pt, true))
+            if raw then
+                local exact = ns.ExactValue(raw, secondary.mod)
+                for i = 1, n do
+                    if segPool[i] then segPool[i]:SetValue(ns.SegmentFill(exact, i)) end
+                end
+            end
+        end
+    end)
+    if not ok then
+        segsDead = true
+        segHost:Hide()
+        Print("|cffff3333次要资源条停手了|r(只报这一次)")
+        Print("  原文:" .. tostring(err))
+        Print("  其它条不受影响。多半是那个资源被收紧成 secret 了 —— 跑 /dp 重量。")
     end
 end
 
@@ -493,10 +690,15 @@ local function OnUpdate(_, dt)
     -- 事件驱动要赌「UNIT_POWER_FREQUENT 在值 secret 时照样开火」,那个赌注我验不了。
     -- OnUpdate 无脑但结构上不可能漏刷 —— 一个测不了的机制不如一个无聊但一定对的。
     if hasPower then
-        Feed(power, "疯狂条",
-            function() return UnitPowerMax("player", POWER) end,
-            function() return UnitPower("player", POWER) end, DB.powerNumber)
+        -- 标签用资源名而不是写死「疯狂条」—— 它只在报错时露面,而报错时最需要知道
+        -- 「是哪个资源出的事」(换专精之后尤其)。
+        Feed(power, (POWER_NAME[mainPower] or "主资源") .. " 条",
+            function() return UnitPowerMax("player", mainPower) end,
+            function() return UnitPower("player", mainPower) end, DB.powerNumber)
     end
+
+    -- 次要资源(离散那批)。它走的是**明文**路径,跟上面主资源那套 secret 纪律无关。
+    FeedSegs()
 
     -- UnitExists 是明文布尔,拿它当门安全。
     if DB.healthOn and not health.dead and UnitExists("target") then
@@ -628,14 +830,16 @@ end
 -- ---------------------------------------------------------------- 命令
 
 local function Help()
-    Print("上=目标血量(刻度 " .. table.concat(DB.healthTicks, "/") ..
-          "%) / 下=疯狂(刻度 " .. table.concat(DB.powerTicks, "/") .. "%)")
+    Print("从上到下:目标 DoT / 目标血量 / 主资源 / 次要资源 / 施法引导")
+    Print("  现在的主资源 = " .. tostring(POWER_NAME[mainPower] or "?") ..
+          "(刻度 " .. table.concat(DB.powerTicks, "/") .. "%)" ..
+          (secondary and ("  次要 = " .. secondary.name .. " " .. secondary.max .. " 格") or ""))
     Print("  /dch unlock | lock          解锁拖动 / 锁回去(抓哪根都行)")
     Print("  /dch test                   演示模式(两根都填上,方便摆位置)")
     Print("  /dch width 260              两根条同宽")
     Print("  /dch gap 3                  两根条之间的缝")
-    Print("  /dch health | cast          目标血条 / 施法条 开关")
-    Print("  /dch pheight|hheight|cheight 20  条高(p=疯狂 h=血量 c=施法)")
+    Print("  /dch power|health|cast      主资源条 / 目标血条 / 施法条 开关")
+    Print("  /dch pheight|hheight|cheight 20  条高(p=主资源 h=血量 c=施法)")
     Print("  /dch pticks | hticks 20     刻度(百分比,逗号分隔)")
     Print("  /dch pnumber | hnumber      条上那个数字 开/关")
     Print("  /dch chan 4                 给**刚引导过**的那个法术定跳数")
@@ -643,13 +847,22 @@ local function Help()
     Print("  /dch dots                   血条左上角的目标 DoT 图标 开/关")
     Print("  /dch dot                    列出各格的 spellID 和法术名(核对用)")
     Print("  /dch dot 1 34914            改第 1 格盯哪个法术")
-    Print("  /dch dsize 45               DoT 图标大小(现在 " .. tostring(DB.dotSize) .. ")")
-    Print("  /dch dfont 0.45             DoT 倒计时字号 = 图标 × 这个比例(跟着图标走)")
-    Print("  /dch ptex | tex             疯狂条 / 血条+施法条 的材质(atlas 名或路径)")
-    Print("  /dch pcolor|hcolor|ccolor|ncolor 1 0 0   四种颜色(疯狂/血/施法/引导)")
+    Print("  /dch dsize 36               DoT 图标宽高一起设(现在 " ..
+          tostring(DB.dotWidth) .. " x " .. tostring(DB.dotHeight) .. ")")
+    Print("  /dch dw | dh 36             DoT 图标宽 / 高 单独设(要压扁就用这两个)")
+    Print("  /dch dfont 16               DoT 倒计时字号 px(现在 " ..
+          tostring(DB.dotFontSize) .. ",**不再**跟图标走)")
+    Print("  /dch ptex | tex             主资源条 / 血条+施法条 的材质(atlas 名或路径)")
+    Print("  /dch res                    看现在探测到哪些资源(换职业先跑这条)")
+    Print("  /dch secondary              次要资源条(圣能/连击点/碎片…)开关")
+    Print("  /dch sheight 12 | sgap 2    次要资源条 高度 / 格与格之间的缝")
+    Print("  /dch pcolor|scolor 1 0 0    主 / 次 资源颜色(**按资源分别存**)")
+    Print("  /dch hcolor|ccolor|ncolor 1 0 0   血 / 施法 / 引导 颜色")
     Print("  /dch bgcolor 0.03 0.02 0.05 1   条背景(第四个 = 不透明度,调到 1 隔断场景)")
     Print("  /dch blizzcast              藏掉/放回**暴雪自己**那根施法条")
     Print("  /dch reset                  回默认位置和尺寸")
+    Print("  开关和尺寸也在 ESC → 选项 → 插件 → DodoCombatHUD(拖滑条实时预览)。")
+    Print("  ⚠ DoT 法术 / 刻度 / 引导跳数只能在这儿改 —— 那个面板给不了输入框。")
 end
 
 -- 第四个值(alpha)可给可不给 —— 背景那条要它,三根条的填充色用不上。
@@ -666,6 +879,27 @@ local function SetColor(key, arg, label)
         local c = DB[key] or {}
         Print(string.format("%s:给三个 0-1 的数(背景可加第四个 = 不透明度),现在 %.2f %.2f %.2f %.2f",
             label, c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1))
+    end
+end
+
+-- 资源颜色现在是**按资源分**的(DB.powerColors[资源名]),不再是一个全局色 ⇒
+-- 单独一个 setter:它要先知道「现在这根条画的是哪个资源」才知道往哪格写。
+local function SetResourceColor(name, arg, label)
+    if not name then
+        Print(label .. ":现在没探测到这个资源(换个专精 / 变个形再试)")
+        return
+    end
+    local r, g, b = string.match(arg or "", "^([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)$")
+    r, g, b = tonumber(r), tonumber(g), tonumber(b)
+    if r and g and b then
+        DB.powerColors = DB.powerColors or {}
+        DB.powerColors[name] = { r, g, b }
+        ApplyLayout()
+        Print(string.format("%s(%s)= %.2f %.2f %.2f", label, name, r, g, b))
+    else
+        local c = ns.ColorFor(name, nil, DB.powerColors)
+        Print(string.format("%s(%s):给三个 0-1 的数,现在 %.2f %.2f %.2f",
+            label, name, c[1] or 0, c[2] or 0, c[3] or 0))
     end
 end
 
@@ -733,6 +967,11 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         Print(testMode and "演示模式开(血 35% / 疯狂 65%)" or "演示模式关")
     elseif cmd == "health"  then Toggle("healthOn", "目标血条")
     elseif cmd == "cast"    then Toggle("castOn", "施法条")
+    elseif cmd == "power"   then
+        Toggle("powerOn", "主资源条")
+        -- Toggle 只调 ApplyLayout(改盒子大小),**显隐归 RefreshAvailability 管** ——
+        -- 少这一句的症状是「盒子塌了、条还在」,而那看起来像布局算错了。
+        RefreshAvailability()
     elseif cmd == "castdebug" then Toggle("castDebug", "施法条读数打印")
     elseif cmd == "cheight" then SetNum("castHeight", arg, 4, 200)
     elseif cmd == "chan" then
@@ -751,27 +990,48 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         else
             Print("例:/dch chan 4")
         end
-    elseif cmd == "ptex"   then SetTex("powerTexture", rawArg, "疯狂条材质")
+    elseif cmd == "ptex"   then SetTex("powerTexture", rawArg, "主资源条材质")
     elseif cmd == "tex"    then SetTex("barTexture", rawArg, "血条/施法条材质")
     elseif cmd == "bgcolor" then SetColor("bgColor", arg, "条背景")
-    elseif cmd == "pcolor" then SetColor("powerColor", arg, "疯狂条颜色")
+    elseif cmd == "pcolor" then
+        SetResourceColor(POWER_NAME[mainPower], arg, "主资源颜色")
+    elseif cmd == "scolor" then
+        SetResourceColor(secondary and secondary.name, arg, "次要资源颜色")
+    elseif cmd == "secondary" then
+        Toggle("secondaryOn", "次要资源条")
+    elseif cmd == "sheight" then SetNum("secondaryHeight", arg, 4, 200)
+    elseif cmd == "sgap"    then SetNum("segGap", arg, 0, 40)
+    elseif cmd == "res" then
+        -- 现在到底探测到了什么 —— 换职业后第一件要问的事。
+        -- 没有它的话「次要资源条没出现」跟「这专精本来就没有」分不出来。
+        Print("主资源:" .. tostring(POWER_NAME[mainPower]) ..
+              "(" .. tostring(mainToken) .. ")")
+        if secondary then
+            Print(string.format("次要资源:%s  %d 格  displayMod=%s%s",
+                secondary.name, secondary.max, tostring(secondary.mod),
+                secondary.isRune and "  (符文:每格独立冷却)" or ""))
+        else
+            Print("次要资源:无(这个专精没有离散资源,或者被 max<=12 那道防守挡了)")
+        end
     elseif cmd == "hcolor" then SetColor("healthColor", arg, "血条颜色")
     elseif cmd == "ccolor" then SetColor("castColor", arg, "施法颜色")
     elseif cmd == "ncolor" then SetColor("chanColor", arg, "引导颜色")
     elseif cmd == "dots" then Toggle("dotsOn", "目标 DoT 图标")
-    elseif cmd == "dsize" then SetNum("dotSize", arg, 8, 120)
-    elseif cmd == "dfont" then
+    elseif cmd == "dsize" then
+        -- 宽高拆开之后这条留着当「两个一起设」的快捷方式 —— 手指不用改,而且多数时候
+        -- 想要的就是方的。要压扁再用 dw / dh 单独调。
         local n = tonumber(arg)
-        if n and n >= 0.15 and n <= 1.0 then
-            DB.dotFontScale = n
+        if n and n >= 8 and n <= 120 then
+            DB.dotWidth, DB.dotHeight = math.floor(n), math.floor(n)
             ApplyLayout()
-            Print(string.format("DoT 字号比例 = %.2f(图标 %d px ⇒ 字 %d px)",
-                n, DB.dotSize, math.max(8, math.floor(DB.dotSize * n + 0.5))))
+            Print("DoT 图标 = " .. DB.dotWidth .. " x " .. DB.dotHeight)
         else
-            Print(string.format("给个 0.15-1.0 的比例(现在 %.2f ⇒ 字 %d px)",
-                DB.dotFontScale or 0.45,
-                math.max(8, math.floor(DB.dotSize * (DB.dotFontScale or 0.45) + 0.5))))
+            Print(string.format("给个 8-120 的数(现在 %d x %d)",
+                DB.dotWidth or 36, DB.dotHeight or 36))
         end
+    elseif cmd == "dw"    then SetNum("dotWidth",  arg, 8, 120)
+    elseif cmd == "dh"    then SetNum("dotHeight", arg, 8, 120)
+    elseif cmd == "dfont" then SetNum("dotFontSize", arg, 8, 60)
     elseif cmd == "blizzcast" then
         Toggle("hideBlizzCast", "藏掉暴雪施法条")
         ApplyBlizzCastBar(true)   -- true = 如果是刚关掉这个开关,把条恢复一次
@@ -796,7 +1056,7 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
                     tostring(C_Spell.GetSpellName(id))))
             end
         end
-    elseif cmd == "pnumber" then Toggle("powerNumber", "疯狂数字")
+    elseif cmd == "pnumber" then Toggle("powerNumber", "主资源数字")
     elseif cmd == "hnumber" then Toggle("healthNumber", "血量数字")
     elseif cmd == "width"   then SetNum("width", arg, 40, 1200)
     elseif cmd == "gap"     then SetNum("gap", arg, 0, 100)
@@ -812,6 +1072,19 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         Help()
     end
 end
+
+-- ---------------------------------------------------------------- 对外(给 Options.lua)
+
+-- 这几个都是 local function,别的文件够不着 ⇒ 显式挂上共享表。
+-- DB 不用导出:它就是全局 `DodoCombatHUDDB` 的同一个引用(不是拷贝)⇒ 面板改的值
+-- 和 slash 改的值天生是一份,不需要任何同步。
+-- ⚠ 每个都挡一下 DB:面板理论上不可能在 PLAYER_LOGIN 之前被点开,但这层挡极便宜,
+-- 而没有它的失败形态是 nil index —— 那会把**整个** Settings 面板掀掉,不只是我们这一页。
+ns.ApplyLayout         = function()        if DB then ApplyLayout() end end
+ns.RefreshAvailability = function()        if DB then RefreshAvailability() end end
+ns.ApplyBlizzCastBar   = function(restore) if DB then ApplyBlizzCastBar(restore) end end
+ns.LayoutDots          = function()        if DB then LayoutDots() end end
+ns.DEFAULTS            = DEFAULTS
 
 -- ---------------------------------------------------------------- 生命周期
 
@@ -879,6 +1152,53 @@ f:SetScript("OnEvent", function(_, event, unit)
             saved.dotSize = 36
         end
 
+        -- v0.7 → v0.8:DoT 图标宽高拆开 + 倒计时字号从「比例」改成绝对 px。
+        -- 🔴 **必须跑在 CopyDefaults 之前**:那个函数一跑,dotWidth/dotHeight 就被填成
+        -- 默认值(非 nil)⇒ 下面 `== nil` 的判据永远不成立 ⇒ 他调过的尺寸静默丢掉,
+        -- 而症状只是「下次登录图标变回 36」,零报错。
+        -- 判据用「老键还在不在」,不另加 uiPassXXX 标记:老键被搬空本身就是「搬过了」,
+        -- 自证且幂等,不用再记一个状态。
+        if saved and saved.dotSize ~= nil then
+            if saved.dotWidth  == nil then saved.dotWidth  = saved.dotSize end
+            if saved.dotHeight == nil then saved.dotHeight = saved.dotSize end
+            if saved.dotFontSize == nil then
+                -- 按他**当时那个**比例换算,不是按默认比例 —— 换算完字号跟他现在看到的一样大,
+                -- 于是这次改动对他而言是「多了两个滑条」,不是「字自己变了」。
+                saved.dotFontSize = math.max(8,
+                    math.floor(saved.dotSize * (saved.dotFontScale or 0.45) + 0.5))
+            end
+            saved.dotSize = nil
+        end
+        -- 死配置清掉(跟上面 chanInterval 同一个理由:留着会替一个不存在的机制背书)。
+        if saved then saved.dotFontScale = nil end
+
+        -- v0.8 → v0.9:资源条泛化。`powerColor` 曾是**全局一个色**(那时只有暗牧疯狂),
+        -- 现在颜色按资源分。搬进 `powerColors.Insanity` 而不是直接丢:
+        -- 丢了他手调的紫就没了;留着当全局色则换成骑士时法力条也是紫的 —— **两头都错**。
+        -- 判据同样用「老键还在不在」,自证且幂等,不另记标记。
+        if saved and saved.powerColor ~= nil then
+            saved.powerColors = saved.powerColors or {}
+            if saved.powerColors.Insanity == nil then
+                saved.powerColors.Insanity = saved.powerColor
+            end
+            saved.powerColor = nil
+        end
+
+        -- v0.9.1:暗牧疯狂条修回亮紫。**成因链值得留着**(它解释了为什么会是白的):
+        -- `uiPass20260815` 那块把 powerColor 设成白 {1,1,1} —— 那个值只在**配 atlas 材质**
+        -- 「不染色」时才成立;而紧接着那两块「把 atlas 换回素图 + 改亮紫」的精确匹配
+        -- **对这份存档从没成立过**(它的 powerTexture 一直就是 WHITE8X8)⇒ 白留了下来,
+        -- 配素图就是一根白条。0.9.0 的迁移如实把这个白搬进了 powerColors.Insanity。
+        -- ⇒ **删掉那个覆盖**(不是改写成亮紫):删掉才会回落到 Resource.lua 的 COLORS.Insanity,
+        --    以后调那张表他也跟着变;写死一份就又多一个会漂的副本。
+        -- 判据用**精确匹配那个已知错值**:他要是自己调过别的颜色,这里不匹配 ⇒ 不动他的设置。
+        if saved and type(saved.powerColors) == "table" then
+            local c = saved.powerColors.Insanity
+            if type(c) == "table" and c[1] == 1 and c[2] == 1 and c[3] == 1 then
+                saved.powerColors.Insanity = nil
+            end
+        end
+
         -- ⚠ CopyDefaults 逐键补默认值,对定长表(颜色 rgb/rgba)无害,但对**变长数组**是错的:
         -- 你把刻度删成两条,下次登录会被默认值把第 3、4 条悄悄补回来。
         -- 两个 ticks 是这里仅有的变长数组 —— 单独拎出来,不让它们参与合并。
@@ -892,15 +1212,27 @@ f:SetScript("OnEvent", function(_, event, unit)
         if type(savedDots) == "table" and #savedDots > 0 then DB.dots = savedDots end
 
         BuildHUD()
+        -- 先探测再布局:ApplyLayout 要知道画几格、用什么颜色,而那全来自探测结果。
+        -- 顺序反了的话首次登录会画成「没有次要资源 + 灰色主条」,而下一次事件才自愈 ——
+        -- 那种「重登一次就好了」最难查。
+        RefreshResources()
         ApplyLayout()
         RefreshAvailability()
+        -- ESC 面板。注册失败不许影响 HUD 本身 ⇒ Options.lua 里整段 pcall,
+        -- 这里只判它在不在(TOC 少一行、或那个文件语法错,都表现成函数不存在)。
+        if ns.RegisterOptions then ns.RegisterOptions() end
         f:SetScript("OnUpdate", OnUpdate)
-        Print("已加载(血条在上、疯狂在下)。/dch 看命令")
+        Print("已加载。/dch 看命令,/dch res 看当前探测到哪些资源")
     elseif event == "PLAYER_TARGET_CHANGED" then
         if DB then RefreshDots() end
     elseif event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
-        if unit == "player" and DB then RefreshAvailability() end
+        -- 德鲁伊变形 / 换专精会走这里,而那时**资源类型整个换了**(能量↔法力↔星能)
+        -- ⇒ 必须重探测 + 重布局,不能只刷显隐。少这一步的症状是
+        -- 「变了形,条还是上一形态的颜色和格数」—— 看着像没刷新,其实是没重探。
+        if unit == "player" and DB then
+            RefreshResources(); ApplyLayout(); RefreshAvailability()
+        end
     elseif DB then
-        RefreshAvailability()
+        RefreshResources(); ApplyLayout(); RefreshAvailability()
     end
 end)
