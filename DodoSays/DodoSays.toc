@@ -9,6 +9,7 @@
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 ## X-Category: Boss Encounters
 ## X-License: All Rights Reserved
+## X-Curse-Project-ID: 1654722
 
 # Load order matters: Util (no deps) -> Board (UI) -> Announce (subscribes to replay)
 # -> Detector (drives replay) -> Sim (drives replay offline) -> DodoSays (wiring + slash)
