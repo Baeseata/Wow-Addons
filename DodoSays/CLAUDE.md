@@ -71,10 +71,19 @@ lua tools/test_detector.lua
 📖 **源码实读结论 → [`docs/RESEARCH-snakesays-source.md`](docs/RESEARCH-snakesays-source.md)**（2026-08-15 HOME 补，
 含 encounterID `?`=3508 / `??`=3525、每波秒数、`??` 分身撞名、`C_UnitAuras` 被前置拒绝、`UnitPosition` 不给数据）。
 
-## 5. 发布（CF 项目**还没建**）
+## 5. 发布
 
-- Title: `DodoSays - Azta'rec Delve Memory Helper` · 分类 `Boss Encounters`
-- 首发流程 / 项目 ID 登记两处 → repo 根 `PUBLISHING.md`（local-only）
+- **CF 项目 `1654722`**(2026-08-16 建;`Boss Encounters` · All Rights Reserved ·
+  distribution 选**不给第三方**,跟 DodoInspect 对齐)。
+- ⚠ **project id 只写在 TOC 的 `## X-Curse-Project-ID`** —— repo 那个 workflow **优先读它**,
+  里面那张 case 表只是老插件的兜底,**新插件不用去改 workflow**。
+- **发到哪一版 / 过审没有 → 查 CF 项目 1654722 的 Files 页**,别信 doc 里写的数字。
+- 发版顺序:改 TOC `## Version` → **push 代码**(zip 取自 tag 那个 commit)→
+  Actions 手动跑一次 **`dry_run=true`**(真打包 + 验 token + 解析游戏版本,不上传 —— 免费的负对照)
+  → 打 **annotated** tag `DodoSays-vX.Y.Z` → CI 自动传。
+  🔴 **lightweight tag 会把 commit message 当 changelog 甩上 CF**(而我们的 commit message 是中文)
+  ⇒ 判据:`git cat-file -t <tag>` 必须回 **`tag`**,回 `commit` 就是 lightweight。
+- **发版账本 = Actions 运行记录 + CF 回的 `{"id":…}`**,不是 tag(tag 会被删,那两样不会)。
 - **打包白名单实查（2026-08-15，`.github/workflows/curseforge-release.yml:128`）**：只有
   `*.lua *.toc README.md LICENSE *.tga *.blp *.png *.ttf *.xml *.mp3 *.ogg` 进包
   ⇒ **`docs/` 下的调研文档天然进不了 CF 包**（`.md` 不在白名单，只有 `README.md` 例外）
