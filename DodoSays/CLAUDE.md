@@ -80,7 +80,7 @@ lua tools/test_detector.lua
 （作者实测：一轮 5 次报点被骗走 2 次）⇒ 必须按「**哪个 boss 展示的这一轮，就认哪个**」。同上文 §2.2。
 ⚠ 且**地下堡不保证给 nemesis 一个 boss token** —— 探针第 2 条必须真跑，别照抄 `boss1`。
 
-📖 调研正文 → [`docs/RESEARCH-secret-values.md`](docs/RESEARCH-secret-values.md) · [`docs/RESEARCH-boss-mechanics.md`](docs/RESEARCH-boss-mechanics.md)
+📖 调研正文 → [`docs/RESEARCH-secret-values.md`](docs/RESEARCH-secret-values.md) · [`docs/RESEARCH-boss-mechanics.md`](docs/RESEARCH-boss-mechanics.md) · [`docs/RESEARCH-position-apis.md`](docs/RESEARCH-position-apis.md)(**坐标为什么一条路都没有**,含 613 份契约全量扫)
 
 ## 4. 竞品 = 参考实现,不是要打败的东西
 

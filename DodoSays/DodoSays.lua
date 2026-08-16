@@ -51,7 +51,9 @@ end
 --
 -- Also measured in the same run, for whoever needs the other ids:
 --   UnitPosition's 4th return (the world/instance map) = 3079
---   GetInstanceInfo -> 毒瀑深渊 / "scenario" / instanceID 3079
+--   GetInstanceInfo -> Venomfall Deeps / "scenario" / instanceID 3079
+--   (the measuring client is zhCN, so the NAME came back localised -- which is
+--    exactly why nothing in here ever compares against it. The id is the fact.)
 --
 -- It still fails CLOSED -- unknown map, or a map id the client will not hand
 -- over, means no standing board. A wrong answer here has a shape we have
