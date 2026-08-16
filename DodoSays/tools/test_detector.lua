@@ -34,7 +34,13 @@ local function check(name, got, want)
 end
 
 H.install()
-local ns = H.load({ "Util.lua", "Board.lua", "Announce.lua", "Detector.lua" })
+-- DodoSays.lua rides along for the slash tests at the bottom. At load it only
+-- defines functions and registers a frame for ADDON_LOADED / zone changes --
+-- none of which this suite fires -- so it cannot disturb anything above. The
+-- files it does NOT get (Sim, Trace, Options, Minimap) are only ever reached
+-- from subcommands nothing here runs.
+local ns = H.load({ "Util.lua", "Board.lua", "Announce.lua", "Detector.lua",
+	"Macros.lua", "DodoSays.lua" })
 ns.db = { announce = false, sound = false, debug = false }
 
 -- Record everything crossing the replay seam.
@@ -636,6 +642,133 @@ H.encounterEnd(3508)
 H.now = H.now + 20
 H.runTimers()
 check("packs away once we leave", ns.Board.IsShown(), false)
+
+-- ---------------------------------------------------------------------------
+io.write("Slash taps: the third door in, the one a ring addon can reach\n")
+-- OPie and its kind hold macros, not keybindings, so /dodosays <quarter> exists
+-- to give them something to point at. Driven through the REAL registered
+-- handler rather than straight at Board.Tap, because the tap is not the risk
+-- here -- the dispatch is. Anything ever shadowing one of these four would drop
+-- a wave out of the sequence in silence, in the fight, with nothing erroring.
+-- ---------------------------------------------------------------------------
+local run = assert(SlashCmdList.DODOSAYS, "DodoSays.lua registered no slash handler")
+
+ns.Board.Reset()
+H.encounterStart(3508)
+H.channelStart("boss1")
+
+H.printed = {}
+for _, q in ipairs(ns.QUADRANTS) do run(q.id) end
+check("every quarter reaches the board", #ns.Board.Sequence(), #ns.QUADRANTS)
+-- A tap that worked says nothing. Worth pinning rather than assuming: the
+-- first cut of this had DodoSays_Tap returning nothing at all, so the command
+-- recorded the tap AND then explained why it had not -- four lines of chat per
+-- round, each of them a lie, and every other check here still green.
+check("a tap that counted keeps quiet", #H.printed, 0)
+check("in the order it was typed",
+	table.concat(ns.Board.Sequence(), ","), "cross,square,triangle,circle")
+
+run("SQUARE")
+check("case is not a trap for whoever writes the macro", #ns.Board.Sequence(), 5)
+run("   circle   ")
+check("neither is stray whitespace", #ns.Board.Sequence(), 6)
+run("cirlce")
+check("a typo taps nothing at all", #ns.Board.Sequence(), 6)
+run("undo")
+check("and undo is still the subcommand, not a quarter", #ns.Board.Sequence(), 5)
+
+-- Outside the sermon half nothing records either way; what differs is whether
+-- it says so. In a city that line is the entire point -- somebody has just
+-- built the macro and is checking it. In the fight it would be one more thing
+-- on top of the one thing they are trying to read.
+H.channelStop("boss1")
+ns.Board.Reset()
+
+H.inCombat(false)
+H.printed = {}
+run("cross")
+check("outside the sermon nothing is recorded", #ns.Board.Sequence(), 0)
+check("and out of combat it explains itself", #H.printed > 0, true)
+
+H.inCombat(true)
+H.printed = {}
+run("cross")
+check("but in the fight it stays shut", #H.printed, 0)
+H.inCombat(false)
+
+-- ---------------------------------------------------------------------------
+io.write("Made macros: four of them, and each one actually works\n")
+-- A macro body and a slash handler are two artefacts that are each perfectly
+-- fine on their own, and nothing structural makes them agree. Rename a quarter
+-- or the command and every macro already sitting on somebody's action bar
+-- points at nothing -- no error, anywhere, ever. So the bodies are not compared
+-- against a string here; they are taken apart the way the client takes a macro
+-- line apart, and run.
+-- ---------------------------------------------------------------------------
+local made, updated, err = ns.Macros.Create()
+check("four macros made", made, 4)
+check("nothing to refresh on a clean slate", updated, 0)
+check("and no complaint", err, nil)
+
+local byName = {}
+for _, m in ipairs(H.macros()) do byName[m.name] = m end
+check("named after the marker, Dodo-prefixed", byName["Dodo Triangle"] ~= nil, true)
+check("icon is the raid marker's own file id", byName["Dodo Cross"].icon, 137007)
+check("and the big orange one for circle",    byName["Dodo Circle"].icon, 137002)
+
+local longest = 0
+for _, q in ipairs(ns.QUADRANTS) do
+	longest = math.max(longest, #ns.Macros.NameFor(q))
+end
+check("every name fits the client's 16 characters", longest <= 16, true)
+
+local made2, updated2 = ns.Macros.Create()
+check("pressing it twice makes nothing new", made2, 0)
+check("it refreshes the same four", updated2, 4)
+check("so there are still four", #H.macros(), 4)
+
+-- Dispatched the way the client dispatches: the first word chooses a handler,
+-- the rest is the argument. Looked up rather than called directly, and that is
+-- the entire point of this block -- calling SlashCmdList.DODOSAYS by hand makes
+-- a body pointing at a command that does not exist still "work", which is
+-- exactly what the first version of this test did, and the A/B walked through
+-- it (four checks red, the one that mattered green).
+local registered = {
+	[SLASH_DODOSAYS1] = SlashCmdList.DODOSAYS,
+	[SLASH_DODOSAYS2] = SlashCmdList.DODOSAYS,
+}
+
+ns.Board.Reset()
+H.encounterStart(3508)
+H.channelStart("boss1")
+for _, q in ipairs(ns.QUADRANTS) do
+	local slashWord, rest = byName[ns.Macros.NameFor(q)].body:match("^(%S+)%s*(.*)$")
+	local handler = registered[slashWord]
+	check(q.id .. ": macro calls a command this addon really registered",
+		handler ~= nil, true)
+	if handler then handler(rest) end
+end
+check("and all four bodies land on the board",
+	table.concat(ns.Board.Sequence(), ","), "cross,square,triangle,circle")
+
+H.inCombat(true)
+local _, _, combatErr = ns.Macros.Create()
+check("in combat it refuses outright", combatErr, "combat")
+check("and touches nothing", #H.macros(), 4)
+check("the refusal says what to do instead",
+	ns.Macros.Report(0, 0, "combat"):find("after the fight") ~= nil, true)
+H.inCombat(false)
+
+-- Running out of slots halfway is a real state on a real account, and "it
+-- failed" would hide which half happened.
+H.clearMacros()
+H.fillMacroSlots(118)
+local m4, u4, e4 = ns.Macros.Create()
+check("it fills what it can", m4, 2)
+check("then says it ran out", e4, "noslots")
+check("and the message counts what it managed",
+	ns.Macros.Report(m4, u4, e4):find("2 of 4") ~= nil, true)
+H.clearMacros()
 
 -- ---------------------------------------------------------------------------
 -- The tally. Every client value in this run was unreadable except these, and

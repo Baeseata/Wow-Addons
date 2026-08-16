@@ -31,11 +31,18 @@ end
 -- --------------------------------------------------------------------------
 -- Bindable taps. Global on purpose: Bindings.xml can only reach globals, and
 -- clicking four wedges with a mouse while dodging is not a real plan.
+--
+-- Three doors lead here now -- the wedge itself, a keybinding, and
+-- `/dodosays <quarter>`. The third exists because ring addons (OPie and the
+-- like) can hold a macro but cannot hold a keybinding, so without a command
+-- there is nothing for them to point at. All three record the same thing.
 -- --------------------------------------------------------------------------
+-- Returns whether the tap counted. Bindings.xml throws the answer away on
+-- purpose -- a key held down out of habit between rounds is not an error worth
+-- a message -- but the slash command needs it: somebody who just built a macro
+-- and saw nothing happen deserves to be told why.
 function DodoSays_Tap(id)
-	if ns.Board.Tap(id) then return end
-	-- Tapping outside a showing half is not an error worth a message: the
-	-- player is holding the key down out of habit between rounds.
+	return ns.Board.Tap(id)
 end
 
 function DodoSays_Undo()
@@ -96,8 +103,14 @@ BINDING_NAME_DODOSAYS_TAP_TRIANGLE = "Safe: Triangle"
 BINDING_NAME_DODOSAYS_TAP_CIRCLE   = "Safe: Circle"
 BINDING_NAME_DODOSAYS_UNDO         = "Undo last tap"
 
+local function inCombat()
+	if type(InCombatLockdown) ~= "function" then return false end
+	return InCombatLockdown() and true or false
+end
+
 local HELP = {
 	"|cff88ccffDodoSays|r  -- Azta'rec memory game",
+	"  |cffffd100/ds cross|r|cffffd100 square triangle circle|r   tap that quarter",
 	"  |cffffd100/ds show|r / |cffffd100hide|r    the board",
 	"  |cffffd100/ds sim [n]|r        rehearse a round of n waves (no boss needed)",
 	"  |cffffd100/ds go|r             lock the tapped run and play it back",
@@ -109,13 +122,40 @@ local HELP = {
 	"  |cffffd100/ds trace|r          record every event the fight fires, then /reload",
 	"  |cffffd100before the pull|r drop raid markers on the floor, clockwise:",
 	"    cross -> square -> triangle -> circle",
-	"  tap wedges with the mouse, or bind them under Key Bindings > DodoSays",
+	"  three ways to tap: click a wedge, bind keys under Key Bindings > DodoSays,",
+	"    or put |cffffd100/dodosays cross|r in a macro -- that is the one a ring",
+	"    addon such as OPie can hold, since those take macros and not bindings.",
 }
 
 local function slash(msg)
 	local cmd, rest = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
 
-	if cmd == "show" then
+	-- Quarters first, ahead of every subcommand, and the order is the point.
+	-- This is the only branch anybody runs mid-fight, and if something ever
+	-- shadowed one of these four the failure would be silence: no error, no
+	-- message, one wave missing from the sequence and a wrong call later. A
+	-- subcommand losing to a quarter would at worst annoy somebody standing in
+	-- a city. tools/test_detector.lua pins the direction that matters.
+	--
+	-- The names are read off QUADRANT_BY_ID rather than written out again here:
+	-- a second copy of cross/square/triangle/circle is a second thing to keep
+	-- in step with the board.
+	if ns.QUADRANT_BY_ID[cmd] then
+		if DodoSays_Tap(cmd) then return end
+
+		-- Nothing recorded. Between rounds that is ordinary and a message every
+		-- time would be noise -- but the first run of this command is always
+		-- somebody standing in a city who just built the macro and wants to
+		-- know whether they typed it right. So: quiet in the fight, helpful
+		-- outside it. (The keybindings stay silent either way; they get held
+		-- down out of habit, this gets typed on purpose.)
+		if not inCombat() then
+			print("|cff88ccffDodoSays|r takes taps only while Azta'rec is preaching. " ..
+				"|cffffd100/ds sim 5|r rehearses a round right here.")
+		end
+		return
+
+	elseif cmd == "show" then
 		ns.ApplyPosition()
 		ns.Board.Show()
 

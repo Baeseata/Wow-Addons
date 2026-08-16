@@ -196,7 +196,26 @@ end
 -- What the client currently believes. Tests write it through the helpers
 -- below; the stubs only ever read it.
 -- ---------------------------------------------------------------------------
-local world = { channel = nil, casting = {}, guid = {}, plainGUID = false }
+local world = { channel = nil, casting = {}, guid = {}, plainGUID = false,
+	inCombat = false, macros = {} }
+
+-- Standing in a city vs standing in the fight. It changes exactly one thing --
+-- whether a slash tap that recorded nothing explains itself -- and both answers
+-- are the live world, so neither is the "safe" default. Tests set it either way
+-- and check both.
+function H.inCombat(on) world.inCombat = on and true or false end
+
+-- The account macro list, modelled rather than mocked: the real one is a list
+-- with a hard ceiling and a name lookup, and both of those are load-bearing
+-- here (running out halfway is a state Macros.lua reports on). Tests read it
+-- back to check what was actually written, not merely that a call was made.
+function H.macros() return world.macros end
+function H.clearMacros() world.macros = {} end
+function H.fillMacroSlots(n)
+	for i = 1, n do
+		world.macros[#world.macros + 1] = { name = "filler" .. i, icon = 1, body = "" }
+	end
+end
 
 -- `unit` is channelling. Every field defaults to unreadable, which is what was
 -- measured: name, start, end and spellID all came back <secret> on ?.
@@ -255,10 +274,33 @@ function H.install()
 	_G.GetCursorPosition = function() return 0, 0 end
 	_G.C_Map = { GetBestMapForUnit = function() return nil end }
 
+	-- Real on live, so real here: DodoSays.lua registers into this at load and
+	-- the slash tests call back out through it, which is the only way to test
+	-- the dispatch rather than a copy of it.
+	_G.SlashCmdList = {}
+	_G.InCombatLockdown = function() return world.inCombat end
+
+	_G.MAX_ACCOUNT_MACROS = 120
+	_G.GetNumMacros = function() return #world.macros, 0 end
+	_G.GetMacroIndexByName = function(name)
+		for i, m in ipairs(world.macros) do if m.name == name then return i end end
+		return 0   -- what the client answers for "no such macro", not nil
+	end
+	_G.CreateMacro = function(name, icon, body)
+		if #world.macros >= MAX_ACCOUNT_MACROS then return nil end
+		world.macros[#world.macros + 1] = { name = name, icon = icon, body = body }
+		return #world.macros
+	end
+	_G.EditMacro = function(index, name, icon, body)
+		world.macros[index] = { name = name, icon = icon, body = body }
+		return index
+	end
+
 	secrets, minted = {}, 0
 	H.declared = {}
 	H.vertexColors, H.desaturations, H.alphas = {}, {}, {}
-	world = { channel = nil, casting = {}, guid = {}, plainGUID = false }
+	world = { channel = nil, casting = {}, guid = {}, plainGUID = false,
+		inCombat = false, macros = {} }
 
 	-- Always installed. The old default -- no such API, therefore nothing is
 	-- secret -- is the shape of the bug this file now exists to prevent.

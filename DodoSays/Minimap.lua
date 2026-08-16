@@ -212,7 +212,32 @@ local function buildPanel()
 		ns.Board.Show()
 	end)
 
-	panel:SetHeight(math.abs(y) + 8 + 22 + 14)
+	-- Four macros, one press. They are the only way onto an action bar, and the
+	-- only thing a ring addon can be pointed at -- the why is in Macros.lua. On
+	-- its own row rather than beside the board button: 280px does not hold two
+	-- labels this long, and crowding this panel is how both of its layout bugs
+	-- started.
+	local macros = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	macros:SetPoint("TOPLEFT", 16, y - 8 - ROW)
+	macros:SetSize(140, 22)
+	macros:SetText("Create 4 macros")
+	macros:SetScript("OnClick", function()
+		print(ns.Macros.Report(ns.Macros.Create()))
+	end)
+	macros:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Create 4 macros", 1, 1, 1)
+		GameTooltip:AddLine("Dodo Cross / Square / Triangle / Circle, each carrying its own " ..
+			"raid marker as the icon. Drag them from the macro window onto a bar, or point " ..
+			"a ring addon such as OPie at them. Pressing this again refreshes them; it never " ..
+			"makes more than four.", nil, nil, nil, true)
+		GameTooltip:AddLine("The client will not allow this in combat.", 0.6, 0.6, 0.6)
+		GameTooltip:Show()
+	end)
+	macros:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	panel.macros = macros
+
+	panel:SetHeight(math.abs(y) + 8 + 22 + ROW + 14)
 	panel:Hide()
 	return panel
 end
@@ -228,6 +253,16 @@ function Mini.Show()
 		end
 		panel.checks[t.key]:SetChecked(on and true or false)
 	end
+
+	-- A button that cannot work has to look like one. The client refuses macro
+	-- edits in combat, and "I pressed it and nothing happened" is the worst way
+	-- to find that out. (Combat starting while the window is already open leaves
+	-- it looking pressable -- the click still refuses and says why, which is the
+	-- half that matters.)
+	if panel.macros then
+		panel.macros:SetEnabled(not (InCombatLockdown and InCombatLockdown()))
+	end
+
 	panel:Show()
 end
 
