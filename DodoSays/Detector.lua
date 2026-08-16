@@ -115,9 +115,9 @@ end
 --
 -- 🔴 This filter and the three-branch shape of isOurBoss below are a PAIR, and
 -- 2026-08-16 measured what that means: break either one alone and the suite
--- stays green, because the other one covers for it. Break both and 18 tests go
--- red -- which is exactly the bug that shipped on the 15th. So "I removed it
--- and nothing failed" is not evidence that either half is redundant.
+-- stays green, because the other one covers for it. Break both and the suite
+-- lights up -- which is exactly the bug that shipped on the 15th. So "I removed
+-- it and nothing failed" is not evidence that either half is redundant.
 local function guidOf(unit)
 	if type(UnitGUID) ~= "function" then return nil end
 	local ok, guid = pcall(UnitGUID, unit)

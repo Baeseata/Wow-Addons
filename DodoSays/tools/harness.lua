@@ -43,6 +43,11 @@ local H = {}
 -- we reach it without adding a test-only backdoor to production code.
 H.frames = {}
 
+-- Every SetVertexColor the addon has issued since the last clear. Reset in
+-- install() too; declared here so a frame built during install cannot outrun it.
+H.vertexColors = {}
+function H.clearVertexColors() H.vertexColors = {} end
+
 local function noop() end
 
 -- ---------------------------------------------------------------------------
@@ -164,6 +169,15 @@ local function newFrame()
 	function f:SetText(t) self._text = t end
 	function f:GetText() return self._text end
 
+	-- Recorded, not swallowed. The board deciding on a colour and the board
+	-- actually painting it are two different claims, and a pure PaintPlan()
+	-- test only ever proves the first one -- the seam between them would have
+	-- nobody looking at it.
+	function f:SetVertexColor(r, g, b, a)
+		self._vertex = { r, g, b, a }
+		H.vertexColors[#H.vertexColors + 1] = { r, g, b, a }
+	end
+
 	H.frames[#H.frames + 1] = f
 	return f
 end
@@ -233,6 +247,7 @@ function H.install()
 
 	secrets, minted = {}, 0
 	H.declared = {}
+	H.vertexColors = {}
 	world = { channel = nil, casting = {}, guid = {}, plainGUID = false }
 
 	-- Always installed. The old default -- no such API, therefore nothing is

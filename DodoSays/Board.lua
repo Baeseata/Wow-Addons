@@ -56,11 +56,20 @@ function Board.QuadrantAt(dx, dy)
 	return (dx >= 0 and BY_ANGLE[90] or BY_ANGLE[270]).id
 end
 
+-- The calling half is a traffic light: green is where you stand this wave,
+-- yellow is where you go next, red is everything else.
+--
+-- `recorded` is BLUE and not green on purpose. It used to be green, which meant
+-- green said two different things in two halves of the same round -- "I wrote
+-- this one down" while he preaches, "stand here NOW" while he echoes. Same
+-- colour, same board, opposite instructions.
 local COLOR = {
 	idle     = { 0.27, 0.28, 0.32, 0.88 },
 	armed    = { 0.24, 0.26, 0.32, 0.92 },
-	recorded = { 0.20, 0.62, 0.36, 0.95 },
-	calling  = { 0.98, 0.62, 0.10, 1.00 },
+	recorded = { 0.18, 0.44, 0.78, 0.95 },   -- "I have this one written down"
+	now      = { 0.16, 0.72, 0.30, 0.95 },   -- stand here, this wave
+	next     = { 0.94, 0.78, 0.12, 0.94 },   -- and here after it
+	unsafe   = { 0.66, 0.16, 0.16, 0.85 },   -- not here
 	done     = { 0.30, 0.34, 0.40, 0.85 },
 	edge     = { 0.00, 0.00, 0.00, 0.55 },
 }
@@ -272,6 +281,79 @@ Board.Build = build
 -- length says otherwise, so the tray has to be able to grow and shrink.
 local sequence, expected, phase, callIndex = {}, 0, "idle", 0
 
+-- --------------------------------------------------------------------------
+-- What shade is each quarter, right now?
+--
+-- Pure on purpose: it reads (sequence, phase, callIndex) and returns names. No
+-- frame, no texture, no client. QuadrantAt is the other half of the same idea
+-- -- the parts of this file that can be wrong in a way that gets you killed are
+-- the parts a test can pin without a running game.
+--
+--   now / next / unsafe          the traffic light, while he is echoing
+--   recorded / armed             while he is preaching
+--   done / idle                  round over, or nothing going on
+--
+-- 🔴 Colour starts at the LOCK, not at the first call. `CHANNEL_STOP` and the
+-- first echo land on the same hundredth of a second (measured 2026-08-15,
+-- docs/RESEARCH-live-trace.md 3), so a board that waits to be told about wave
+-- one has already missed the wave that needs the warning most. callIndex is 0
+-- at that moment and step 1 is the answer.
+--
+-- 🔴 And it stops at "done". `Board.Finish` sets phase=done with callIndex back
+-- to 0 -- read naively that is step 1 again, i.e. a green wedge telling the
+-- player to run somewhere after the round is already over.
+--
+-- Same quarter twice in a row: green wins and no wedge is yellow. That falls
+-- out of the branch ORDER below -- "now" is asked first, so a quarter that is
+-- both never gets as far as "next". Written down because it is load-bearing and
+-- invisible: swapping those two branches reads like a tidy-up and turns the
+-- wedge you are standing on yellow, i.e. "leave".
+--
+-- ⚠ An earlier version enforced it by nilling `next` instead. That was worse
+-- than useless -- the wheel was already covered by the ordering, and the tray
+-- underneath lost its yellow on repeats even though step k+1 IS the next wave
+-- whether or not it happens to be the same patch of floor. Deleted after an
+-- A/B showed nothing anywhere went red when it was removed (2026-08-16).
+-- --------------------------------------------------------------------------
+function Board.PaintPlan()
+	local nowId, nextId, step
+
+	if phase == "calling" then
+		step = (callIndex > 0) and callIndex or 1
+		nowId = sequence[step]
+		nextId = sequence[step + 1]
+	end
+
+	local shade = {}
+	for _, q in ipairs(QUADRANTS) do
+		local written = false
+		for _, id in ipairs(sequence) do
+			if id == q.id then written = true break end
+		end
+
+		if q.id == nowId then
+			shade[q.id] = "now"
+		elseif q.id == nextId then
+			shade[q.id] = "next"
+		elseif phase == "calling" then
+			shade[q.id] = "unsafe"
+		elseif phase == "showing" then
+			shade[q.id] = written and "recorded" or "armed"
+		elseif phase == "done" then
+			shade[q.id] = "done"
+		else
+			shade[q.id] = "idle"
+		end
+	end
+
+	return { shade = shade, now = nowId, next = nextId, step = step }
+end
+
+-- Last plan refresh() computed. Cached rather than recomputed because pulseTick
+-- runs every frame and this allocates a table -- sixty of those a second, for
+-- an answer that only changes when something calls refresh().
+local plan = Board.PaintPlan()
+
 local function layoutTray()
 	local n = math.max(expected, #sequence, 1)
 	local cell = math.min(22, math.floor(SQUARE / n) - 3)
@@ -303,7 +385,7 @@ end
 local function refresh()
 	if not frame then return end
 
-	local live = (phase == "calling") and sequence[callIndex] or nil
+	plan = Board.PaintPlan()
 
 	-- Tappable ONLY while he is preaching. Outside that the wedges are muted
 	-- and take no clicks at all -- not merely ignored, actually dead to the
@@ -317,10 +399,12 @@ local function refresh()
 
 	for _, q in ipairs(QUADRANTS) do
 		local w = wedges[q.id]
-		-- Lit = you may tap it, OR it is the one to stand in right now. Two
-		-- different reasons for the same brightness, and that is fine: both
-		-- mean "this one matters this second".
-		local lit = tappable or (live == q.id)
+		local shade = plan.shade[q.id]
+
+		-- Lit = you may tap it, OR it is one of the two the traffic light is
+		-- talking about. Different reasons for the same brightness, and that is
+		-- fine: all of them mean "this one matters this second".
+		local lit = tappable or shade == "now" or shade == "next"
 		w.icon:SetDesaturated(not lit)
 		-- 0.30 was tuned back when the board only existed during a round. It
 		-- now stands there the whole time you are in the delve, where it has to
@@ -332,18 +416,7 @@ local function refresh()
 			if id == q.id then hits[#hits + 1] = i end
 		end
 
-		if live == q.id then
-			tint(w.tex, COLOR.calling)
-		elseif phase == "showing" and #hits > 0 then
-			tint(w.tex, COLOR.recorded)
-		elseif phase == "idle" then
-			tint(w.tex, COLOR.idle)
-		elseif phase == "calling" or phase == "done" then
-			tint(w.tex, COLOR.done)
-		else
-			tint(w.tex, COLOR.armed)
-		end
-
+		tint(w.tex, COLOR[shade])
 		w.order:SetText(#hits > 0 and table.concat(hits, ",") or "")
 	end
 
@@ -360,8 +433,15 @@ local function refresh()
 			else
 				c.icon:Hide()
 			end
-			if phase == "calling" and i == callIndex then
-				paint(c.bg, COLOR.calling)
+			-- The tray agrees with the wheel about which step is now and which
+			-- is next, and deliberately stops there. The remaining cells stay
+			-- grey rather than red: a cell is a WAVE, not a patch of floor, so
+			-- red on wave 4 would read as "you got that one wrong" instead of
+			-- "do not stand there".
+			if plan.step and i == plan.step then
+				paint(c.bg, COLOR.now)
+			elseif plan.step and i == plan.step + 1 and plan.next then
+				paint(c.bg, COLOR.next)
 			elseif id then
 				paint(c.bg, phase == "showing" and COLOR.recorded or COLOR.done)
 			else
@@ -373,7 +453,10 @@ local function refresh()
 	if phase == "showing" then
 		headline:SetText(("Tap the safe quarter  %d / %d"):format(#sequence, expected))
 	elseif phase == "calling" then
-		headline:SetText(("GO  %d / %d"):format(callIndex, #sequence))
+		-- plan.step, not callIndex: at the lock callIndex is still 0 and the
+		-- board is already pointing at wave one, so "GO 0 / 3" would be the
+		-- headline disagreeing with the green wedge right under it.
+		headline:SetText(("GO  %d / %d"):format(plan.step or 1, #sequence))
 	elseif phase == "done" then
 		headline:SetText("Round complete")
 	else
@@ -412,7 +495,7 @@ pulseTick = function(elapsed)
 	-- alone, which is true no matter where on the screen the mouse actually is
 	-- -- so a quarter glowed while the pointer sat somewhere else entirely.
 	-- Clicks are feedback enough, and they cannot be wrong about their target.
-	local liveId = (phase == "calling") and sequence[callIndex] or nil
+	local liveId = plan.now
 	local wave = 0.10 + 0.38 * (0.5 + 0.5 * math.sin(pulse * 7.5))
 
 	for _, q in ipairs(QUADRANTS) do
@@ -549,8 +632,21 @@ end
 -- would blank the board at the exact moment the player is still running to the
 -- last quarter. Detector passes cast length plus a breath.
 function Board.Finish(hold)
-	phase = "done"
-	callIndex = 0
+	-- 🔴 The phase deliberately does NOT move to "done" here, and callIndex is
+	-- deliberately left alone.
+	--
+	-- It used to do both, and that blanked the traffic light on the LAST wave --
+	-- the one wave with no next quarter to fall back on and no second chance.
+	-- Announce.lua has carried a comment about this exact trap since it was
+	-- written ("anything done here blanks the display at the exact moment it
+	-- matters most") and simply refused to handle the event; the board went and
+	-- did it anyway. It hid behind the old palette, where losing the highlight
+	-- only cost you a shade of orange. Under a traffic light it is the last
+	-- wave being the only one that never turns green (caught offline
+	-- 2026-08-16, first run of the new tests).
+	--
+	-- So: the light stays lit and the scheduled clear -- already handed a hold
+	-- of one cast plus a breath -- is what ends the round on screen.
 	refresh()
 	scheduleClear(tonumber(hold) or 1.5)
 end

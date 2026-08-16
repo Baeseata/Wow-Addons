@@ -320,6 +320,137 @@ check("the stale clear did not wipe the new round", #ns.Board.Sequence(), 1)
 check("and the board is still up", ns.Board.IsShown(), true)
 
 -- ---------------------------------------------------------------------------
+io.write("Traffic light: green here, yellow next, red everywhere else\n")
+-- The one thing on this board that has to be right in half a second, so it is
+-- a pure function reading (sequence, phase, callIndex) -- no frame, no client,
+-- no timing. PaintPlan() and QuadrantAt() are the two parts of Board.lua that
+-- can kill you and the two parts a test can pin outright.
+-- ---------------------------------------------------------------------------
+local function shades()
+	local p = ns.Board.PaintPlan()
+	local out = {}
+	for _, q in ipairs(ns.QUADRANTS) do out[#out + 1] = q.id .. "=" .. p.shade[q.id] end
+	return table.concat(out, " ")
+end
+
+ns.Board.Reset()
+ns.Board.SetPersistent(false)
+check("idle: nothing is coloured", shades(),
+	"cross=idle square=idle triangle=idle circle=idle")
+
+H.encounterStart(3508)
+H.channelStart("boss1")
+check("preaching, nothing tapped: no traffic light yet", shades(),
+	"cross=armed square=armed triangle=armed circle=armed")
+
+ns.Board.Tap("cross"); ns.Board.Tap("triangle"); ns.Board.Tap("square")
+check("preaching: tapped ones are BLUE, not green", shades(),
+	"cross=recorded square=recorded triangle=recorded circle=armed")
+
+-- 🔴 The lock, before any echo has been announced. CHANNEL_STOP and the first
+-- echo land on the same hundredth of a second, so if the light waited to be
+-- told about wave one it would light up after the wave that needs it most.
+H.channelStop("boss1")
+check("at the lock the light is ALREADY on wave one", shades(),
+	"cross=now square=unsafe triangle=next circle=unsafe")
+check("and the headline agrees with the green wedge", ns.Board.Phase(), "calling")
+
+H.cast("boss1")   -- wave 1 announced; the board was already saying this
+check("wave 1 announced: nothing moved, it was right already", shades(),
+	"cross=now square=unsafe triangle=next circle=unsafe")
+
+H.cast("boss1")   -- wave 2
+check("wave 2: green walks to the triangle, yellow to the square", shades(),
+	"cross=unsafe square=next triangle=now circle=unsafe")
+
+H.cast("boss1")   -- wave 3, the last one
+check("last wave: one green, three red, NO yellow", shades(),
+	"cross=unsafe square=now triangle=unsafe circle=unsafe")
+
+-- 🔴 "finish" arrives on the LAST wave's START, with a whole cast still to run.
+-- The light must survive it: that wave has no next quarter to fall back on.
+-- (The first version of Board.Finish moved to phase=done here and this test
+-- caught it -- the last wave was the only one that never turned green.)
+ns.Board.Finish(0.1)
+check("finish fired, and the last wave is STILL green", shades(),
+	"cross=unsafe square=now triangle=unsafe circle=unsafe")
+
+H.now = H.now + 1
+H.runTimers()
+check("the light goes out once that wave has landed", shades(),
+	"cross=idle square=idle triangle=idle circle=idle")
+check("and it did not restart at wave one", ns.Board.Phase(), "idle")
+
+-- Nothing tapped at all. The round locks straight to done -- there is no wave
+-- to point at, and a board of red would read as "all four are wrong" rather
+-- than "I have nothing for you".
+ns.Board.Reset()
+H.channelStart("boss1")
+H.channelStop("boss1")
+check("nothing recorded: greyed out, not a wall of red", shades(),
+	"cross=done square=done triangle=done circle=done")
+
+-- Same quarter twice in a row. Green wins; no wedge is yellow. This pins the
+-- BRANCH ORDER inside PaintPlan -- ask "now" first -- because swapping those
+-- two reads like a tidy-up and turns the wedge you are standing on yellow,
+-- i.e. "leave". ⚠ The tray underneath follows the same plan and is NOT pinned
+-- offline: its cells are painted with SetColorTexture, which the frame
+-- background and every swatch border also use, so counting colours there
+-- proves nothing. That half is eyes-on-the-live-client only.
+ns.Board.Reset()
+H.channelStart("boss1")
+ns.Board.Tap("circle"); ns.Board.Tap("circle"); ns.Board.Tap("cross")
+H.channelStop("boss1")
+check("repeat: green wins and no wedge is yellow", shades(),
+	"cross=unsafe square=unsafe triangle=unsafe circle=now")
+H.cast("boss1")   -- wave 1: the board was already showing it
+H.cast("boss1")   -- wave 2, the second circle
+check("second of the pair: yellow appears again for what follows", shades(),
+	"cross=next square=unsafe triangle=unsafe circle=now")
+
+-- ---------------------------------------------------------------------------
+io.write("...and the light actually reaches the wedges\n")
+-- PaintPlan() being right proves the DECISION. Whether refresh() paints what it
+-- decided is a second claim, and the seam between two correct halves is exactly
+-- where nobody is looking. Counts are enough: four wedges get tinted per
+-- refresh, and the traffic light has a shape no other phase produces.
+-- ---------------------------------------------------------------------------
+local function tintCounts()
+	local seen = {}
+	for _, c in ipairs(H.vertexColors) do
+		local key = ("%.2f,%.2f,%.2f"):format(c[1] or 0, c[2] or 0, c[3] or 0)
+		seen[key] = (seen[key] or 0) + 1
+	end
+	return seen
+end
+
+ns.Board.Reset()
+H.channelStart("boss1")
+ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
+H.channelStop("boss1")
+
+H.clearVertexColors()
+ns.Board.Show()          -- one full repaint of the locked board
+local seen = tintCounts()
+check("exactly one wedge painted green", seen["0.16,0.72,0.30"], 1)
+check("exactly one painted yellow",      seen["0.94,0.78,0.12"], 1)
+check("the other two painted red",       seen["0.66,0.16,0.16"], 2)
+check("and no wedge kept the old orange", seen["0.98,0.62,0.10"], nil)
+
+-- The colour collision, pinned. `recorded` was green once, which made green
+-- say "I wrote this one down" while he preaches and "stand here NOW" while he
+-- echoes -- the same colour, on the same board, giving opposite instructions.
+-- Nothing above would notice it coming back: the shade is still NAMED
+-- "recorded", so PaintPlan stays green all the way through.
+ns.Board.Reset()
+H.channelStart("boss1")
+ns.Board.Tap("cross"); ns.Board.Tap("square")
+H.clearVertexColors()
+ns.Board.Show()
+check("nothing is traffic-light green while he is still preaching",
+	tintCounts()["0.16,0.72,0.30"], nil)
+
+-- ---------------------------------------------------------------------------
 io.write("Call-out: this mark, arrow, next mark at 60%\n")
 -- The board's pulse has no offline coverage (it is pixels on a timer). This
 -- does: which marks go in the call-out, at what size, and the one rule with a
