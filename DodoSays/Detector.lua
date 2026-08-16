@@ -112,6 +112,12 @@ end
 -- A GUID we are not allowed to read is the same as no GUID at all. Returning
 -- the secret itself would be worse than useless: it is truthy, so it looks
 -- like an answer and shuts off every fallback behind it.
+--
+-- 🔴 This filter and the three-branch shape of isOurBoss below are a PAIR, and
+-- 2026-08-16 measured what that means: break either one alone and the suite
+-- stays green, because the other one covers for it. Break both and 18 tests go
+-- red -- which is exactly the bug that shipped on the 15th. So "I removed it
+-- and nothing failed" is not evidence that either half is redundant.
 local function guidOf(unit)
 	if type(UnitGUID) ~= "function" then return nil end
 	local ok, guid = pcall(UnitGUID, unit)

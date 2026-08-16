@@ -37,8 +37,24 @@ cd D:\World of Warcraft\_retail_\Interface\AddOns\DodoSays
 lua tools/test_detector.lua
 ```
 它加载**真的** `Util/Board/Announce/Detector`（只 stub 客户端 API），跑真事件 handler。
-🔴 **`Fence` 那组是最值钱的**：A/B 验过 —— 把 `isOurBoss()` 的身份判断拆成「只看是不是 boss 框体」，
-**3 条精确变红**，其中 `got E, want N` 正是真实后果的形状（分身骗走第一次报点 ⇒ 之后**每一次都错位一格**）。
+
+🔴 **harness 的默认世界 = 真机世界：凡它递给插件的值一律 secret**（2026-08-16 反转，此前是明文，
+一晚上因此栽了三次 —— spellID → name → GUID，每次都得再打一趟副本才发现）。
+- 想要**明文**必须在调用点写出来：`H.channelStart("boss1", { from = H.plain(1000), to = H.plain(22021) })`，
+  并在注释里说清**为什么这条测的是可读那支**。跑完末尾会报「本次共 N 个 client value 声明为可读」——
+  **那个数往上走 = 测试正在漂回真机不走的路**。
+- **裸字面量直接报错**并点名字段（`cast spellID = 1288125 is a raw literal…`），忘了想 secret 是一声硬错，不是静默。
+- 唯一的声明例外 = `ENCOUNTER_START` 的 id（实测**可读**，3508 / 难度 208），
+  它是门；想演「哪天它也 secret 了」用 `H.whileSecret(3508, …)` —— ⚠ **必须是替身式**
+  （mint 一个新号出来测,它是因为号不对才不 arm，跟 secret 无关，A/B 会直接走过去）。
+
+🔴 **哪几条最值钱（都 A/B 验过，红且指得准）**：`Fence`（拆掉 `isOurBoss` → 3 条红）·
+`a SECRET encounter id fails closed too`（Arm 去掉 `usableNumber` → 红）·
+`a secret GUID is not stored as though it were one`（`guidOf` 不再滤 secret → 红）·
+`main-phase rotation is not mistaken for calls`（去掉「报满即停」→ 红）。
+⚠ **`isOurBoss` 里的 `== true` 单独种回去是绿的** —— 它够不着，因为 `guidOf` 已经把 secret 滤成 nil。
+**两处一起坏才复现 8/15 那个「整场零报点零报错」**（实测 18 条红）。⇒ 这两道防线是**一对**，
+别因为「单独拆掉测试没红」就以为哪一道是多余的。
 
 `?` 单问号**已经开着**（打通任意 T11 地下堡即开门），机制同族、只是短一截，现在就能量。`??` 2026-08-18 赛季开服才开。
 
@@ -84,9 +100,12 @@ lua tools/test_detector.lua
   🔴 **lightweight tag 会把 commit message 当 changelog 甩上 CF**(而我们的 commit message 是中文)
   ⇒ 判据:`git cat-file -t <tag>` 必须回 **`tag`**,回 `commit` 就是 lightweight。
 - **发版账本 = Actions 运行记录 + CF 回的 `{"id":…}`**,不是 tag(tag 会被删,那两样不会)。
-- **打包白名单实查（2026-08-15，`.github/workflows/curseforge-release.yml:128`）**：只有
-  `*.lua *.toc README.md LICENSE *.tga *.blp *.png *.ttf *.xml *.mp3 *.ogg` 进包
+- **打包白名单实查（2026-08-16 重核 `.github/workflows/curseforge-release.yml:129-131`）**：只有
+  `*.lua *.toc README.md LICENSE *.tga *.blp *.png *.ttf *.xml *.mp3 *.ogg` 进包，
+  **并且同一条 `find` 带 `-not -path './test/*' -not -path './tools/*' -not -name 'CLAUDE.md'`**
+  ⇒ **`tools/` 里的 harness 和测试是被路径排除挡住的，不是靠 `*.lua` 白名单**（`*.lua` 反而会收它们）
   ⇒ **`docs/` 下的调研文档天然进不了 CF 包**（`.md` 不在白名单，只有 `README.md` 例外）
+  ⇒ 只动 `tools/` 的改动**不产生可发布内容,不需要发版**
 - 🔴 **已知缺口**：`:143` 那道验收闸只 grep `CLAUDE\.md|/test/|/tools/`，**不含 `/docs/`**。
   今天靠白名单挡住，闸没参与。**哪天有人往白名单加 `-o -name '*.md'`，`docs/` 会静默进包而闸不报** ⇒
   真要放宽白名单，**同一个 commit 里把 `/docs/` 加进那条 grep**。

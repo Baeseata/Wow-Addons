@@ -6,10 +6,17 @@
 -- These load the real Util/Board/Announce/Detector and drive them through the
 -- real event handler. The only fakes are client APIs.
 --
--- The one that matters is FENCE: on ?? the second boss ("Echo of Azta'rec")
--- casts abilities that also read as "Echo of ...", and the reference
+-- 🔴 Everything the client hands over here is SECRET, because that is what was
+-- measured in the arena on 2026-08-15: spellID, name, cast timestamps and
+-- UnitGUID, all of them. A test that wants a readable value says so at the
+-- call site with H.plain(...) -- there are a handful, each with its reason
+-- written next to it, and the run prints the tally at the end.
+--
+-- The one that matters most is FENCE: on ?? the second boss ("Echo of
+-- Azta'rec") casts abilities that also read as "Echo of ...", and the reference
 -- implementation logged a hard round losing 2 of its 5 calls to it. If that
--- test ever goes green with the identity check removed, the fence is decorative.
+-- test ever goes green with the identity check removed, the fence is
+-- decorative.
 -- ===========================================================================
 
 package.path = "tools/?.lua;" .. package.path
@@ -42,30 +49,33 @@ local function countOf(event)
 	return n
 end
 
-local listener = H.listenerFor("ENCOUNTER_START")
-local fire = listener and listener._scripts.OnEvent
-assert(fire, "Detector registered no OnEvent handler")
-
--- Client stubs the tests re-point as they go.
-local channelling, castName = nil, nil
-_G.UnitChannelInfo = function(unit)
-	if not channelling or channelling.unit ~= unit then return nil end
-	return channelling.name or "Sermon of Ula'tek", nil, nil,
-		channelling.from, channelling.to, nil, nil, channelling.id
-end
-_G.UnitCastingInfo = function() return castName end
+assert(H.listenerFor("ENCOUNTER_START"), "Detector registered no OnEvent handler")
 
 -- ---------------------------------------------------------------------------
-io.write("Util\n")
+io.write("Util: three answers, three branches\n")
+-- The whole addon hangs off equals() having a third answer. On 2026-08-15 the
+-- caller wrote `equals(...) == true`, which folds "cannot be known" back into
+-- "no", and the fight went by in silence. So the contract gets pinned here
+-- rather than left to the one comment nobody reads twice.
 -- ---------------------------------------------------------------------------
+local probeNumber = H.secretNumber("probe")
+local probeName   = H.secretString("probe name")
+
+check("equals answers plainly when it can",   ns.equals(1, 1), true)
+check("equals still says no when it can",     ns.equals(1, 2), false)
+check("equals says NIL -- not false -- when it cannot know",
+	ns.equals(probeNumber, 1), nil)
+check("a secret is not a usable number",      ns.usableNumber(probeNumber), nil)
+check("a readable one is",                    ns.usableNumber(1288103), 1288103)
+check("describe never leaks a secret",        ns.describe(probeNumber), "<secret>")
+check("nameKey refuses a secret name",        ns.nameKey(probeName), nil)
+
 check("nameKey folds the straight apostrophe",
 	ns.nameKey("Sermon of Ula'tek"), "sermonofulatek")
 check("nameKey folds the typographic one",
 	ns.nameKey("Sermon of Ula\226\128\153tek"), "sermonofulatek")
 check("nameKey is case-blind",
 	ns.nameKey("ECHO OF ULA'TEK"), ns.nameKey("Echo of Ula'tek"))
-check("equals is nil, not false, when unknowable",
-	ns.equals(1, 1), true)
 
 -- ---------------------------------------------------------------------------
 io.write("Marker layout\n")
@@ -95,13 +105,14 @@ check("past the end clamps rather than nils",
 	ns.Detector.WavesFor("hard", 9), 7)
 
 -- ---------------------------------------------------------------------------
-io.write("A full normal round\n")
+io.write("A full normal round, exactly as the client gives it\n")
+-- Nothing readable anywhere in here except the encounter id. This is the whole
+-- fight as measured.
 -- ---------------------------------------------------------------------------
-fire(nil, "ENCOUNTER_START", 3508)
+H.encounterStart(3508)
 check("encounter id picked the difficulty", ns.Detector.state.difficulty, "normal")
 
-channelling = { unit = "boss1", from = nil, to = nil, id = 1288103 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "cast-1", 1288103)
+H.channelStart("boss1")
 check("round opened", (lastOf("round") or {})[1], "round")
 check("unreadable channel falls back to the round table",
 	(lastOf("round") or {})[2], 3)
@@ -109,25 +120,27 @@ check("unreadable channel falls back to the round table",
 ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
 check("three taps recorded", #ns.Board.Sequence(), 3)
 
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "cast-1", 1288103)
+H.channelStop("boss1")
 check("sequence locked at three", (lastOf("lock") or {})[2], 3)
 
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "cast-2", 1288125)
+H.cast("boss1")
 check("first call is the first tap", (lastOf("call") or {})[3], "cross")
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "cast-3", 1288125)
+H.cast("boss1")
 check("second call is the second tap", (lastOf("call") or {})[3], "square")
 
 -- ---------------------------------------------------------------------------
 io.write("Channel length beats the round table when the client allows it\n")
+-- DECLARED READABLE, and the only test that is: the point of it is the branch
+-- where the client does hand over the channel's clock. It never has in this
+-- arena -- but the wave count is the one number a future patch could start
+-- answering, and code that only runs on ?? needs somewhere to be wrong safely.
 -- ---------------------------------------------------------------------------
-fire(nil, "ENCOUNTER_START", 3525)
+H.encounterStart(3525)
 check("hard difficulty", ns.Detector.state.difficulty, "hard")
 
--- 21.0s at the hard seed of 3.003s/wave = 7 waves, which is round 3 on hard --
+-- 21.021s at the hard seed of 3.003s/wave = 7 waves, which is round 3 on hard --
 -- and the round table would have said 5, so this proves measurement wins.
-channelling = { unit = "boss1", from = 1000, to = 22021, id = 1306239 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "c", 1306239)
+H.channelStart("boss1", { from = H.plain(1000), to = H.plain(22021) })
 check("measured channel overrode the seed", (lastOf("round") or {})[2], 7)
 
 -- ---------------------------------------------------------------------------
@@ -141,58 +154,49 @@ check("five taps recorded", #ns.Board.Sequence(), 5)
 -- A stray cast WHILE still showing must be ignored outright: accepting one
 -- here would shift the whole run onto the wrong quarters.
 local before = countOf("call")
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "stray", 1288125)
+H.cast("boss1")
 check("no calls while still showing", countOf("call"), before)
 
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "c", 1306239)
+H.channelStop("boss1")
 check("locked at five", (lastOf("lock") or {})[2], 5)
 
--- Echo of Azta'rec: different unit, different GUID, and -- the nasty part --
--- an ability whose name also folds to "echoof...". Name and id both say yes.
--- Only identity says no.
+-- Echo of Azta'rec: different unit, and -- the nasty part -- an ability whose
+-- name also folds to "echoof...".
+--
+-- DECLARED READABLE on purpose. Both the id and the name are handed over
+-- saying yes, so the only thing left refusing this cast is identity. It also
+-- pins the ORDER: the handler asks isOurBoss before it asks what the spell is,
+-- and if anyone ever swaps those two lines this goes red.
 before = countOf("call")
-castName = "Echo of Ula'tek"
-fire(nil, "UNIT_SPELLCAST_START", "boss2", "add-cast", 1288125)
+H.cast("boss2", { id = H.plain(1288125), name = H.plain("Echo of Ula'tek") })
 check("the add's cast was refused", countOf("call"), before)
 
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "real-1", 1288125)
+H.cast("boss1")
 check("the real boss still gets through", countOf("call"), before + 1)
 check("and it called the first tap", (lastOf("call") or {})[3], "cross")
 
 -- ---------------------------------------------------------------------------
-io.write("The real client: everything secret, wave count is the only fence\n")
--- Measured on ? 2026-08-15 (trace in docs/RESEARCH-live-trace.md): spellID,
--- name, start and end ALL come back <secret>. So identifyEcho can never answer
--- by id or by name -- it falls through to "place" on every single cast, and
--- "is our boss casting" stays true for the whole main phase.
---
--- Every test above ran on plaintext, i.e. on a path the real fight never takes.
--- This one runs the path it does take.
+io.write("The main phase keeps casting: the wave count is the only fence\n")
+-- Measured on ? (docs/RESEARCH-live-trace.md 5): identifyEcho falls through to
+-- "place" on every single cast, and "is this our boss casting" stays true for
+-- the whole main phase. 114 UNIT_SPELLCAST_START in that pull; 7 were echoes.
+-- The trace shows casts at 41.0s and 45.9s, seconds after a three-wave round
+-- ended at 39.3s. Nothing but "we have already called them all" stops those.
 -- ---------------------------------------------------------------------------
-local SECRET = { [1288125] = true, ["<secret name>"] = true, [90210] = true }
-_G.issecretvalue = function(v) return SECRET[v] == true end
-castName = "<secret name>"
-
-fire(nil, "ENCOUNTER_START", 3508)
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "c", 1288125)
+H.encounterStart(3508)
+H.channelStart("boss1")
 check("round opened with nothing readable at all", (lastOf("round") or {})[2], 3)
 
 ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "c", 1288125)
+H.channelStop("boss1")
 
 local base = countOf("call")
-for i = 1, 3 do fire(nil, "UNIT_SPELLCAST_START", "boss1", "echo" .. i, 1288125) end
+for _ = 1, 3 do H.cast("boss1") end
 check("three waves called", countOf("call"), base + 3)
 check("finish fired at the last wave", (log[#log] or {})[1], "finish")
 
--- The rotation coming back. In the real trace this is 41.0s and 45.9s, seconds
--- after a three-wave round ended at 39.3s.
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "rotation1", 1288125)
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "rotation2", 1288125)
+H.cast("boss1")   -- rotation, 41.0s in the trace
+H.cast("boss1")   -- rotation, 45.9s
 check("main-phase rotation is not mistaken for calls", countOf("call"), base + 3)
 
 -- ---------------------------------------------------------------------------
@@ -203,64 +207,78 @@ io.write("The cast bar measures itself\n")
 -- ---------------------------------------------------------------------------
 check("seeded at the ? measurement", ns.Detector.CastLength(), 3.00)
 
-fire(nil, "ENCOUNTER_START", 3508)
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "c2", 1288125)
+H.encounterStart(3508)
+H.channelStart("boss1")
 ns.Board.Tap("cross"); ns.Board.Tap("square")
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "c2", 1288125)
+H.channelStop("boss1")
 
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "w1", 1288125)
+H.cast("boss1")
 check("the call hands the bar a length", (lastOf("call") or {})[4], 3.00)
 
 H.now = H.now + 2.5
-fire(nil, "UNIT_SPELLCAST_SUCCEEDED", "boss1", "w1", 1288125)
+H.landed("boss1")
 check("learned from where it actually landed", ns.Detector.CastLength(), 2.5)
 
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "w2", 1288125)
+H.cast("boss1")
 check("next wave's bar uses the learned value", (lastOf("call") or {})[4], 2.5)
 
 -- A SUCCEEDED arriving 40s later is not this wave landing -- it is some other
 -- event, or the player alt-tabbed. Learning from it would wreck every bar for
 -- the rest of the pull, and the bar is the thing keeping them alive.
 H.now = H.now + 40
-fire(nil, "UNIT_SPELLCAST_SUCCEEDED", "boss1", "w2", 1288125)
+H.landed("boss1")
 check("an absurd gap is refused", ns.Detector.CastLength(), 2.5)
 
 -- ---------------------------------------------------------------------------
-io.write("Live client: UnitGUID is secret too\n")
+io.write("Identity when the GUID cannot be read -- and when it can\n")
 -- The bug that actually shipped, 2026-08-15. UnitGUID comes back secret inside
 -- this arena, so equals() answered nil, `nil == true` read as "not our boss",
 -- and not a single wave was ever called. The board filled, locked, and then
 -- went silent for the whole fight -- no error, no clue, nothing to grep for.
---
--- Every earlier test missed it because the harness handed out a plaintext GUID,
--- i.e. a path the real fight never takes.
 -- ---------------------------------------------------------------------------
-local SECRET_GUID = "<secret guid>"
-SECRET[SECRET_GUID] = true
-_G.UnitGUID = function() return SECRET_GUID end
-
-fire(nil, "ENCOUNTER_START", 3508)
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "g", 1288125)
+H.encounterStart(3508)
+H.channelStart("boss1")
 ns.Board.Tap("cross"); ns.Board.Tap("square")
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "g", 1288125)
+H.channelStop("boss1")
+
+-- 🔴 The first half of that bug, pinned on its own. guidOf() must hand back
+-- nil rather than the secret: a secret is TRUTHY, so storing one makes
+-- `if state.bossGUID then` true forever and shuts off every fallback behind
+-- it. Measured 2026-08-16 -- with only the second half fixed, removing this
+-- filter left the whole suite green, so the two halves could have been
+-- dismantled one at a time with nothing objecting until it was live again.
+check("a secret GUID is not stored as though it were one",
+	ns.Detector.state.bossGUID, nil)
 
 local g0 = countOf("call")
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "gw1", 1288125)
+H.cast("boss1")
 check("waves ARE called when the GUID cannot be read", countOf("call"), g0 + 1)
 
 -- The ?? fence has to survive losing its best evidence: with no comparable
 -- GUID it falls back to the carrier, and the carrier is still not boss2.
-fire(nil, "UNIT_SPELLCAST_START", "boss2", "add", 1288125)
+H.cast("boss2")
 check("the add is still refused on carrier alone", countOf("call"), g0 + 1)
 
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "gw2", 1288125)
+H.cast("boss1")
 check("and the real boss still gets through", countOf("call"), g0 + 2)
+
+-- DECLARED READABLE. The other half of isOurBoss -- the branch that compares
+-- GUIDs -- has no other way to be exercised, because the client never lets it
+-- run here. It is the insurance policy for the day it does, and an untested
+-- insurance policy is not one.
+H.plainGUIDs(true)
+H.encounterStart(3508)
+H.channelStart("boss1")
+ns.Board.Tap("triangle"); ns.Board.Tap("circle")
+H.channelStop("boss1")
+
+local p0 = countOf("call")
+H.cast("boss2")
+check("with readable GUIDs the add is refused BY GUID", countOf("call"), p0)
+H.cast("boss1")
+check("and the boss is recognised by it", countOf("call"), p0 + 1)
+check("calling the right quarter", (lastOf("call") or {})[3], "triangle")
+H.plainGUIDs(false)
 
 -- ---------------------------------------------------------------------------
 io.write("The board gets out of the way when the round is over\n")
@@ -269,20 +287,17 @@ io.write("The board gets out of the way when the round is over\n")
 -- he is preaching -- but the timing is the subtle half: "finish" arrives on
 -- the LAST wave's START, with a whole cast still to run.
 -- ---------------------------------------------------------------------------
-fire(nil, "ENCOUNTER_START", 3508)
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "z", 1288125)
+H.encounterStart(3508)
+H.channelStart("boss1")
 check("tappable while preaching", ns.Board.Tap("cross"), true)
 ns.Board.Tap("square")
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "z", 1288125)
+H.channelStop("boss1")
 
 check("NOT tappable once he is echoing", ns.Board.Tap("triangle"), false)
 check("and the sequence did not grow", #ns.Board.Sequence(), 2)
 
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "z1", 1288125)
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "z2", 1288125)   -- last wave: finish fires
+H.cast("boss1")
+H.cast("boss1")   -- last wave: finish fires
 
 H.now = H.now + 0.5
 H.runTimers()
@@ -296,9 +311,7 @@ check("and it cleared itself", #ns.Board.Sequence(), 0)
 -- A new round starting before a pending clear fires must win outright --
 -- a stale timer wiping a live recording would be far worse than a board
 -- that lingers.
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "z3", 1288125)
+H.channelStart("boss1")
 check("new round is up", ns.Board.IsShown(), true)
 ns.Board.Tap("cross")
 H.now = H.now + 10
@@ -356,27 +369,39 @@ io.write("Only Azta'rec -- every other boss is somebody else's problem\n")
 ns.Board.Reset()
 ns.Board.Hide()
 
-fire(nil, "ENCOUNTER_START", 2900)          -- some dungeon boss
+H.encounterStart(2900)          -- some dungeon boss
 check("a dungeon boss does not arm it", ns.Detector.state.armed, false)
 
 local quiet = countOf("call")
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "d", 1288125)
+H.channelStart("boss1")
 check("his channel opens no board", ns.Board.IsShown(), false)
 
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "d", 1288125)
-fire(nil, "UNIT_SPELLCAST_START", "boss1", "d2", 1288125)
+H.channelStop("boss1")
+H.cast("boss1")
 check("and his casts call nothing", countOf("call"), quiet)
 
 -- An id we cannot read is treated exactly like a stranger. Fail closed: being
 -- silently absent from a fight costs one pull, popping up in every dungeon
 -- costs all of them.
-fire(nil, "ENCOUNTER_START", nil)
+H.encounterStart(nil)
 check("an unreadable encounter id does not arm either", ns.Detector.state.armed, false)
 
-fire(nil, "ENCOUNTER_START", 3525)
+-- The documented risk, rehearsed: the id is the ONE client value still readable
+-- in here (measured 3508 / difficulty 208), and the whole door hangs off it. If
+-- a patch makes it secret, this addon must go quiet -- not open the board over
+-- every boss in the game. usableNumber is what makes that true, so the day
+-- someone "simplifies" it away, this is the line that objects.
+--
+-- 🔴 It has to be OUR id wearing the cloak. The first version of this test used
+-- a freshly minted secret, which is not in the difficulty table at all -- so it
+-- failed closed because the number was a stranger, not because it was secret,
+-- and dropping usableNumber() from Arm() walked straight through it green
+-- (measured 2026-08-16). A secret reports as the value it hides; the lookup
+-- that was going to succeed still succeeds.
+H.whileSecret(3508, function() H.encounterStart(3508) end)
+check("a SECRET encounter id fails closed too", ns.Detector.state.armed, false)
+
+H.encounterStart(3525)
 check("?? does arm", ns.Detector.state.armed, true)
 check("and is read as hard", ns.Detector.state.difficulty, "hard")
 check("and says so at the pull",
@@ -393,16 +418,14 @@ check("an arrow into the mark", P("square"):find("ChatFrameExpandArrow") ~= nil,
 check("mark at full size",      P("square"):find("UI%-RaidTargetingIcon_6:40") ~= nil, true)
 check("and no second mark",     P("square"):find("RaidTargetingIcon_%d+:24"), nil)
 
-fire(nil, "ENCOUNTER_START", 3508)
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "p", 1288125)
+H.encounterStart(3508)
+H.channelStart("boss1")
 
-local p0 = countOf("preview")
+local pv = countOf("preview")
 ns.Board.Tap("triangle")
-check("nothing on the first tap of three", countOf("preview"), p0)
+check("nothing on the first tap of three", countOf("preview"), pv)
 ns.Board.Tap("cross")
-check("heads-up on the second of three", countOf("preview"), p0 + 1)
+check("heads-up on the second of three", countOf("preview"), pv + 1)
 check("it points at the FIRST tap, not the newest",
 	(lastOf("preview") or {})[2], "triangle")
 
@@ -418,14 +441,11 @@ ns.Board.SetPersistent(true)
 check("up as soon as we are inside", ns.Board.IsShown(), true)
 check("and idle, so nothing is tappable", ns.Board.Tap("cross"), false)
 
-fire(nil, "ENCOUNTER_START", 3508)
-channelling = { unit = "boss1", name = "<secret name>",
-                from = 90210, to = 90210, id = 1288125 }
-fire(nil, "UNIT_SPELLCAST_CHANNEL_START", "boss1", "sb", 1288125)
+H.encounterStart(3508)
+H.channelStart("boss1")
 ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("circle")
-channelling = nil
-fire(nil, "UNIT_SPELLCAST_CHANNEL_STOP", "boss1", "sb", 1288125)
-for i = 1, 3 do fire(nil, "UNIT_SPELLCAST_START", "boss1", "sb" .. i, 1288125) end
+H.channelStop("boss1")
+for _ = 1, 3 do H.cast("boss1") end
 
 H.now = H.now + 20
 H.runTimers()
@@ -433,11 +453,18 @@ check("still standing after the round cleared", ns.Board.IsShown(), true)
 check("but emptied out", #ns.Board.Sequence(), 0)
 
 ns.Board.SetPersistent(false)
-fire(nil, "ENCOUNTER_END", 3508)
+H.encounterEnd(3508)
 H.now = H.now + 20
 H.runTimers()
 check("packs away once we leave", ns.Board.IsShown(), false)
 
 -- ---------------------------------------------------------------------------
-io.write(("\n%d passed, %d failed\n"):format(pass, fail))
+-- The tally. Every client value in this run was unreadable except these, and
+-- each one is a deliberate line in a comment above. If this number starts
+-- climbing, the suite is drifting back onto a path the fight never takes --
+-- which is exactly how three bugs shipped in one evening.
+-- ---------------------------------------------------------------------------
+io.write(("\n%d client value(s) declared readable: %s\n")
+	:format(#H.declared, table.concat(H.declared, ", ")))
+io.write(("%d passed, %d failed\n"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
