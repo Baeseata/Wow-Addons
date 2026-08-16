@@ -387,29 +387,34 @@ local function refresh()
 
 	plan = Board.PaintPlan()
 
-	-- Tappable ONLY while he is preaching. Outside that the wedges are muted
-	-- and take no clicks at all -- not merely ignored, actually dead to the
-	-- mouse. A control that looks live and does nothing reads as broken; a
-	-- greyed-out one reads as "not now", which is the truth.
-	local tappable = (phase == "showing")
 	-- The mouse stays enabled even when taps are refused. The board stands
-	-- there for the whole fight, so it has to feel alive -- hover lights the
-	-- wedge, a press blinks it. Board.Tap() is the real gate, not the cursor.
+	-- there for the whole fight, so it has to feel alive -- a press on a wedge
+	-- that is not accepting taps blinks it (Board.Nudge) rather than doing
+	-- nothing, and "nothing happened at all" is what reads as broken.
+	-- Board.Tap() is the real gate, not the cursor.
+	--
+	-- (An older comment here claimed the wedges were "dead to the mouse"
+	-- outside the showing half. They never were -- the line below has always
+	-- said otherwise, and the two sat one line apart for a while.)
 	hitbox:EnableMouse(true)
 
 	for _, q in ipairs(QUADRANTS) do
 		local w = wedges[q.id]
 		local shade = plan.shade[q.id]
 
-		-- Lit = you may tap it, OR it is one of the two the traffic light is
-		-- talking about. Different reasons for the same brightness, and that is
-		-- fine: all of them mean "this one matters this second".
-		local lit = tappable or shade == "now" or shade == "next"
-		w.icon:SetDesaturated(not lit)
-		-- 0.30 was tuned back when the board only existed during a round. It
-		-- now stands there the whole time you are in the delve, where it has to
-		-- stay legible enough to aim at and to check the floor against.
-		w.icon:SetAlpha(lit and 1 or 0.62)
+		-- 🔴 The markers are NEVER desaturated. Their colour IS their identity --
+		-- the whole design rests on the player recognising a red cross and an
+		-- orange circle rather than reading a label, and a grey cross is a
+		-- harder thing to recognise, not an easier one. It used to grey out
+		-- whenever the wedge was not tappable, which meant the board spent most
+		-- of the fight looking switched off (Jerry, 2026-08-16).
+		--
+		-- Emphasis is carried by alpha alone, and by exactly one thing: a
+		-- quarter that is unsafe THIS WAVE dims. Everything else -- idle,
+		-- recording, round over -- stays bright, because in all of those the
+		-- board's job is to be checked against the floor.
+		w.icon:SetDesaturated(false)
+		w.icon:SetAlpha(shade == "unsafe" and 0.62 or 1)
 
 		local hits = {}
 		for i, id in ipairs(sequence) do

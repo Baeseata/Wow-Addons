@@ -43,10 +43,13 @@ local H = {}
 -- we reach it without adding a test-only backdoor to production code.
 H.frames = {}
 
--- Every SetVertexColor the addon has issued since the last clear. Reset in
--- install() too; declared here so a frame built during install cannot outrun it.
-H.vertexColors = {}
-function H.clearVertexColors() H.vertexColors = {} end
+-- Everything the addon has painted since the last clear: wedge tints, icon
+-- desaturation, icon alpha. Reset in install() too, and declared here so a
+-- frame built during install cannot outrun them.
+H.vertexColors, H.desaturations, H.alphas = {}, {}, {}
+function H.clearVertexColors()
+	H.vertexColors, H.desaturations, H.alphas = {}, {}, {}
+end
 
 local function noop() end
 
@@ -178,6 +181,13 @@ local function newFrame()
 		H.vertexColors[#H.vertexColors + 1] = { r, g, b, a }
 	end
 
+	-- Same reason as SetVertexColor: what the board DECIDED about an icon and
+	-- what it actually did to the texture are two claims, and only one of them
+	-- is a pure function anybody can test.
+	function f:SetDesaturated(on) self._desat = on; H.desaturations[#H.desaturations + 1] = on end
+	function f:SetAlpha(a) self._alpha = a; H.alphas[#H.alphas + 1] = a end
+	function f:GetAlpha() return self._alpha end
+
 	H.frames[#H.frames + 1] = f
 	return f
 end
@@ -247,7 +257,7 @@ function H.install()
 
 	secrets, minted = {}, 0
 	H.declared = {}
-	H.vertexColors = {}
+	H.vertexColors, H.desaturations, H.alphas = {}, {}, {}
 	world = { channel = nil, casting = {}, guid = {}, plainGUID = false }
 
 	-- Always installed. The old default -- no such API, therefore nothing is

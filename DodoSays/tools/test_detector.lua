@@ -449,6 +449,54 @@ H.clearVertexColors()
 ns.Board.Show()
 check("nothing is traffic-light green while he is still preaching",
 	tintCounts()["0.16,0.72,0.30"], nil)
+-- Close the channel before leaving, or Detector is still mid-showing and the
+-- NEXT section's channelStart is swallowed by `if state.showing then return`.
+-- (Which is exactly what happened, and it made that section's board land in
+-- "done" while its assertions were written for "calling".)
+H.channelStop("boss1")
+
+-- ---------------------------------------------------------------------------
+io.write("The markers keep their colour when nothing is happening\n")
+-- Reported live 2026-08-16: the standing board looked switched off between
+-- rounds. It greyed every wedge that was not tappable, and a marker's COLOUR is
+-- its identity -- the whole design rests on recognising a red cross rather than
+-- reading a label, and a grey cross is harder to recognise, not easier.
+--
+-- So: never desaturated, anywhere. Emphasis is alpha, and exactly one thing
+-- dims -- a quarter that is unsafe THIS WAVE.
+-- ---------------------------------------------------------------------------
+local function alphaCounts()
+	local seen = {}
+	for _, a in ipairs(H.alphas) do seen[a] = (seen[a] or 0) + 1 end
+	return seen
+end
+local function greyedOut()
+	local n = 0
+	for _, d in ipairs(H.desaturations) do if d == true then n = n + 1 end end
+	return n
+end
+
+-- Arm afresh rather than inheriting whatever the last section left behind:
+-- Detector.Arm clears state.showing, and a section that starts mid-showing has
+-- its channelStart swallowed and lands in a different phase than it asserts.
+H.encounterStart(3508)
+ns.Board.Reset()          -- idle: the board just standing there
+H.clearVertexColors()
+ns.Board.Show()
+check("idle: four markers painted, not one greyed out", greyedOut(), 0)
+check("idle: all four at full opacity", alphaCounts()[1], 4)
+check("idle: none dimmed", alphaCounts()[0.62], nil)
+
+-- Mid-round, the traffic light is on: two bright, two dim -- still in colour.
+H.channelStart("boss1")
+ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
+H.channelStop("boss1")
+H.clearVertexColors()
+ns.Board.Show()
+check("calling: still nothing greyed out", greyedOut(), 0)
+check("calling: the green and the yellow are bright", alphaCounts()[1], 2)
+check("calling: the two unsafe quarters dim", alphaCounts()[0.62], 2)
+H.channelStop("boss1")   -- leave the state machine idle for whoever is next
 
 -- ---------------------------------------------------------------------------
 io.write("Call-out: this mark, arrow, next mark at 60%\n")
