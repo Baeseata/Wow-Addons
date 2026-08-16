@@ -166,6 +166,75 @@ local function EnsureAuraProbe()
     return true
 end
 
+-- ===== 延迟探针:上了 DoT,名条上的图标慢一拍 =====
+-- 🔴 **「图标什么时候出现」这个量测不出来** —— `button:IsShown()` 是 secret(2026-08-15 实测,
+-- 一做布尔测试就崩)。所以本探针**不去测它**,改测「UNIT_AURA 事件几点到的」,
+-- 再把「事件到了」画成屏幕上闪一下 —— 参照物必须跟图标在**同一个视野**里,
+-- 否则「事件的时刻」活在聊天框、「图标的时刻」活在屏幕,两个世界没法比。
+--
+-- 判据(闪块 vs 你眼睛看到图标出现):
+--   闪块和图标几乎同时     ⇒ 事件层没问题,慢的是暴雪容器的渲染/节流
+--   闪块先亮、图标晚一拍   ⇒ 同上,而且这一拍被量化了
+--   闪块本身就晚           ⇒ 慢在事件层(服务器→客户端),插件这边无能为力
+local LAT_WINDOW = 4
+-- 只对**真的会上 debuff 的那几个**开始计时。第一版是「arm 后第一个施法就计时」,
+-- 结果采到了「触须猛击」——**量的不是他报的那个症状**,而输出看起来完全正常。
+-- (canon:我这条验收路径,把那个症状执行到了吗。)
+local LAT_SPELLS = { [589] = true, [34914] = true, [335467] = true }  -- 痛 / 吸血鬼之触 / 癫
+
+local function Now()
+    return (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+end
+
+local function LatFlash()
+    if not P.latFlash then
+        local t = UIParent:CreateTexture(nil, "OVERLAY")
+        t:SetSize(56, 56)
+        t:SetPoint("CENTER", UIParent, "CENTER", 0, 240)
+        t:SetColorTexture(0.2, 1, 0.35, 0.85)
+        t:Hide()
+        P.latFlash = t
+    end
+    P.latFlash:Show()
+    C_Timer.After(0.3, function() if P.latFlash then P.latFlash:Hide() end end)
+end
+
+local function LatReport()
+    local L = P.lat
+    if not L or not L.t0 then return end
+    local rows = { string.format("|cffffff00=== DoT 上身延迟:%s ===|r", tostring(sname(L.spell))) }
+    for _, r in ipairs(L.rows) do rows[#rows + 1] = r end
+
+    -- 顺带点一下 DodoNameplate 那三个容器 —— 它们有全局名(Auras.lua 里
+    -- "DodoNameplateAura"..suffix..单位号),所以外部探针够得到。
+    -- ⚠ 这几个值一律走 tag(),**不许 tostring** —— 万一哪个是 secret,tostring 当场崩。
+    if L.plateN then
+        for _, kind in ipairs({ "Main", "CC", "Buff" }) do
+            local c = _G["DodoNameplateAura" .. kind .. L.plateN]
+            if c then
+                local okS, shown = pcall(function() return c:IsShown() end)
+                local okV, vis   = pcall(function() return c:IsVisible() end)
+                local okR, reg   = pcall(function() return c:IsEventRegistered("UNIT_AURA") end)
+                rows[#rows + 1] = string.format("  容器 %-5s nameplate%-3s shown=%s visible=%s UNIT_AURA注册=%s",
+                    kind, L.plateN, tag(okS, shown), tag(okV, vis), tag(okR, reg))
+            end
+        end
+    else
+        rows[#rows + 1] = "  |cffff8800整个窗口里没收到任何 nameplate 的 UNIT_AURA|r"
+    end
+
+    rows[#rows + 1] = "  |cff888888对照:闪块 vs 图标,谁先谁后 —— 判据见文件里那段注释|r"
+    for _, r in ipairs(rows) do print(r) end
+    P.lastOut = StripColors(table.concat(rows, "\n"))
+    L.t0, L.spell, L.plateN = nil, nil, nil
+    -- 采完一次就**自己收摊**:disarm + 注销 UNIT_AURA。
+    -- 这个插件的设计原则是「默认完全静默」,而一个采完样还常驻监听的探针不满足它 ——
+    -- 战斗中 UNIT_AURA 每秒几十次,留着纯烧,而且下次谁来读代码会以为它一直在测什么。
+    L.armed = false
+    P:UnregisterEvent("UNIT_AURA")
+    say("延迟样本收完,探针已自动收起(要再采一次就再 /dp lat)。")
+end
+
 function P:Run(phase)
     wipe(out)
     local sid = firstRotationSpell()
@@ -777,8 +846,36 @@ P:SetScript("OnEvent", function(_, event, ...)
                 P.auraAny:UpdateAllAuras(); P.auraAll:UpdateAllAuras(); P.auraOne:UpdateAllAuras()
             end)
         end
+    elseif event == "UNIT_AURA" then
+        -- ⚠ 只取 unit,**绝不碰第二个参数**(受限时那个 updateInfo 是 secret)。
+        local unit = ...
+        local L = P.lat
+        if L and L.armed and L.t0 and type(unit) == "string" then
+            if unit == "target" or unit:find("^nameplate") then
+                local dt = Now() - L.t0
+                if dt <= LAT_WINDOW then
+                    L.rows[#L.rows + 1] = string.format("  t=%.3f  UNIT_AURA  %s", dt, unit)
+                    LatFlash()
+                end
+            end
+        end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, _, spellID = ...
+        local L = P.lat
+        if unit == "player" and L and L.armed and not L.t0 and LAT_SPELLS[spellID] then
+            L.t0, L.spell = Now(), spellID
+            -- 目标那个 nameplate 的 token **在这一刻**就取下来。上一版是「记最后一个收到
+            -- UNIT_AURA 的 nameplate」,而周围的怪一直在刷事件 ⇒ 最后留下的是隔壁那只,
+            -- 于是容器状态那三行查了个不相干的单位,还看着挺像回事。
+            local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit
+                and C_NamePlate.GetNamePlateForUnit("target")
+            L.plateN = plate and plate.namePlateUnitToken
+                and plate.namePlateUnitToken:match("^nameplate(%d+)") or nil
+            L.rows = { string.format("  t=0.000  施法成功  %s (%s)%s",
+                tostring(sname(spellID)), tostring(spellID),
+                L.plateN and ("   目标 = nameplate" .. L.plateN) or "   |cffff8800目标没有名条|r") }
+            C_Timer.After(LAT_WINDOW, LatReport)
+        end
         if unit == "player" and P.watchCast then
             P.watchCast = false
             say("own cast spellID -> " .. tag(true, spellID) .. "   (is my own cast readable?)")
@@ -791,7 +888,21 @@ SLASH_DODOPROBE2 = "/dodoprobe"
 SlashCmdList.DODOPROBE = function(msg)
     local cmd, arg = string.lower(msg or ""):match("^%s*(%a*)%s*(%d*)")
     arg = tonumber(arg)
-    if cmd == "copy" then
+    if cmd == "lat" then
+        P.lat = P.lat or { rows = {} }
+        P.lat.armed = not P.lat.armed
+        P.lat.t0, P.lat.spell, P.lat.plateN = nil, nil, nil
+        if P.lat.armed then
+            -- 只在武装时注册:UNIT_AURA 在战斗中极频繁,常驻监听纯属白烧。
+            P:RegisterEvent("UNIT_AURA")
+            say("延迟探针已武装 —— |cffffff00选中目标,放「痛」/「吸血鬼之触」/「癫」其中一个|r。"
+                .. "别的技能不会触发计时(上一版就是这么采到了触须猛击)。")
+            say("屏幕上方会在每次 UNIT_AURA 到达时闪一个绿块 —— |cffffff00盯着它和名条图标谁先谁后|r。")
+        else
+            P:UnregisterEvent("UNIT_AURA")
+            say("延迟探针关了。")
+        end
+    elseif cmd == "copy" then
         if P.lastOut then
             ShowCopyBox(P.lastOut)
         else
