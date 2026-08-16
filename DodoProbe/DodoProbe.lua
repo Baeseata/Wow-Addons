@@ -50,6 +50,26 @@ local function StripColors(s)
     return (s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
 end
 
+-- ── 📤 落盘通道:探针结果直接进 SavedVariables,不用再靠截屏 / 手抄传给 Claude。
+-- 🔴 **SavedVariables 只在 `/reload` 或退出游戏时才写盘** ⇒ 流程必须是「跑 → /reload → 读文件」。
+--    漏掉那步 /reload 的症状是「文件里没有这次的结果」,而它跟「探针根本没跑」长得一模一样。
+-- 落盘位置:WTF\Account\<账号>\SavedVariables\DodoProbe.lua(游戏自己另留一份 .bak)
+-- ⚠ 颜色码在这儿剥掉:它对屏幕有用,进文件就只是噪音,还会干扰 grep。
+local LOG_MAX = 3000   -- 上限。不设的话它只增不减,迟早把存档撑大而没人发现
+
+local function LogPush(tag, text)
+    DodoProbeDB = DodoProbeDB or {}
+    if type(DodoProbeDB.log) ~= "table" then DodoProbeDB.log = {} end
+    local log = DodoProbeDB.log
+    log[#log + 1] = date("%m-%d %H:%M:%S") .. "  [" .. tostring(tag) .. "]  "
+        .. StripColors(tostring(text))
+    while #log > LOG_MAX do table.remove(log, 1) end
+end
+
+-- 公开给**任何**插件:`if DodoProbeLog then DodoProbeLog("dch", s) end`
+-- 探测式调用 ⇒ 被测插件零依赖,没装 DodoProbe 也不会崩。
+_G.DodoProbeLog = LogPush
+
 local function ShowCopyBox(text)
     if not P.copyFrame then
         local f = CreateFrame("Frame", "DodoProbeCopyFrame", UIParent, "BackdropTemplate")
@@ -807,11 +827,19 @@ function P:Run(phase)
 
     for _, line in ipairs(out) do print(line) end
     P.lastOut = StripColors(table.concat(out, "\n"))
-    say("done.  |cffffff00/dp copy|r 弹出可复制的窗口(聊天框滚不动的话用它)")
+    -- 自动落盘:整跑一次的结果进日志,不用记额外命令(真正写盘仍要 /reload,见 LogPush 上面那段)
+    LogPush("dp", "---- /dp run (phase=" .. tostring(phase) .. ") ----")
+    for _, line in ipairs(out) do LogPush("dp", line) end
+    say("done.  |cffffff00/dp copy|r 弹出可复制的窗口;结果也已进落盘日志(|cffffff00/reload|r 后写入文件)")
 end
 
 -- Silent by default: this addon ships in the monorepo and syncs to every machine,
 -- so it must never print anything unless explicitly asked. /dp arm = one-shot combat run.
+-- 位置记录仪的三个入口在本文件下面才定义(它们要用 P 上的状态)。这里先声明成
+-- local,否则下面那个 OnEvent 闭包**按词法作用域根本看不见它们** —— 它会去找同名
+-- 全局,拿到 nil,然后在"reload 续命"那条路上崩,而那条路平时不走、不容易发现。
+local PosStart, PosStop, PosSample
+
 P:RegisterEvent("PLAYER_ENTERING_WORLD")
 P:RegisterEvent("PLAYER_REGEN_DISABLED")
 P:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -824,6 +852,28 @@ P:RegisterEvent("PLAYER_TARGET_CHANGED")
 P:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         say("ready (silent).  /dp = run now   |   /dp arm = run once in next combat")
+
+        -- 自证:每次加载都往落盘日志里写一行。这样"文件里没有这次的东西"就只可能是
+        -- **没 /reload**,不会跟"插件压根没加载"混在一起 —— 而那两种从外面看一模一样。
+        -- (实测 2026-08-16:SavedVariables 目录里当时根本没有 DodoProbe.lua,
+        --  落盘通道写在代码里、却从没真产出过一次文件。)
+        if not P.bootLogged then
+            P.bootLogged = true
+            local _, build = "", "?"
+            do local ok, _, b = pcall(GetBuildInfo); if ok and b then build = b end end
+            LogPush("boot", "DodoProbe loaded, build " .. tostring(build))
+        end
+
+        -- 位置记录跨 /reload 续命:不然"跑完必须 reload 才落盘"和"reload 就把记录停了"
+        -- 直接打架,他每 reload 一次就得记着重开一次。
+        if DodoProbeDB and DodoProbeDB.posOn then
+            C_Timer.After(2, function()
+                if DodoProbeDB and DodoProbeDB.posOn and not P.posTicker then
+                    PosStart()
+                    say("|cffffff00位置记录仍在进行|r(reload 续命)。/dp pos 关。")
+                end
+            end)
+        end
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Stay armed until a sample actually lands IN combat. A flat 3s timer can fire
         -- after a short fight already ended, which stamps a "COMBAT" header on an
@@ -883,6 +933,143 @@ P:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- ===========================================================================
+-- 📍 位置记录仪 (0.14)  —— 玩家坐标到底给不给值,以及给的话长什么样
+--
+-- 契约层已经查清(build 69214 / 12.1.0):UnitPosition / GetPlayerFacing /
+-- C_Map.GetPlayerMapPosition / GetBestMapForUnit **一个 secret 标注都没有**。
+-- 但契约用 nilability 表达"副本里不给",而 UnitPosition 那条**压根没建模副本门**
+-- ⇒ 契约在"给不给值"上是沉默的,不是在说"能"。只有实测能定。
+--
+-- 每条样本照实记三态:真值 / nil / SECRET / ERR —— 绝不对 secret 做任何运算。
+-- 每条都自带 map + 战斗标志:一条样本必须自己说得清它是在哪儿、什么状态下采的,
+-- 否则"副本里 nil"跟"这台机器上它本来就 nil"长得一模一样。
+--
+-- 🔴 负对照是**免费**的:先在副本外面走两步,那几行就是基线。没有基线,
+--    副本里的 nil 什么都证明不了。
+-- ===========================================================================
+
+local POS_MAX  = 4000
+local POS_TICK = 0.4     -- 秒
+local POS_MOVE = 0.25    -- 码;没动就不记,免得站着发呆刷满 4000 条
+
+-- 一个值转成一格。永远不碰 secret,永远不 tostring 它。
+local function cell(ok, v)
+    if not ok then return "ERR" end
+    if v == nil then return "nil" end
+    if issecretvalue and issecretvalue(v) then return "SECRET" end
+    if type(v) ~= "number" then return "T:" .. type(v) end
+    return string.format("%.4f", v)
+end
+
+-- 能拿来算的那个数,拿不到就 nil。给"动没动"用,别的地方一概用 cell()。
+local function num(ok, v)
+    if not ok or v == nil then return nil end
+    if issecretvalue and issecretvalue(v) then return nil end
+    if type(v) ~= "number" then return nil end
+    return v
+end
+
+local function PosPush(line)
+    DodoProbeDB = DodoProbeDB or {}
+    if type(DodoProbeDB.pos) ~= "table" then DodoProbeDB.pos = {} end
+    local t = DodoProbeDB.pos
+    t[#t + 1] = line
+    while #t > POS_MAX do table.remove(t, 1) end
+end
+
+-- 一次采样。kind = "W"(走动) / "M:<label>"(手动打点) / "S"(开始)
+function PosSample(kind)
+    local okP, x, y, z, wmap = pcall(UnitPosition, "player")
+    local okF, face = pcall(GetPlayerFacing)
+
+    local uiMap
+    do
+        local ok, m = pcall(C_Map.GetBestMapForUnit, "player")
+        uiMap = ok and m or nil
+    end
+
+    -- 归一化坐标要过 Vector2DMixin,而且 uiMap 拿不到时压根不能调。
+    local nx, ny = "n/a", "n/a"
+    if uiMap and not (issecretvalue and issecretvalue(uiMap)) then
+        local ok, v = pcall(C_Map.GetPlayerMapPosition, uiMap, "player")
+        if ok and v then
+            local ok2, a, b = pcall(v.GetXY, v)
+            nx, ny = cell(ok2, a), cell(ok2, b)
+        else
+            nx, ny = cell(ok, v == nil and nil or v), "-"
+        end
+    end
+
+    -- boss 的坐标要是也给,房间的锚点就白捡了 —— 那比硬编码四个角强得多,
+    -- 因为它换个副本还成立。target 一并量,boss1 不存在时它常常就是那只。
+    local okB, bx, by = pcall(UnitPosition, "boss1")
+    local okT, tx, ty = pcall(UnitPosition, "target")
+
+    local zone, itype, iid = "?", "?", "?"
+    do
+        local ok, n, t2, _, _, _, _, _, id = pcall(GetInstanceInfo)
+        if ok then zone, itype, iid = tostring(n), tostring(t2), tostring(id) end
+    end
+
+    local okC, inC = pcall(InCombatLockdown)
+
+    PosPush(string.format(
+        "%s t=%.2f | x=%s y=%s z=%s wmap=%s face=%s | ui=%s nx=%s ny=%s | boss=%s,%s tgt=%s,%s | c=%s | %s/%s/%s",
+        kind, (pcall(GetTime) and GetTime() or 0) - (P.posT0 or 0),
+        cell(okP, x), cell(okP, y), cell(okP, z), cell(okP, wmap), cell(okF, face),
+        cell(true, uiMap), nx, ny,
+        cell(okB, bx), cell(okB, by), cell(okT, tx), cell(okT, ty),
+        (okC and (inC and "1" or "0")) or "ERR",
+        zone, itype, iid))
+
+    return num(okP, x), num(okP, y)
+end
+
+function PosStop()
+    if P.posTicker then P.posTicker:Cancel(); P.posTicker = nil end
+    DodoProbeDB = DodoProbeDB or {}
+    DodoProbeDB.posOn = false
+end
+
+-- 🔴 采样必须 pcall,而且**失败要落盘**。
+-- 一个在 ticker 里抛出来的异常会让记录仪当场无声停摆 —— 而"文件里只有前 20 条"
+-- 跟"他走了 20 步就不走了"从外面看一模一样。宁可留一行 ERR! 说明死在哪。
+-- 触发这条的最可能原因:某个值今天不是 secret、下个补丁变成 secret,
+-- 而 cell() 之外还有哪儿动了它。
+local function PosSafe(kind)
+    local ok, err = pcall(PosSample, kind)
+    if ok then return true end
+    PosPush("ERR! 采样抛异常,记录停止 —— " .. tostring(err))
+    PosStop()
+    say("|cffff3333位置记录崩了并已停止|r,原因已写进落盘记录。/reload 后把文件给我。")
+    return false
+end
+
+function PosStart()
+    PosStop()
+    DodoProbeDB = DodoProbeDB or {}
+    DodoProbeDB.posOn = true
+    P.posT0 = (pcall(GetTime) and GetTime()) or 0
+    P.posLastX, P.posLastY = nil, nil
+
+    PosSafe("S")
+    P.posTicker = C_Timer.NewTicker(POS_TICK, function()
+        local x, y = nil, nil
+        do
+            local ok, a, b = pcall(UnitPosition, "player")
+            x, y = num(ok, a), num(ok, b)
+        end
+        -- 读不到就照记 —— "读不到"正是我们来量的那件事,别把它过滤掉。
+        if x and y and P.posLastX then
+            local dx, dy = x - P.posLastX, y - P.posLastY
+            if (dx * dx + dy * dy) < (POS_MOVE * POS_MOVE) then return end
+        end
+        P.posLastX, P.posLastY = x, y
+        if not PosSafe("W") then return end
+    end)
+end
+
 SLASH_DODOPROBE1 = "/dp"
 SLASH_DODOPROBE2 = "/dodoprobe"
 SlashCmdList.DODOPROBE = function(msg)
@@ -902,6 +1089,44 @@ SlashCmdList.DODOPROBE = function(msg)
             P:UnregisterEvent("UNIT_AURA")
             say("延迟探针关了。")
         end
+    elseif cmd == "pos" then
+        if P.posTicker then
+            PosStop()
+            local n = (DodoProbeDB and type(DodoProbeDB.pos) == "table") and #DodoProbeDB.pos or 0
+            say(("位置记录停。共 %d 条 —— |cffffff00还要 /reload 一次才真的写进文件|r"):format(n))
+        else
+            PosStart()
+            say("位置记录 |cff44ff44ON|r,每 " .. POS_TICK .. "s 采一次(没动就不记)。")
+            say("  |cffffff00先在副本外面走两步|r —— 那是负对照。没有它,副本里的 nil 什么都证明不了。")
+            say("  站到一个标记上时敲 |cffffd100/dp mark cross|r(square / triangle / circle)打个点。")
+            say("  完事 |cffffd100/dp pos|r 关,再 |cffffd100/reload|r 落盘。")
+        end
+
+    elseif cmd == "mark" then
+        local label = (msg or ""):match("^%s*%a+%s+(%S+)")
+        if not label then
+            say("要带个名字:|cffffd100/dp mark cross|r")
+        else
+            -- 身份在**打点这一刻**钉死,不从采样流里事后推 —— 推出来的那个会被
+            -- 周围的噪声覆盖成不相干的东西,而那几行读起来照样像回事。
+            if not P.posTicker then PosStart() end
+            PosSafe("M:" .. string.lower(label))
+            say("打点 |cff44ff44" .. label .. "|r")
+        end
+
+    elseif cmd == "posclear" then
+        DodoProbeDB = DodoProbeDB or {}
+        DodoProbeDB.pos = {}
+        say("位置记录已清空 —— |cffffff00还要 /reload 一次|r 才会从文件里消失。")
+
+    elseif cmd == "log" then
+        local n = (DodoProbeDB and type(DodoProbeDB.log) == "table") and #DodoProbeDB.log or 0
+        say(("落盘日志 %d 条。|cffffff00得再 /reload 一次才会真的写进文件|r"):format(n))
+        say("  文件:WTF\\Account\\<账号>\\SavedVariables\\DodoProbe.lua")
+    elseif cmd == "clear" then
+        DodoProbeDB = DodoProbeDB or {}
+        DodoProbeDB.log = {}
+        say("日志已清空 —— |cffffff00还要 /reload 一次|r 才会从文件里消失。")
     elseif cmd == "copy" then
         if P.lastOut then
             ShowCopyBox(P.lastOut)
