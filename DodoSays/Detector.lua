@@ -21,9 +21,20 @@ local ADDON, ns = ...
 --     SPELLCAST_START (Echo)  one call per wave
 --   ENCOUNTER_END .......... disarm, forget the pull
 --
--- What we deliberately do NOT do: read where the player is standing. The
--- client stopped handing out UnitPosition inside this arena in combat, so the
--- board is filled by hand and this file never asks the room anything.
+-- What we deliberately do NOT do: read where the player is standing -- because
+-- we cannot. MEASURED 2026-08-16, 190 samples inside the delve against 30
+-- outside it as a control:
+--
+--   UnitPosition("player")        x, y, z all nil inside; real numbers outside
+--   GetPlayerFacing()             nil inside; real outside
+--   C_Map.GetPlayerMapPosition    nil inside; real outside
+--
+-- Not secret -- nil. That distinction is the whole ballgame: a secret can still
+-- be fed to a StatusBar and drawn by the C layer, while nil cannot be drawn at
+-- all. And UnitPosition's FOURTH return still comes back (3079), so the call is
+-- not refused and does not throw: the client answers, and withholds exactly the
+-- three numbers. So the board is filled by hand, and no arrow, compass or
+-- radar is possible in here no matter how it is written.
 -- ===========================================================================
 
 local Detector = {}

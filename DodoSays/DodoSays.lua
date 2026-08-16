@@ -45,13 +45,18 @@ end
 -- ---------------------------------------------------------------------------
 -- Where are we?
 --
--- ⚠ 2634 comes from SnakeSays' Core.lua and is NOT verified by us. A wrong
--- answer here has a shape we have already been bitten by: the board turning up
--- somewhere it has no business being. So it fails CLOSED -- unknown map, or a
--- map id the client will not hand over, means no standing board.
+-- ✅ 2634 MEASURED 2026-08-16, standing inside the delve: C_Map.GetBestMapForUnit
+-- ("player") returns 2634, plainly and out of combat. (It arrived here as an
+-- unverified number copied from SnakeSays' Core.lua; it is ours now.)
 --
--- `/ds where` prints what the client actually says, so this can be corrected
--- from inside the delve in about five seconds.
+-- Also measured in the same run, for whoever needs the other ids:
+--   UnitPosition's 4th return (the world/instance map) = 3079
+--   GetInstanceInfo -> 毒瀑深渊 / "scenario" / instanceID 3079
+--
+-- It still fails CLOSED -- unknown map, or a map id the client will not hand
+-- over, means no standing board. A wrong answer here has a shape we have
+-- already been bitten by: the board turning up somewhere it has no business
+-- being. `/ds where` prints what the client actually says.
 -- ---------------------------------------------------------------------------
 local DELVE_MAPS = { [2634] = true }   -- Venomfall Deeps
 
