@@ -168,7 +168,7 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 | 下面那两格明明该有 buff 却空着 | `raidMax` 小值退化 ⇒ `/dch raidmax 6` + `/reload` |
 | 一串 `attempt to call a nil value` | `AuraSets.lua` 没加载(TOC 少一行,或**新文件要完整重启客户端**,`/reload` 不重扫)。登录时会先吵一句 |
 
-## 🔴 三个真栽过的坑
+## 🔴 四个真栽过的坑
 
 **1. `UnitChannelInfo` 和 `UnitCastingInfo` 的返回顺序从第 7 位起就分叉**
 (引导是 `notInterruptible`,施法是 `castID`),`spellID` 一个在第 8 位一个在第 9 位。
@@ -184,6 +184,26 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 **3. 引导一结束就清 `castCur` ⇒ `/dch chan` 永远用不了。**
 它是给「刚才那个引导」定跳数的,而人手打字必然发生在引导**结束之后**。
 更坑的是提示语还写着「刚才那个」——**提示语和行为对不上**。⇒ 不清,留作「最后见过的引导」。
+
+**4. `sig` 缓存把**一次偶发失败**固化成永久故障(2026-08-16,aura filter)**
+
+`ApplyBoxFilter` 原来把 `b.sig = sig` 写在 `pcall` **外面** ⇒ 推送失败照样标记成「推过了」
+⇒ 从此永不重试 ⇒ 容器的 `candidateFilters` 停在建组时那份,而 **`nil` 在暴雪那边是「全放行」**
+(`AuraContainerUtil.DoesAuraPassCandidateFilters` 第一行)⇒ 那一格显示你身上**所有**增益,
+**全程零报错**。真实症状:右上两格 + 左下一格**各画了同一个场景 buff**(「火语者的结果」),
+而三张表里根本没有它 —— 三个容器 unit/filterString 完全相同,filter 一失效就退化成三份一样的东西。
+
+🔑 **`sig` 有值 ≠ filter 生效了。** 查的时候日志里 sig 躺着完整真表,我据此判过「filter 推下去了」
+⇒ 白走一轮。DoT 那排的 `slot.spellID = sid` 是**同一个洞**(症状:四格画同样的 debuff),已一并修。
+
+⚠ **根因仍然未知**:第一次为什么会推失败没查出来,现在也复现不了
+(`auraGroup:SetCandidateFilters` 的实现不在可读的 Lua 源码里,大概率在 C 层)。
+**修的是放大器,不是根因** —— 失败现在会吵一句 + 下次刷新自动重试。
+
+🔬 **复发时跑 `/dch probe`**(常驻,不是临时探针):报 `UnitCanAssist` / 三排的 `#list`+`sig`+推送结果,
+并**绕开 sig 缓存强推一次**。⚠ 它自带一行「我身上 HELPFUL 光环 = N 个」——
+**N = 0 时整次结果零信息量**(三格是空的会变成必然结果,跟 filter 好坏无关)。
+输出同时进 DodoProbe 的落盘日志,Claude 直接读文件,不用截屏(见 canon `rules/wow-addons.md`)。
 
 ---
 

@@ -31,6 +31,20 @@ v0.3.0 之前 arm 是"进战 3 秒后无条件跑",而短战斗可能在 3 秒�
 - `nil` = **最阴的那种**：不报错，直接不给值（`RequiresNonSecretAura` 就是这个行为）
 - `ERROR` = 调用本身被拒（`FailureMode = Error` 的那些）
 
+## 📤 落盘通道 `_G.DodoProbeLog(tag, text)` —— 结果给 Claude 读,别让玩家截屏
+
+任何插件都能写:`if DodoProbeLog then DodoProbeLog("dch", s) end`(**探测式调用,被测插件零依赖**,
+没装 DodoProbe 也不崩)。`/dp` 整跑一次的结果**自动**进日志;`/dp log` 报条数;`/dp clear` 清空。
+
+🔴 **机制 / 三步流程 / 那条「只在 `/reload` 或退出游戏时才落盘」的坑,正文在 canon
+`rules/wow-addons.md`** —— 别在这儿抄第二份。这里只记本插件侧的三个位置:
+
+- `LogPush` 必须放在 `StripColors` **之后**(要用它剥颜色码 —— 进文件的颜色码只是噪音还干扰 grep)
+- `LOG_MAX = 3000` 上限:不设它只增不减,迟早撑大存档而没人发现
+- `P:Run()` 结尾自动落一份 ⇒ 玩家不用记额外命令
+
+⚠ `/dp clear` **只清 `DodoProbeDB.log`**,不碰 `pos` 那类别的字段。
+
 ## 分段资源条探针（0.12.0 新增）—— **结论只能从屏幕读**
 
 屏幕上会多出**两排各 5 小段**（在原来那个图标下面）：

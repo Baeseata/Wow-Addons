@@ -648,12 +648,27 @@ local function ListFilters(list)
     return { includeSpellIDs = set }
 end
 
+-- 🔴 `b.sig` 只在**推送成功之后**才记。原来它写在 pcall 外面 ——
+--    一次偶发失败会被**固化成永久故障**:标记成「推过了」⇒ 从此永不重试 ⇒ 容器的
+--    candidateFilters 一直停在建组时那份,而 `nil` 在暴雪那边是**全放行**
+--    (`AuraContainerUtil.DoesAuraPassCandidateFilters` 第一行)⇒ 那一格显示你身上**所有**
+--    增益,**且全程零报错**。2026-08-16 真撞过:三格各画了一个场景 buff(「火语者的结果」),
+--    而 sig 里躺着完整的真表 —— **`sig` 有值 ≠ filter 生效了**,那次就是被它骗过去的。
+-- ⚠ 如实标注:这里拆掉的是**放大器**,不是诊断出的根因。「第一次为什么会推失败」**仍然未知**
+--    (暴雪那侧 `auraGroup:SetCandidateFilters` 的实现不在可读的 Lua 源码里)。
+--    失败改成吵一句 —— 下次再撞上就有错误原文,而不是又一次静默固化。
 local function ApplyBoxFilter(b, list, on)
     if not b then return end
     local sig = table.concat(list, ",")
     if sig ~= b.sig then
-        pcall(function() b.container:SetAuraGroupCandidateFilters("g", ListFilters(list)) end)
-        b.sig = sig
+        local ok, err = pcall(function()
+            b.container:SetAuraGroupCandidateFilters("g", ListFilters(list))
+        end)
+        if ok then
+            b.sig = sig          -- 只有成功才记 ⇒ 失败时下次刷新会自动重试
+        else
+            Print("|cffff3333aura filter 推送失败|r(下次刷新重试):" .. tostring(err))
+        end
     end
     pcall(function() b.container:SetEnabled(on and #list > 0) end)
 end
@@ -668,10 +683,21 @@ local function ApplyAuraFilters()
     for i, slot in ipairs(dots.slots) do
         local sid = dotList[i]
         if sid ~= slot.spellID then
+            -- 跟 ApplyBoxFilter 同一个洞(理由见那儿的长注释):`slot.spellID` 原来也写在 pcall
+            -- 外面 ⇒ 推送失败照样记 ⇒ 永不重试 ⇒ 那一格退化成「目标身上我上的**全部** debuff」,
+            -- 四格于是画同样的东西。**修类不修例**,两处一起改。
+            local ok, err = true, nil
             if sid then
-                pcall(function() slot.container:SetAuraGroupCandidateFilters("g", DotFilters(sid)) end)
+                ok, err = pcall(function()
+                    slot.container:SetAuraGroupCandidateFilters("g", DotFilters(sid))
+                end)
             end
-            slot.spellID = sid
+            if ok then
+                slot.spellID = sid      -- sid 为 nil(收起这格)时没有推送动作,直接记
+            else
+                Print("|cffff3333DoT 第 " .. i .. " 格 filter 推送失败|r(下次刷新重试):"
+                    .. tostring(err))
+            end
         end
         pcall(function() slot.container:SetEnabled(dotOn and sid ~= nil) end)
     end
@@ -1253,6 +1279,53 @@ local function AuraCmd(kind, label, arg, slotted)
     end
 end
 
+-- ── 🔬 `/dch probe` —— aura filter 现在到底生没生效。**保留**,不是临时探针。
+-- 留着的理由:2026-08-16 那次「三格各画一个场景 buff」的**根因至今未知**(只拆掉了放大器,
+-- 见 ApplyBoxFilter 上面那段),复发时这是唯一能一步定性的手段。
+-- 🔑 它自带对照物:「我身上 HELPFUL 光环 = N 个」。**N = 0 时这次结果零信息量** ——
+--    三格是空的会变成必然结果,跟 filter 好坏无关(canon:跑 A/B 前先确认计数器会动)。
+-- 只打印 + 重推一次**本来就该推的**那个 filter,不改任何配置。
+local function ProbeAuraFilters()
+    -- 同时进聊天框和 DodoProbe 的落盘日志。探测式调用 ⇒ 没装 DodoProbe 也不会崩。
+    local function emit(s)
+        Print(s)
+        if _G.DodoProbeLog then _G.DodoProbeLog("dch", s) end
+    end
+    emit("---- aura filter 探针 ----")
+    -- ① 地基:暴雪源码里只有「assistable 单位身上的 helpful buff」才准用 includeSpellIDs。
+    --    这条若是 false,CanApplyIdentityCandidateFilters 直接返回 false ⇒ 整块筛选被跳过。
+    local ok0, v = pcall(UnitCanAssist, "player", "player")
+    emit("  UnitCanAssist(player,player) = " .. (ok0 and tostring(v) or ("ERROR " .. tostring(v))))
+    emit("  dots.built=" .. tostring(dots.built) .. "  dots.dead=" .. tostring(dots.dead))
+    -- ③ 对照物:我身上现在到底有几个 HELPFUL 光环。
+    --    这个数是 0 的话,「三格是空的」就是必然结果、跟 filter 好坏无关 = 零信息量
+    --    (canon:跑 A/B 前先确认你那个计数器现在真的会动)。
+    --    只数个数、**一个字段值都不碰** —— 碰了万一是 secret 当场炸。
+    local n = 0
+    for i = 1, 40 do
+        local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
+        if not ok or type(a) ~= "table" then break end
+        n = n + 1
+    end
+    emit("  我身上 HELPFUL 光环 = " .. n .. " 个   (若 = 0,这次对照零信息量)")
+    for _, e in ipairs({ { "cds", cdBox }, { "lust", lustBox }, { "raid", raidBox } }) do
+        local name, b = e[1], e[2]
+        if not b then
+            emit("  " .. name .. ": |cffff3333容器不存在|r")
+        else
+            local list = ListFor(name)
+            -- ② 绕开 sig 缓存重推一次,把错误原文打出来
+            local ok, err = pcall(function()
+                b.container:SetAuraGroupCandidateFilters("g", ListFilters(list))
+            end)
+            emit(("  %s: #list=%d  sig=%s  推送=%s"):format(name, #list, tostring(b.sig),
+                ok and "|cff33ff33OK|r" or ("|cffff3333FAILED|r " .. tostring(err))))
+        end
+    end
+    emit("  ⇒ 跑完那三格若当场变空 = 之前 filter 确实没推下去")
+    emit("---- 探针完(/reload 后结果落进 DodoProbe.lua)----")
+end
+
 local function Toggle(key, label)
     DB[key] = not DB[key]; ApplyLayout()
     Print(label .. " " .. (DB[key] and "开" or "关"))
@@ -1278,6 +1351,7 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         testMode = not testMode
         RefreshAvailability()
         Print(testMode and "演示模式开(血 35% / 疯狂 65%)" or "演示模式关")
+    elseif cmd == "probe"   then ProbeAuraFilters()
     elseif cmd == "health"  then Toggle("healthOn", "目标血条")
     elseif cmd == "cast"    then Toggle("castOn", "施法条")
     elseif cmd == "power"   then
