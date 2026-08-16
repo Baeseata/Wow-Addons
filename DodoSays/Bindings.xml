@@ -1,0 +1,17 @@
+<Bindings>
+	<Binding name="DODOSAYS_TAP_CROSS" category="DodoSays" header="DODOSAYS">
+		DodoSays_Tap("cross")
+	</Binding>
+	<Binding name="DODOSAYS_TAP_SQUARE" category="DodoSays">
+		DodoSays_Tap("square")
+	</Binding>
+	<Binding name="DODOSAYS_TAP_TRIANGLE" category="DodoSays">
+		DodoSays_Tap("triangle")
+	</Binding>
+	<Binding name="DODOSAYS_TAP_CIRCLE" category="DodoSays">
+		DodoSays_Tap("circle")
+	</Binding>
+	<Binding name="DODOSAYS_UNDO" category="DodoSays">
+		DodoSays_Undo()
+	</Binding>
+</Bindings>

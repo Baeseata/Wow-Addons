@@ -26,6 +26,7 @@ on:
           - DodoInspect
           - DodoLura
           - DodoNameplate
+          - DodoSays
       dry_run:
         description: Build and validate everything but skip the upload
         type: boolean

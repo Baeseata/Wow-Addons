@@ -1,0 +1,23 @@
+## Interface: 120100
+## Group: Dodo
+## OptionalDeps: Dodo
+## Title: DodoSays
+## Notes: Memory-game helper for Azta'rec (Venomfall Deeps). Tap the safe quarters while he preaches; it calls them back while he echoes.
+## Author: Doodo
+## Version: 0.9.0
+## SavedVariables: DodoSaysDB
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## X-Category: Boss Encounters
+## X-License: All Rights Reserved
+
+# Load order matters: Util (no deps) -> Board (UI) -> Announce (subscribes to replay)
+# -> Detector (drives replay) -> Sim (drives replay offline) -> DodoSays (wiring + slash)
+Util.lua
+Board.lua
+Announce.lua
+Detector.lua
+Sim.lua
+Trace.lua
+Options.lua
+Minimap.lua
+DodoSays.lua

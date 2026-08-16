@@ -1,3 +1,4 @@
 # Lua/docs follow autocrlf (LF in repo); binary assets must never be line-ending converted.
 *.tga binary
 *.blp binary
+*.png binary

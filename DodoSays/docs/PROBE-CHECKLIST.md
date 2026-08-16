@@ -31,6 +31,33 @@
 | 5 | 一次中场里 `UNIT_SPELLCAST_START` **真实触发几次** | 计数器 + 时间戳，跟屏幕上实际波数对 | 验证「一波 = 一次 cast」这个地基假设；同时量出杂散施法有多少（围栏要多严） |
 | 6 | 布道走 **CHANNEL**、回响走 **CAST** 吗 | 两组事件各打一条带时间戳的日志 | 状态机切换全靠这个区分。目前只有 Wowhead 文字 + SnakeSays 事件注册两个间接证据 |
 
+| 7 | 🔴 **`??` 场上两个 boss 时，`UNIT_SPELLCAST_START` 从哪个 unit token 来** | 记下每次 cast 的 unit + 是否等于「展示这一轮的那个 unit」 | 分身「Echo of Azta'rec」技能名也读作 "Echo of …"，作者实测**一轮 5 次报点被骗走 2 次**。不验这条，`??` 上会直接报错点 |
+
+⚠ **第 1 / 2 / 6 条现在有预期答案了**（[`RESEARCH-snakesays-source.md`](RESEARCH-snakesays-source.md)：
+`ENCOUNTER_START` 确实触发且带 encounterID `?`=3508 / `??`=3525；候选 unit 不止 `boss1`）——
+所以这三条跑的时候是**核对**不是发现。**这更好**：对不上说明「客户端变了」或「探针没装上」，
+而这两种**只有在有预期时才分得开**。第 3 / 4 条仍是纯发现（作者留三层降级链 = 他也没拿到稳定答案）。
+
+---
+
+## ✅ 实测结果 2026-08-15（`?` 单问号，build 69299）
+
+**正文 → [`RESEARCH-live-trace.md`](RESEARCH-live-trace.md)。** 逐条对账：
+
+| # | 结果 |
+|---|---|
+| 1 | ✅ `ENCOUNTER_START` **触发**，id=**3508**，name=阿兹塔雷克，diff=208 |
+| 2 | ✅ **`boss1` 存在**。同一施法在 `nameplate2`/`boss1`/`target` 三个 token 各报一次 |
+| 3 | 🔴 **`spellID` 是 secret**（事件 payload 和 `UnitChannelInfo` 都是）⇒ 三层降级链**必须留着**，且实际只走第 3 层 |
+| 4 | 🔴 **`name` 也是 secret** ⇒ 降级链第 2 层在真机上**永远走不到** |
+| 5 | ✅ **一波一次 cast，精确对上**：第一轮 3 次、第二轮 4 次。**杂散施法比预想多得多** —— 整场 114 次 `UNIT_SPELLCAST_START` 里只有 **7 次**是 echo |
+| 6 | ✅ **布道走 CHANNEL、回响走 CAST，坐实**。且交接在**同一时间戳** |
+| 7 | ⏳ **`??` 未测**（8/18 才开）—— 唯一还会改代码的一条 |
+
+🔴 **额外发现（清单上没有、但更要命）**：**`COMBAT_LOG_EVENT_UNFILTERED` 注册被拒**
+（`ADDON_ACTION_FORBIDDEN`，**加载期也拒**）⇒ 12.x 游戏内战斗日志对插件**整个关闭**。
+配合「布道半场零 `UNIT_*` 事件」⇒ **布道的逐波时刻在 12.x 拿不到，只能靠时钟推**。
+
 ## 探针纪律（canon + SnakeSays 源码，别踩）
 
 - 🔴 **不许 `print(spellID)` / `tostring(spellID)`** —— `tostring` 本身就是一次「使用」，secret 会抛，**而抛出去会把整个 handler 干掉且无声无息**。一律先 `issecretvalue()` 判、再决定要不要碰。
