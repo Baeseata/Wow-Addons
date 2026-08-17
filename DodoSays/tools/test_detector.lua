@@ -948,32 +948,20 @@ local function hasCJK(s)
 	return ok and found or false
 end
 
--- The one sanctioned exception: the credit naming the voice actor. Her name in
--- Chinese is how she is actually known, and dropping it would make the
--- attribution worse at the single thing attribution exists to do.
---
--- ⚠ Anchored to the credit line itself, never to the file. Any OTHER Chinese
--- in README.md still fails -- a file-sized exemption is how a guard quietly
--- stops covering anything while still reporting green.
-local function exempt(path, line)
-	return path == "README.md" and line:find("Xia Yike", 1, true) ~= nil
-end
-
-local offenders, exempted = {}, 0
+-- ZERO exemptions, and that is the whole point. 0.12 shipped exactly one --
+-- the credit line naming a human voice actor, whose name is Chinese -- and an
+-- exemption is a hole that someone eventually widens. 0.13 replaced both voice
+-- packs with synthesised audio, so no shipped file needs a non-ASCII character
+-- any more and the rule collapses to the simplest shape available: none.
+local offenders = {}
 for _, f in ipairs(shipped) do
 	local src = slurp(f)
 	check(f .. " was readable", src ~= nil, true)
 	for line in (src or ""):gmatch("[^\r\n]+") do
-		if hasCJK(line) then
-			if exempt(f, line) then exempted = exempted + 1
-			else offenders[#offenders + 1] = f .. " | " .. line:sub(1, 70) end
-		end
+		if hasCJK(line) then offenders[#offenders + 1] = f .. " | " .. line:sub(1, 70) end
 	end
 end
-check("no CJK outside the credit line", offenders[1], nil)
--- Reverse assertion: the exemption does exactly one job. If this number climbs,
--- someone widened the exemption instead of fixing whatever tripped it.
-check("the exemption covers exactly one line", exempted, 1)
+check("no CJK in any shipped file", offenders[1], nil)
 -- ...and the scanner must actually be able to see CJK, or every check above is
 -- vacuously green. (This file lives in tools/ and never ships.)
 check("the scanner can see CJK at all", hasCJK("夏一可"), true)

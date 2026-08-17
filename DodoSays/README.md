@@ -88,13 +88,17 @@ The addon stays completely asleep outside this one encounter.
 
 ## Credits
 
-The addon code is All Rights Reserved. The bundled voice lines are not mine:
+The addon code is All Rights Reserved.
 
-- **Chinese** — recorded by **Xia Yike (夏一可)**, from the
-  [DBM-VoicePack-Yike](https://github.com/Mini-Dragon/DBM-VoicePack-Yike)
-  pack, licensed **CC BY-ND 4.0**.
-- **English** — from the **DBM Voicepack VEM** pack by **weisslove**.
+**The voice lines are synthetic.** Both languages were generated with OpenAI's
+`gpt-4o-mini-tts` (voice "coral") specifically for this addon — no human
+recording, and no third-party voice pack, is bundled. Under OpenAI's terms the
+generated audio belongs to whoever produced it, so it ships with no
+attribution or redistribution strings attached.
 
-Both are the original recordings, re-encoded and level-matched so the four
-words carry equally over combat noise. Nothing was re-cut, re-voiced or
-remixed, and no word says anything other than what was recorded.
+They were trimmed of leading silence and level-matched, so all four words
+start immediately and carry equally over combat noise.
+
+If you would rather hear a human, replace the files in
+`Sounds/<language>/<marker>.ogg` with anything you like — the addon reads
+whatever is there.
