@@ -325,11 +325,24 @@ function ns.OpenOptions()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Slash: /dnp opens options; /dnp test runs the classification probe.
+-- Slash: /dnp opens options; /dnp test runs the classification probe; /dnp tint reports the tinting.
 ---------------------------------------------------------------------------------------------------
 SLASH_DODONAMEPLATE1 = "/dnp"
 SlashCmdList.DODONAMEPLATE = function(msg)
 	msg = (msg or ""):lower():gsub("%s+", "")
+	if msg == "tint" then
+		-- Every way this feature fails is silent -- an unbuilt ruleset, a spec with no entry, or the
+		-- ten-frame fallback path all look exactly like "nothing has a DoT on it right now".
+		if not ns.Tint then print("|cff66ccffDodoNameplate|r tint -> module not loaded"); return end
+		print("|cff66ccffDodoNameplate|r tint -> " .. ns.Tint.Status())
+		for _, e in ipairs(ns.Tint.Errors()) do
+			print("|cff66ccffDodoNameplate|r tint |cffff3333!|r " .. e)
+		end
+		local plate = C_NamePlate.GetNamePlateForUnit("target")
+		print("|cff66ccffDodoNameplate|r tint " ..
+			(plate and plate.dnp and ns.Tint.LevelReport(plate.dnp) or "no styled plate for target"))
+		return
+	end
 	if msg == "test" then
 		local unit = "target"
 		if not UnitExists(unit) then

@@ -46,6 +46,9 @@ ns.defaults = {
 		defensive = true,   -- HELPFUL|BIG/EXTERNAL_DEFENSIVE   防御性增益 (buff row, white; enemy players only)
 		buffMax = 3,        -- max icons in the buff row (below-bar right)
 	},
+	-- Per-spellID health-bar tinting (Tint.lua). Kill switch only -- the rule table itself lives in
+	-- Tint.lua and there is no options page yet. Applies only to specs that have a ruleset.
+	tint = { enabled = true },
 	-- Group defaults below were captured from Jerry's live config (2026-06-24, reload-flushed
 	-- SavedVariables) and set as the baseline so a fresh download matches his setup.
 	-- Vestigial fields (castGlow/castWidth/a stray group-5 targetScale) were dropped. CopyDefaults
@@ -177,6 +180,12 @@ local function RefreshAllAuras()
 	end
 end
 
+local function RefreshAllTints()
+	for unit, entry in pairs(ns.plates) do
+		ns.Style.Tint(entry.plate, unit)
+	end
+end
+
 -- PLAYER_TARGET_CHANGED carries no unit; find the target's plate by frame and flag all tracked.
 local function OnTargetChanged()
 	local tp = C_NamePlate.GetNamePlateForUnit("target")
@@ -281,8 +290,12 @@ f:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
 		RefreshRole()
 		RefreshPurge()
+		-- Must precede RecolorAll: the newly active ruleset decides whether ThreatColor still paints
+		-- red/blue at all. Nothing is BUILT here -- a respec inside a dungeon only flips SetEnabled.
+		if ns.Tint then ns.Tint.RefreshSpec() end
 		RecolorAll()
 		RefreshAllAuras()
+		RefreshAllTints()
 	elseif event == "SPELLS_CHANGED" then
 		RefreshPurge()
 		RefreshAllAuras()
@@ -325,9 +338,11 @@ f:SetScript("OnEvent", function(self, event, arg1)
 		-- taking ApplyLocale, InitOptions (so /dnp died silently), RefreshAllAuras and the
 		-- version print with it. geterrorhandler keeps the full traceback going to BugSack.
 		if ns.Auras then xpcall(ns.Auras.Initialize, geterrorhandler()) end
+		if ns.Tint then xpcall(ns.Tint.Initialize, geterrorhandler()) end
 		if ns.ApplyLocale then ns.ApplyLocale() end
 		if ns.InitOptions then ns.InitOptions() end
 		RefreshAllAuras()
+		RefreshAllTints()
 		local ver = C_AddOns.GetAddOnMetadata(ADDON, "Version") or "?"
 		print("|cff66ccffDodoNameplate|r v" .. ver .. " loaded. /dnp for options.")
 	end

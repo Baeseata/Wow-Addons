@@ -10,11 +10,13 @@
 ## X-License: All Rights Reserved
 ## X-Curse-Project-ID: 1587138
 
-# Load order matters: Guards (no deps) -> Locale -> Classification (uses Guards) -> Core (wires events)
+# Load order matters: Guards (no deps) -> Locale -> Classification (uses Guards) -> Plate (exports
+# ns.LEVEL_*) -> Auras -> Tint (reads ns.LEVEL_TINT) -> Core (wires events)
 Guards.lua
 Locale.lua
 Classification.lua
 Plate.lua
 Auras.lua
+Tint.lua
 Core.lua
 Options.lua

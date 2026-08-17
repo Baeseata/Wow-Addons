@@ -35,6 +35,7 @@ Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, git
 - **Scope**: groups 2-6 are styled; group 1 stays on Blizzard's personal-resource path. Enemy auras apply to hostile creatures and enemy players.
 - **Aura architecture**: `Auras.lua` preallocates three `CustomAuraContainerTemplate` containers for each permanent `nameplate1` through `nameplate40` token at `PLAYER_LOGIN`. Main, CC, and buff groups are precreated; `maxFrameCount=0` disables a group. The addon never enumerates restricted aura data or handles `UNIT_AURA`.
 - **Aura display**: main priority + personal nameplate debuffs, shared CC, purgeable buffs, big defensives, external defensives, and optional generic buffs. Wrapper frames clip each row to the configured aggregate icon limit.
+- **Bar tinting**: `Tint.lua` recolours the health-bar fill from a spec's spell rules (Shadow Priest ships: SW:P orange, VT purple, both blue) by handing Blizzard a texture per spell and letting it switch the texture on. It reads no aura data. Spec-gated; no options page yet, kill switch is `ns.db.tint.enabled`. `/dnp tint` reports it.
 
 ## Load order
 
@@ -43,8 +44,9 @@ Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, git
 3. `Classification.lua` - six identity groups and overlays.
 4. `Plate.lua` - health/name/cast/marker/target presentation.
 5. `Auras.lua` - secure 12.1 aura containers.
-6. `Core.lua` - events, SavedVariables, role and purge capability.
-7. `Options.lua` - Settings pages.
+6. `Tint.lua` - per-spellID health-bar tinting (needs `ns.LEVEL_*` from `Plate.lua`).
+7. `Core.lua` - events, SavedVariables, role and purge capability.
+8. `Options.lua` - Settings pages.
 
 ## Invariants
 
@@ -54,6 +56,8 @@ Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, git
 - Restricted aura data is owned by `CustomAuraContainerTemplate`. Do not restore `C_UnitAuras.GetUnitAuras`, `IsAuraFilteredOutByInstanceID`, `GetAuraDuration`, Blizzard debuff-frame scraping, or `UNIT_AURA` handling.
 - Any widget handed to a container sink (`SetApplicationCount`, `SetIcon`, `SetDurationCooldown`) is written to synchronously inside that call — configure it fully first, register it last. Groups are built at login by choice, not by API requirement. Keep each container's unit token permanently set to its `nameplateN` string; clearing a plate only disables the containers.
 - `BIG_DEFENSIVE` and `EXTERNAL_DEFENSIVE` are separate groups. Positive filter components in one filter are an intersection, not an OR.
+- Tint layers are painted by Blizzard, not by us. A tint texture's parent is a `CustomAuraButton` and it is created inside `initializeFrame` at that instant; the addon never learns which aura is up. Never `SetFrameLevel` an aura button, and never anchor one of our objects to one of theirs (the reverse is fine).
+- Everything drawn over the health bar shares one frame-level stack, declared as `ns.LEVEL_TINT` / `ns.LEVEL_IMPORTANT` / `ns.LEVEL_TEXT` in `Plate.lua`. Name, health percent and the elite icon live on `f.fg` above the tints; the important-cast recolour is `f.impTint`, not a vertex colour on the fill.
 - Never build children on forbidden friendly nameplates in PvE instances.
 - Target client is Retail Midnight only; no Classic compatibility burden.
 

@@ -97,3 +97,162 @@ Each group's cap is independent. Main and buff wrapper frames therefore use `Set
 - Casts: use duration objects and `SetTimerDuration`; drive interrupt/importance visuals with `SetAlphaFromBoolean` or `EvaluateColorValueFromBoolean`.
 - Raid marker: secret-first presence test, then pass the index directly to `SetRaidTargetIconTexture`.
 - Target/focus: compare the plate frame returned for `target`/`focus`, not a maybe-secret `UnitIsUnit` result.
+
+## S5. Per-spellID bar tinting — visibility inheritance, never reading
+
+Verified end-to-end on a live plate 2026-08-17 (build 12.1.0.69299, Shadow Priest, four states correct).
+**S2's "arbitrary spell-ID" line and DESIGN §6 both used to say this was dead. That was a 12.0
+conclusion.** What is dead is *reading* which aura is up; *filtering* by spell ID is permitted.
+
+The mechanism is not "read the aura, then pick a colour" — it is **hand a texture to Blizzard and let
+it switch that texture on**. A texture whose parent is a `CustomAuraButton` draws exactly while that
+button is shown, and `Blizzard_CustomAuraButton.lua` sets shown as `secretwrap(auraData ~= nil)`.
+The addon performs zero comparisons.
+
+- **AND = nesting.** A container created with the aura button as its parent only renders while that
+  button is shown, so ancestry is the conjunction. Verified: SW:P-only, VT-only, and both-DoTs each
+  produce their own colour.
+- **NOT is free when the "neither" state is the bar's own colour** — a lower layer does not need to
+  know the higher one is up, because the higher layer covers it. Absence has no direct expression
+  (PlateTweaks builds it by occlusion with an opaque replica of the bar); avoid needing it.
+- Measured: `C_Secrets.GetSpellAuraSecrecy` is **2 (not NeverSecret)** for 589 / 34914 / 335467, so
+  the plaintext path is closed and the container route is mandatory. `AddAuraSlot` /
+  `SetAuraSlotCandidateFilters` **exist** on this client.
+
+Four constraints, each one a real crash or a silent no-op:
+
+1. **Attach the texture inside `initializeFrame`, at that instant.** `Blizzard_AuraContainerFrameProviders.lua`
+   calls `securecallfunction(initializeFrame, …)` and applies `DenyTaintedAccessWhenAurasAreSecret`
+   on the very next line. Late attachment is refused **everywhere auras are hidden — a whole dungeon,
+   not just its fights**, so the failure looks like "works at the target dummy, does nothing in M+".
+2. **Order layers by draw sublevel; never `SetFrameLevel`.** Aura buttons report a secret frame strata
+   and refuse `SetFrameLevel` while auras are secret. OVERLAY sublevels run -8..7.
+3. **A nested container anchors to the health bar, never to its parent button.** Ours-to-theirs
+   anchoring is refused (`UntrustedLayoutScriptExecution`); theirs-to-ours is fine. Same asymmetry
+   DodoProbe hit in 2026-08-15 from the other direction.
+4. **Probe `AddAuraSlot` on the real container at the moment of use — never cache the answer.**
+   `Blizzard_AuraContainer` may not be loaded at `ADDON_LOADED`; an early probe fails, caches
+   "unavailable", and the session silently runs the 10-frame `AddAuraGroup` path while the feature
+   looks switched on. A slot pools ONE frame; a group pools ten
+   (`CustomAuraContainerConstants.FrameCreationBatchSize`, deliberately high to obfuscate aura counts).
+
+Also: a container bound to `"target"` must refresh on `PLAYER_TARGET_CHANGED` itself — the container
+only registers `UNIT_AURA` for its token, so without that the bar keeps showing the **previous**
+target's state, which reads exactly like "the mechanism is laggy". Plates bind permanent `nameplateN`
+tokens and are not affected; this bit us only in DodoProbe's rig.
+
+Cast spell ID is not always the aura spell ID (Rend casts 772, applies 388539). A wrong ID never
+lights up, which is indistinguishable from the mechanism not working.
+
+☐ no-guard — there is no build step, and every failure mode here is a runtime contract in Blizzard
+code that `luacheck` cannot see. The acceptance test is `/dp tint`: four DoT states, four colours,
+run once out of combat and **once inside an instance** (the instance run is the one that matters).
+
+### S5a. Wiring it onto a real plate (`Tint.lua`)
+
+The probe painted a fake bar that existed before the containers did. A nameplate does not, and three
+things follow that the probe never had to answer.
+
+**A permanent per-token proxy stands in for the health bar.** The textures are created at login,
+inside `initializeFrame`, when no plate is attached to the token — there is nothing to anchor to yet.
+Each `nameplateN` therefore owns a proxy frame that the textures anchor to, and `Attach` re-points
+that proxy at whichever plate now holds the token. The proxy anchors to
+`hb:GetStatusBarTexture()`, **not to the bar**: anchoring to the whole bar would hide the health level
+under a solid block. PlateTweaks does the same (`AnchorToFill`).
+
+**Frame levels are a single declared stack, because two of the three painters are not ours to order.**
+`Plate.lua` exports `ns.LEVEL_TINT` (2) / `ns.LEVEL_IMPORTANT` (24) / `ns.LEVEL_TEXT` (25) as offsets
+from the health bar's level. The proxy takes LEVEL_TINT and everything Blizzard builds hangs below it,
+two levels per AND-link — so the gap to LEVEL_IMPORTANT is what caps a chain at 11 spells. Name,
+health percent and the elite icon **had to move off `hb` onto `f.fg`**: a tint covering the fill
+covers whatever else is drawn on the fill, and they were.
+
+**The important-cast recolour moved out of the vertex colour.** It used to be folded into the fill's
+own colour via `EvaluateColorValueFromBoolean`; the tints are drawn on aura buttons *above* the fill,
+so it would have been silently painted over. It is now `f.impTint`, a texture at LEVEL_IMPORTANT
+driven by `SetAlphaFromBoolean` — same secret-safety, same `importantHpColor` setting, one
+implementation. `ColorBar` no longer knows about casting at all.
+
+**`SetParent` on the proxy DOES re-level Blizzard's aura buttons** — confirmed on live plates inside
+an instance, 2026-08-17. This was the one step the probe could not answer: it built its containers
+under `UIParent` and never moved them, whereas we move the proxy onto each plate's health bar and the
+buttons' levels have to follow through the C-side cascade (we cannot set them ourselves — an aura
+button reports a secret strata and refuses `SetFrameLevel`).
+
+Worth keeping the reasoning, because it is why so little observation settled it: a visible tint inside
+an instance is only possible if the cascade happened, the textures were attached in time, and the
+fill anchoring held. Had the cascade not happened the tint would draw *behind* the bar and show
+**nothing at all** — the same symptom as a wrong spell ID or a late attach, which is why `/dnp tint`
+prints `hb / proxy / container` levels for the current target. `container > hb` separates them.
+
+Acceptance test for future changes here: `/dnp tint` on an enemy target (expect `active:true`,
+`slot>0`, `container > hb`), then eyeball the four states, then **once inside an instance** — and
+check the mob's name and health percent are still readable on top of a tinted bar.
+
+## S5b. Borrowing a value you are not allowed to compute
+
+Untainted code reads secrets freely; only addon Lua is restricted. So **Blizzard's own widgets already
+hold values derived from data we cannot read** — and a widget property can be read back out. What
+comes back is a secret, which is still useful, because a secret may be handed to a sink.
+
+Worked example, the one that shipped: enemy class colour in a battleground. `UnitClassBase` is
+`SecretWhenUnitIdentityRestricted`, and `UnitClassFromGUID` returns secret for **all three** returns
+when the GUID is secret (measured; the contract marks only `className` as `ConditionalSecret`, so it
+understates this). There is no number→colour sink either — `C_CurveUtil` maps booleans only. Nothing
+in addon Lua can produce that colour. But `CompactUnitFrame_UpdateHealthColor` does plain
+`UnitClass` + `RAID_CLASS_COLORS[englishClass]` with no secret handling whatsoever, and
+`NamePlateEnemyFrameOptions.useClassColors = true` — so the colour is on screen already, underneath
+the bar we hide. `plate.UnitFrame.healthBar:GetStatusBarColor()` returns it as a secret, and
+`SetVertexColor` takes it straight.
+
+The three conditions, each measured rather than assumed:
+
+1. **The frame must not be forbidden.** Enemy plates are fine (we already `SetAlpha(0)` them);
+   friendly party/raid plates in PvE instances are forbidden and are skipped entirely (S2).
+2. **It must keep updating while hidden.** `SetAlpha(0)` does not stop Blizzard's update path — every
+   probe row read `a=0.00` and still returned a live colour, not `nil`. If it had stopped, the value
+   would have gone stale invisibly.
+3. **Never compare it.** Receive → store → pass to the sink. `Guards.IsSecret` first, before any nil
+   compare, and the colour table is tagged `secret = true` so `ColorBar` routes it without testing
+   the components.
+
+🔴 **You borrow their decision, not your semantic.** In the same battleground, four teammates whose
+class was fully readable *also* returned a SECRET colour — so the secrecy in that bar is not coming
+from class identity at all, but from something else in Blizzard's colour path (threat/aggro). What
+you get is "whatever Blizzard painted", which for a creature would be its threat tint, not a class
+colour. Hence the borrow is scoped to `ENEMY_PLAYER` only.
+
+⚠ The one step still unverified at the time of writing: whether `SetVertexColor` accepts a **raw
+secret number** out of `GetStatusBarColor`. It demonstrably accepts the `SingleColorValue` that
+`EvaluateColorValueFromBoolean` returns, but those are not the same type — "same family" is not
+"same conclusion". The call is therefore `pcall`ed, and a refusal falls back to red **and prints
+once**: a quiet fallback would be indistinguishable from "this player has no class colour".
+
+☐ no-guard — a runtime contract in Blizzard code. Acceptance: enemy-player bars are class-coloured in
+a battleground, and no message about a refused secret colour appears.
+
+## S5c. The two-channel enemy-player bar
+
+An opaque tint over a class-coloured bar hides the class colour completely, and alpha-blending the two
+is worse than either alone: half-transparent orange over a blue Shaman is a third colour, so the DoT
+signal would look different on every class and neither channel could be read. So the two channels get
+separate pixels instead: the DoT tint takes the bar except a thin strip along the **top**, which stays
+class-coloured. Both fully saturated.
+
+- `ns.TINT_CLASS_STRIP` (Plate.lua) is that reserve, in **pixels — not a fraction**. It is the minimum
+  needed to still register a hue, so it must not grow with the bar. `LayoutPlate` derives
+  `f.splitY = height - strip` from the **configured** height and `Tint.Attach` reads that one number
+  rather than deriving its own. Do not compute it from `hb:GetHeight()`: `hb` sizes itself through
+  `SetAllPoints`, so its height is unresolved on the first frame and reads 0.
+- **Nothing is conditional on a DoT being up** — it cannot be, only Blizzard knows. Nothing painted
+  means the whole bar shows the class colour; a DoT painting the lower region leaves the strip behind.
+  The "if dotted, only the strip stays class-coloured" behaviour is emergent, not branched.
+- A 1px seam between the two regions was tried and **removed at Jerry's request 2026-08-17** — the
+  colour edge alone reads fine, and the line was visual noise. Do not re-add it.
+- **Hostile creatures are not split.** They have no class-colour channel, so it would only halve the
+  tint. `Tint.Attach` branches on `f.group`; the tint textures never learn about any of this, because
+  they only ever anchor to the per-token proxy.
+- Text on the bar carries a black **drop shadow** on top of its outline. The outline alone sufficed
+  against threat red; a class-coloured bar can be Rogue yellow or Priest white, and white text on that
+  disappears. Shadow rather than `THICKOUTLINE` — thick outlines turn CJK glyphs to mush at nameplate
+  font sizes, and names here can be Chinese.

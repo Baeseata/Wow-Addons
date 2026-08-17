@@ -186,6 +186,136 @@ local function EnsureAuraProbe()
     return true
 end
 
+-- ===== /dp tint:DoT 染色机制的端到端验证(整套设计一屏看完)=====
+-- 三层贴图叠在一根假血条上,每层的 parent 都是一个 **aura button** ⇒ 由 C 层按「那个光环在不在」
+-- 开关它。插件全程**不读光环、不做任何比较**;层叠顺序本身就是优先级仲裁。
+--   无 DoT → 灰(底色)   只有痛 → 橙   只有触 → 紫   两个都有 → 蓝(最上层,盖住橙和紫)
+-- 🔑 「有痛**没**触」这个否定是被层叠**免费**吃掉的 —— 橙层根本不需要知道触在不在。
+--
+-- 写法全部照抄在产的 PlateTweaks 1.5.0(`Tints.lua`),四条硬约束一条都不能省:
+-- 🔴 贴图必须在 `initializeFrame` **那一瞬间**建 —— 暴雪紧接着就
+--    `ApplyAccessRestrictions(…, DenyTaintedAccessWhenAurasAreSecret)`;晚一步 = **整个副本里全不生效**。
+-- 🔴 谁盖谁只能靠 **draw sublevel**,**绝不能 `SetFrameLevel`** —— aura button 的 strata 是 secret,
+--    光环 secret 时那个调用被拒。
+-- 🔴 嵌套 = AND:在「痛」的按钮里再建一个筛「触」的容器,祖先隐藏则后代不渲染。
+-- 🔴 嵌套容器 `SetAllPoints` 要指向**血条**,绝不指向它的父按钮 ——
+--    「我们的对象锚到它们的」被拒,「它们的锚到我们的」可以(本文件 B 组早就实测过这条)。
+local TINT_SWP, TINT_VT = 589, 34914
+local C_ONLY_SWP  = { 1.00, 0.55, 0.10 }   -- 橙:只有 暗言术:痛
+local C_ONLY_VT   = { 0.65, 0.30, 1.00 }   -- 紫:只有 吸血鬼之触
+local C_BOTH      = { 0.15, 0.50, 1.00 }   -- 蓝:两个都有
+
+local function TintTex(button, bar, rgb, sub)
+    local t = button:CreateTexture(nil, "OVERLAY", nil, sub)
+    t:SetColorTexture(rgb[1], rgb[2], rgb[3], 1)
+    t:SetPoint("TOPLEFT", bar, "TOPLEFT", 2, -2)
+    t:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -2, 2)
+    return t
+end
+
+-- 一条「只筛这一个法术」的规则。slot 池 **1** 个 frame、group 池 **10** 个
+-- (暴雪硬编码 FrameCreationBatchSize=10,注释写明是故意的)⇒ 有 slot 就用 slot。
+-- 🔴 现场问**这个容器对象**,别提前缓存:Blizzard_AuraContainer 加载晚,早问会得到「不可用」
+--    然后整个 session 静默走 10 帧路径,而功能看着是开着的。
+local function AddOneSpell(c, key, spellID, initFn)
+    local useSlot = type(c.AddAuraSlot) == "function"
+        and type(c.SetAuraSlotCandidateFilters) == "function"
+    P.tintUsedSlot = useSlot
+    local Register = useSlot and c.AddAuraSlot or c.AddAuraGroup
+    Register(c, key, "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY", { initializeFrame = initFn })
+    local ids = { [spellID] = true }
+    if useSlot then
+        c:SetAuraSlotCandidateFilters(key, { includeSpellIDs = ids })
+    else
+        c:SetAuraGroupCandidateFilters(key, { includeSpellIDs = ids })
+        c:SetAuraGroupMaxFrameCount(key, 1)
+    end
+end
+
+-- ⚠ 这里**故意不调** SetIcon / SetDurationCooldown:我们只要按钮的**可见性**,不要它画图标。
+--   (PlateTweaks 的 initializeFrame 同样一个图标都不设 —— 只挂贴图。)
+local function NewTintContainer(name, parent, bar)
+    local c = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
+    c:SetEnabled(false)
+    pcall(c.SetAllPoints, c, bar)     -- 锚**血条**,绝不锚父按钮
+    c:SetFlowLayoutAnchorPoint("TOPLEFT")
+    c:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Down)
+    c:SetFlowLayoutMaximumLineSize(math.huge)
+    return c
+end
+
+function P.BuildTintRig()
+    if P.tintBar then P.tintBar:Show(); return P.tintErrs end
+    local bar = CreateFrame("Frame", "DodoProbeTintBar", UIParent)
+    bar:SetSize(220, 26)
+    bar:SetPoint("CENTER", UIParent, "CENTER", 0, -170)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(bar)
+    bg:SetColorTexture(0.30, 0.30, 0.30, 1)   -- 「无 DoT」= 灰底。什么都不画出来的就是它。
+    P.tintBar = bar
+    P.tintCs = {}
+    local errs = {}
+
+    -- 🔴 容器只按 unit token 注册 `UNIT_AURA`,**`PLAYER_TARGET_CHANGED` 不在它的表里**
+    --    ⇒ 绑 "target" 就必须自己接那个事件调 `UpdateAllAuras()`,否则换目标后条上显示的
+    --    还是**上一个目标**的状态 —— 症状就是「反应不灵敏 / 慢一拍」,而且它看着完全像
+    --    「机制本身有延迟」。⚠ **这是探针专有的毛病**:真接进名条时容器绑永久的
+    --    `nameplateN`,不吃这一条 —— 别把它读成机制的性能问题。
+    -- 🔴 第二条(canon 采样探针铁律):**必须报出「这次测的是谁」** —— 否则量错对象时,
+    --    你拿到的是一份可信、干净、而且无关的数据。时间戳则让「它到底刷没刷」可见。
+    local who = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    who:SetPoint("BOTTOM", bar, "TOP", 0, 3)
+    who:SetText("|cff888888还没换过目标|r")
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("PLAYER_TARGET_CHANGED")
+    ev:SetScript("OnEvent", function()
+        for _, c in ipairs(P.tintCs) do pcall(c.UpdateAllAuras, c) end
+        local okN, n = pcall(UnitName, "target")
+        -- 守卫顺序不能反:secret 检查必须在 nil 比较**之前**(GOTCHAS S1)。
+        if okN and not (issecretvalue and issecretvalue(n)) and n ~= nil then
+            who:SetText(tostring(n) .. "  |cff888888" .. date("%H:%M:%S") .. "|r")
+        elseif UnitExists("target") then
+            who:SetText("|cffffaa00名字读不出来|r  |cff888888" .. date("%H:%M:%S") .. "|r")
+        else
+            who:SetText("|cff888888没选目标|r")
+        end
+    end)
+    P.tintEv = ev
+
+    -- 层 1(橙)+ 层 3(蓝):痛的容器。它的按钮同时扛「橙贴图」和「嵌套的触容器」。
+    local ok1, err1 = pcall(function()
+        local c1 = NewTintContainer("DodoProbeTintSWP", UIParent, bar)
+        AddOneSpell(c1, "swp", TINT_SWP, function(button)
+            TintTex(button, bar, C_ONLY_SWP, 1)
+            local okN, c2 = pcall(NewTintContainer, nil, button, bar)   -- parent = 按钮 ⇒ 祖先隐藏则整棵不渲染
+            if not okN or not c2 then errs[#errs + 1] = "嵌套容器建不起来: " .. tostring(c2); return end
+            AddOneSpell(c2, "both", TINT_VT, function(inner)
+                TintTex(inner, bar, C_BOTH, 3)                          -- 蓝在最上,盖住橙和紫
+            end)
+            c2:SetUnit("target"); c2:SetEnabled(true)
+            P.tintCs[#P.tintCs + 1] = c2
+            P.tintNested = true
+        end)
+        c1:SetUnit("target"); c1:SetEnabled(true)
+        P.tintCs[#P.tintCs + 1] = c1
+    end)
+    if not ok1 then errs[#errs + 1] = "痛层: " .. tostring(err1) end
+
+    -- 层 2(紫):触的容器,单独一条 —— 在橙之上、蓝之下。
+    local ok2, err2 = pcall(function()
+        local c3 = NewTintContainer("DodoProbeTintVT", UIParent, bar)
+        AddOneSpell(c3, "vt", TINT_VT, function(button)
+            TintTex(button, bar, C_ONLY_VT, 2)
+        end)
+        c3:SetUnit("target"); c3:SetEnabled(true)
+        P.tintCs[#P.tintCs + 1] = c3
+    end)
+    if not ok2 then errs[#errs + 1] = "触层: " .. tostring(err2) end
+
+    P.tintErrs = errs
+    return errs
+end
+
 -- ===== 延迟探针:上了 DoT,名条上的图标慢一拍 =====
 -- 🔴 **「图标什么时候出现」这个量测不出来** —— `button:IsShown()` 是 secret(2026-08-15 实测,
 -- 一做布尔测试就崩)。所以本探针**不去测它**,改测「UNIT_AURA 事件几点到的」,
@@ -779,6 +909,34 @@ function P:Run(phase)
         out[#out + 1] = "  |cff888888顺带看图标上转不转圈 —— 那是我们自己画不出来的那样东西|r"
     end
 
+    -- ===== B2. DoT 染色(名条按我的 DoT 变色)=====
+    -- 机制不是「读出来再上色」,是**让暴雪的容器替你开关一张你自己的贴图**:
+    -- 贴图 parent = aura button ⇒ 跟着按钮那个 secret Shown 显隐;SetPoint 指向外部血条。
+    -- 在产先例 = PlateTweaks 1.5.0(`Tints.lua:983` `host:CreateTexture` + `AnchorToFill(tex, healthBar)`)。
+    -- ⚠ 本组只量 API 存在性;**颜色对不对只能看屏幕 ⇒ 跑 `/dp tint`**。
+    out[#out + 1] = "|cffffff00--- B2. DoT 染色可行性 ---|r"
+    -- ① 最便宜的一问,而且可能让整套体操作废:这三个 DoT 的光环 secrecy 档位。
+    for _, id in ipairs({ 589, 34914, 335467 }) do
+        probe(string.format("AuraSecrecy %d %s", id, tostring(sname(id))), function()
+            return C_Secrets.GetSpellAuraSecrecy(id)
+        end)
+    end
+    out[#out + 1] = "  |cff888888NeverSecret ⇒ 明文可读、随便算(容器整套不需要);ContextuallySecret ⇒ 必须走容器|r"
+    -- ② AddAuraSlot 池 **1** 个 frame,AddAuraGroup 池 **10** 个(暴雪硬编码
+    --    `CustomAuraContainerConstants.FrameCreationBatchSize = 10`,注释写明是**故意**设这么高
+    --    来掩盖光环数量)。⇒ 单法术判定走 slot 便宜一个数量级。
+    -- 🔴 必须问**真的容器对象、在真的用它那一刻**:`Blizzard_AuraContainer` 加载得晚,
+    --    在 ADDON_LOADED 时探测会失败并缓存成「不可用」⇒ 整个 session 静默走 10 帧路径
+    --    而功能看着是开着的(PlateTweaks 作者栽过,写在它 SlotsAvailable 的注释里)。
+    probe("AddAuraSlot 存在?", function()
+        return P.auraOne and type(P.auraOne.AddAuraSlot) == "function"
+    end)
+    probe("SetAuraSlotCandidateFilters 存在?", function()
+        return P.auraOne and type(P.auraOne.SetAuraSlotCandidateFilters) == "function"
+    end)
+    -- ③ 「野外无拾取怪 = 灰」那条走普通 Lua 分支 ⇒ 它必须是明文才行。
+    probe("UnitIsTapDenied(target)", function() return UnitIsTapDenied("target") end)
+
     -- ===== A. C_CooldownViewer 数据集:暴雪自己会不会追「我打在目标身上的光环」 =====
     -- 实现侧证据说会(CooldownViewerItemData.lua:1 `scanUnits = {"player","target"}`;:17
     -- 要求 `auraData.sourceUnit == "player"`;:1094 `return self:GetAuraDataUnit() == "target"`)。
@@ -958,6 +1116,16 @@ local function cell(ok, v)
     if not ok then return "ERR" end
     if v == nil then return "nil" end
     if issecretvalue and issecretvalue(v) then return "SECRET" end
+    -- 字符串照实打出来(到这一行它已经确定不是 secret)。原来这儿一律返回 "T:string",
+    -- 于是 class 探针的 name / token 两格全是 "T:string" —— 一个探针把「被测对象是谁」
+    -- 打成类型名,正是那条「采样探针必须报出这次测的是谁」要挡的坑。截断防止刷屏。
+    if type(v) == "string" then
+        return (#v > 24) and (v:sub(1, 24) .. "…") or v
+    end
+    -- 布尔也照实打。上一版只修了字符串,于是 player= / atk= 两格全是 "T:boolean" ——
+    -- 「这是敌人还是队友」这个最基本的身份只能靠 GUID 是不是 secret 去**推**,而推来的身份
+    -- 正是那条铁律禁止的东西。同一个坑修了两次,第二次才修全。
+    if type(v) == "boolean" then return v and "true" or "false" end
     if type(v) ~= "number" then return "T:" .. type(v) end
     return string.format("%.4f", v)
 end
@@ -1070,6 +1238,161 @@ function PosStart()
     end)
 end
 
+-- ===== /dp class:战场里到底能不能拿到敌对玩家的职业色 =====
+-- 起因(2026-08-17):DodoNameplate 在战场里所有敌对玩家血条都是红的。实测 `/dnp test` 回
+-- `class: SECRET`,契约对上了 —— `UnitClassBase` 标着 `SecretWhenUnitIdentityRestricted`,
+-- 战场里返回 secret ⇒ ClassColor() 拿不到值,回落成敌对红。
+--
+-- 被测的线索是 **`UnitClassFromGUID`**。契约上它 `SecretArguments = "AllowedWhenTainted"`
+-- (⇒ 允许插件把一个 secret 的 GUID 递进去,而 UnitGUID 在受限内容里正是 secret),
+-- 而三个返回值里**只有本地化 `className` 带 `ConditionalSecret`**,`classFilename`(token)
+-- 和 `classID` 都没标。⚠ 第一次提取标注时我把 `ConditionalSecret` 整个漏了,读起来就是
+-- 「这函数完全没限制」—— 逐字重读才抓出来。
+--
+-- 🔴 但契约只对「是不是 secret」权威,对「给不给值」不权威 —— 这条目自己就写着
+--    `MayReturnNothing = true`。前科在案:位置那四个 API 契约上零 secret 标注(读起来完全可用),
+--    真机在副本里 x/y/z 全 `nil`。所以这里**逐返回值记三态**(明文 / SECRET / nil / ERR);
+--    记成一个「能用 / 不能用」等于没测。
+--
+-- 🔑 交付物不是「token 是不是明文」,是「**能不能拿到 r,g,b**」。token 明文但查不出颜色完全可能,
+--    所以最后一格直接去查 RAID_CLASS_COLORS / C_ClassColor —— 查出数字才算这条路通。
+local CLASS_PLATES = 10   -- target 之外再扫 nameplate1..N;战场里站着不动就能一次收一批
+
+-- 借用路那一格(2026-08-17 加):**暴雪自己那根条的颜色**。
+-- 他们的 CompactUnitFrame_UpdateHealthColor 是 untainted 代码,`UnitClass` + `RAID_CLASS_COLORS`
+-- 直接查明文,而 NamePlateEnemyFrameOptions 的 useClassColors = true ⇒ 战场里实测是彩的
+-- ⇒ **职业色已经画在屏幕上了**,只剩一个问题:这个 getter 会不会把那三个数交给插件。
+--
+-- 🔴 必须连 uf 的 alpha 一起记。生产状态下 DodoNameplate 对它 `SetAlpha(0)` ——
+--    「暴雪条可见时读得到」跟「被我们盖掉之后还读得到」是**两个不同的问题**,
+--    只测前者会得出一个在生产里根本不成立的结论。⇒ group 6 关着跑一次、开着再跑一次。
+-- 🔴 字段名也要报出来:猜错字段名拿到的 nil,跟「颜色读不出来」长得一模一样。
+local function BlizzBarCell(unit)
+    local okP, plate = pcall(C_NamePlate.GetNamePlateForUnit, unit)
+    if not okP or not plate then return "无板", "-", "-" end
+    local okF, forbidden = pcall(plate.IsForbidden, plate)
+    if okF and forbidden == true then return "forbidden", "-", "-" end
+    local uf = plate.UnitFrame
+    if not uf then return "无UnitFrame", "-", "-" end
+
+    local alpha = "ERR"
+    do
+        local ok, a = pcall(uf.GetAlpha, uf)
+        if ok and type(a) == "number" then alpha = string.format("%.2f", a) end
+    end
+
+    local field, bar
+    for _, k in ipairs({ "healthBar", "HealthBar", "health" }) do
+        local ok, v = pcall(function() return uf[k] end)
+        if ok and type(v) == "table" and v.GetStatusBarColor then field, bar = k, v; break end
+    end
+    if not bar then return "没找到healthBar", alpha, "-" end
+
+    local ok, r, g, b = pcall(bar.GetStatusBarColor, bar)
+    if not ok then return field, alpha, "ERR" end
+    -- 守卫顺序:secret 检查在 nil 比较之前。
+    if issecretvalue and (issecretvalue(r) or issecretvalue(g) or issecretvalue(b)) then
+        return field, alpha, "SECRET"
+    end
+    if r == nil then return field, alpha, "nil" end
+    return field, alpha, string.format("%.2f/%.2f/%.2f", r, g, b)
+end
+
+-- 一个单位一行。永不对 secret 做比较 / 索引 / tostring。
+local function ClassLine(unit)
+    local okX, exists = pcall(UnitExists, unit)
+    if not okX or exists ~= true then return nil end
+
+    -- 身份在采样这一刻钉死。量错对象时拿到的是一份可信、干净、而且无关的数据 —— 那种最难发现。
+    local okN, uname = pcall(UnitName, unit)
+    local okP, isPlayer = pcall(UnitIsPlayer, unit)
+    local okA, canAtk = pcall(UnitCanAttack, "player", unit)
+
+    -- 现有的那条路(已知被墙),留着当同一行里的对照:它 SECRET 而新路明文,才叫有进展。
+    local okB, base = pcall(UnitClassBase, unit)
+
+    -- 被测的那一跳。GUID 本身可能是 secret,契约说可以递进去 —— 那正是要验的事。
+    local okG, guid = pcall(UnitGUID, unit)
+    local okC, cName, cFile, cID = false, nil, nil, nil
+    if okG then
+        okC, cName, cFile, cID = pcall(UnitClassFromGUID, guid)
+    end
+
+    -- 交付物那一格。⚠ 守卫顺序不能反:secret 检查必须在 nil 比较**之前**,
+    -- 拿 secret 当表键是直接抛的。
+    local col = "-"
+    if okC and not (issecretvalue and issecretvalue(cFile)) and cFile ~= nil then
+        local okR, c = pcall(function() return RAID_CLASS_COLORS and RAID_CLASS_COLORS[cFile] end)
+        if not (okR and type(c) == "table" and c.r) then
+            okR, c = pcall(function()
+                return C_ClassColor and C_ClassColor.GetClassColor and C_ClassColor.GetClassColor(cFile)
+            end)
+        end
+        if okR and type(c) == "table" and type(c.r) == "number" then
+            col = string.format("%.2f/%.2f/%.2f", c.r, c.g, c.b)
+        else
+            col = "查不到颜色"   -- token 有了却查不出色 = 这条路仍然不通,别读成通了
+        end
+    elseif okC then
+        col = "n/a(token 不可用)"
+    end
+
+    local bField, bAlpha, bRGB = BlizzBarCell(unit)
+
+    return string.format(
+        "%-11s name=%-14s player=%-6s atk=%-6s | GUID=%-6s | ClassBase=%-8s || FromGUID: cFile=%-8s cID=%-6s => rgb=%s || BLIZZ[%s a=%s] rgb=%s",
+        unit, cell(okN, uname), cell(okP, isPlayer), cell(okA, canAtk),
+        cell(okG, guid), cell(okB, base),
+        cell(okC, cFile), cell(okC, cID), col,
+        bField, bAlpha, bRGB)
+end
+
+-- 跑一次:target + nameplate1..N,连同区域上下文一起落盘。
+local function ClassRun()
+    local zone, itype = "?", "?"
+    do
+        local ok, n, t = pcall(GetInstanceInfo)
+        if ok then zone, itype = tostring(n), tostring(t) end
+    end
+
+    -- 🔴 负对照做成**可见的**,别靠谁记得:「战场里是 nil」跟「它本来就 nil」长得一模一样。
+    --    记下每种区域类型采过几次,跑完当场报还缺哪一半。
+    DodoProbeDB = DodoProbeDB or {}
+    DodoProbeDB.classZones = DodoProbeDB.classZones or {}
+    DodoProbeDB.classZones[itype] = (DodoProbeDB.classZones[itype] or 0) + 1
+
+    local lines = { ("== class 探针 == 区域=%s 类型=%s"):format(zone, itype) }
+    local units, n = { "target" }, 0
+    for i = 1, CLASS_PLATES do units[#units + 1] = "nameplate" .. i end
+    for _, unit in ipairs(units) do
+        local line = ClassLine(unit)
+        if line then lines[#lines + 1] = line; n = n + 1 end
+    end
+    if n == 0 then
+        lines[#lines + 1] = "  一个单位都不在场 —— 选个目标、或者站到有名条的地方再跑"
+    end
+
+    for _, l in ipairs(lines) do LogPush("class", l) end
+    P.lastOut = table.concat(lines, "\n")
+
+    say(("class 探针:采到 %d 个单位,区域 %s(%s)"):format(n, zone, itype))
+    local zs = {}
+    for k, v in pairs(DodoProbeDB.classZones) do zs[#zs + 1] = ("%s×%d"):format(k, v) end
+    table.sort(zs)
+    say("  已采区域:" .. table.concat(zs, " "))
+    local haveWorld = (DodoProbeDB.classZones["none"] or 0) > 0
+    local havePvP = (DodoProbeDB.classZones["pvp"] or 0) > 0
+        or (DodoProbeDB.classZones["arena"] or 0) > 0
+    if haveWorld and havePvP then
+        say("  |cff44ff44野外 + 战场两边都采到了|r —— /reload 后把文件给我")
+    elseif havePvP then
+        say("  |cffffaa00还缺野外对照|r:出去选个敌对玩家再跑一次,否则 nil 分不出是被墙还是本来就没有")
+    else
+        say("  |cffffaa00还缺战场里那一半|r:进战场选个敌对玩家再跑一次")
+    end
+    say("  |cffffff00结果只在 /reload 之后才写进文件|r,/dp copy 可当场复制")
+end
+
 SLASH_DODOPROBE1 = "/dp"
 SLASH_DODOPROBE2 = "/dodoprobe"
 SlashCmdList.DODOPROBE = function(msg)
@@ -1089,6 +1412,26 @@ SlashCmdList.DODOPROBE = function(msg)
             P:UnregisterEvent("UNIT_AURA")
             say("延迟探针关了。")
         end
+    elseif cmd == "tint" then
+        -- 判据**只能是眼睛**:按钮的 Shown 是 secret,数不出来也断言不了(见 B 组注释)。
+        local errs = P.BuildTintRig()
+        say("|cffffd100DoT 染色钻机|r —— 屏幕中央偏下那根条,选个怪往上招呼:")
+        say("  无 DoT=|cff888888灰|r  只有痛=|cffff8c1a橙|r  只有触=|cffaa4dff紫|r  两个都有=|cff2680ff蓝|r")
+        say(string.format("  规则走 %s / 嵌套容器 %s",
+            P.tintUsedSlot and "|cff44ff44AddAuraSlot(池1)|r" or "|cffffaa00AddAuraGroup(池10)|r",
+            P.tintNested and "|cff44ff44建起来了|r" or "|cffff3333没建起来|r"))
+        if errs and #errs > 0 then
+            for _, e in ipairs(errs) do say("  |cffff3333" .. e .. "|r") end
+        end
+        -- 三种读法必须分开,否则「条不变色」会被当成「这条路死了」直接写进结论:
+        say("  |cff888888条一直灰 = 机制不通 / 只变一种色 = 层叠或嵌套出问题 / 四种全对 = 整套成立|r")
+        say("  |cff888888先脱战在木桩上过一遍,再进副本复一遍 —— 副本才是它真正会死的地方|r")
+        if DodoProbeLog then
+            DodoProbeLog("tint", string.format("slot=%s nested=%s errs=%d",
+                tostring(P.tintUsedSlot), tostring(P.tintNested), errs and #errs or -1))
+            for _, e in ipairs(errs or {}) do DodoProbeLog("tint", e) end
+        end
+
     elseif cmd == "pos" then
         if P.posTicker then
             PosStop()
@@ -1118,6 +1461,9 @@ SlashCmdList.DODOPROBE = function(msg)
         DodoProbeDB = DodoProbeDB or {}
         DodoProbeDB.pos = {}
         say("位置记录已清空 —— |cffffff00还要 /reload 一次|r 才会从文件里消失。")
+
+    elseif cmd == "class" then
+        ClassRun()
 
     elseif cmd == "log" then
         local n = (DodoProbeDB and type(DodoProbeDB.log) == "table") and #DodoProbeDB.log or 0

@@ -32,6 +32,7 @@ Reaction and hostility changes recompute classification on `UNIT_FLAGS` and `UNI
 | Raid marker | Secret-safe marker texture sink | All styled groups |
 | Cast | Duration-object timer, important color/direction, interrupt shield/stripes, target name | Configured groups, especially 5/6 |
 | Enemy auras | Three preallocated secure containers per `nameplate1..40` | 5 and 6 |
+| DoT tint | Per-spellID fill recolour via aura-button-parented textures (§3a) | 5 and 6, spec-gated |
 
 ## 3. Aura presentation
 
@@ -44,6 +45,40 @@ The addon owns only layout and secure filter configuration. Blizzard's `CustomAu
 - **Lifecycle**: all 120 containers and all fixed groups are built at login. Attach reparents the three containers for that permanent token; clear only disables them.
 
 `BIG_DEFENSIVE` and `EXTERNAL_DEFENSIVE` remain distinct groups because two positive components in one filter are AND, not OR.
+
+## 3a. Health-bar tinting by spell
+
+`Tint.lua` recolours the health-bar **fill** according to which of the player's own debuffs are on the
+unit, without ever reading an aura. A texture whose parent is a `CustomAuraButton` draws exactly while
+Blizzard shows that button, so the addon supplies filters and paint and Blizzard supplies the decision.
+Mechanism and its four hard constraints: [`GOTCHAS.md`](GOTCHAS.md) S5.
+
+- **Rules are data.** `RULESETS[specID]` is an ordered list of layers, lowest priority first; a layer is
+  a set of spell IDs that must all be present, plus a colour. Nothing in the module is Shadow-specific.
+- **Shipped ruleset — Shadow Priest (258)**: Shadow Word: Pain alone orange, Vampiric Touch alone
+  purple, both blue, neither leaves the bar its own colour. Other specs are untouched.
+- **Priority, high to low**: important cast > tapped > both DoTs > either DoT > base bar colour. It is
+  expressed structurally, not by comparison — a longer AND-chain nests deeper and therefore lands on a
+  higher frame level, and the important-cast layer sits above every tint.
+- **Tapped** is the one plaintext branch: a mob somebody else has claimed keeps its dimmed base colour,
+  implemented by disabling that token's containers rather than by painting grey over them.
+- **Flat threat.** A ruleset may set `flatThreat`, which drops the role-aware red/blue for that spec
+  (Shadow does): with a DoT on nearly everything in an instance the threat colour would be covered
+  almost all of the time, so the bar holds still at normal red underneath.
+- **Build once, switch by spec.** Every ruleset for the player's class is built at `PLAYER_LOGIN`,
+  because attaching a texture is only legal inside `initializeFrame` and is refused wherever auras are
+  hidden. A respec only flips `SetEnabled`.
+- **Enemy players carry two channels on one bar**: the DoT tint takes the bar except a 4px strip along
+  the top (`ns.TINT_CLASS_STRIP`), which stays class-coloured. Both stay fully saturated —
+  alpha-blending them would make the DoT colour depend on the class and ruin both signals. With no DoT
+  up nothing is painted, so the whole bar is the class colour. Hostile creatures reserve no strip; they
+  have no class-colour channel to protect.
+- **Class colour in a battleground is borrowed, not computed.** `UnitClassBase` is secret there, so the
+  colour is read off Blizzard's own (hidden) nameplate health bar and passed straight to
+  `SetVertexColor` as a secret. Scoped to enemy players. Mechanism and its conditions:
+  [`GOTCHAS.md`](GOTCHAS.md) S5b.
+- **Configuration**: none yet beyond the `ns.db.tint.enabled` kill switch. `/dnp tint` reports which
+  path was taken and the frame levels of an attached plate.
 
 ## 4. Configuration
 
@@ -68,7 +103,11 @@ Unknown, nil, or secret threat falls back to normal red.
 - NPC-ID priority styling on restricted maps.
 - Lua-side enemy health arithmetic and time-to-die logic.
 - Precise off-tank/multi-tank threat.
-- Arbitrary aura spell-ID whitelists or scripts for restricted enemy auras.
+- Lua-side scripts or branching on restricted enemy aura identity.
+  ⚠ Per-spellID **filtering** is NOT out of scope. This line used to read "arbitrary aura spell-ID
+  whitelists or scripts", which was a 12.0 conclusion and is false on 12.1:
+  `candidateFilters.includeSpellIDs` on **enemy HARMFUL** is explicitly permitted and was verified
+  on a live plate 2026-08-17. What stays dead is *reading* which aura is up. See GOTCHAS S5.
 - Restyling forbidden friendly PvE-instance nameplates.
 
 ## 7. References

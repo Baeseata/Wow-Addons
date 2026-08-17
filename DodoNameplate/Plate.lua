@@ -37,6 +37,36 @@ local B_FOCUS  = { 0.2, 0.9, 0.9 }
 local B_ELITE  = { 1, 0.82, 0 }
 local B_RARE   = { 0.85, 0.85, 0.9 }
 
+-- Frame levels above the health bar, as offsets from f.hb:GetFrameLevel(). Everything painted over
+-- the bar has to agree on one stack, because two of the three painters are not ours to order:
+--
+--   +1                 hb's own border ring (child of hb, auto level)
+--   +LEVEL_TINT        Tint.lua's per-token proxy -> its aura containers -> their buttons -> nested
+--                      containers -> their buttons ... each AND-link costs two more levels, so a
+--                      chain of N spells reaches LEVEL_TINT + 2N. LEVEL_IMPORTANT caps N at 11.
+--   +LEVEL_IMPORTANT   important-cast recolour (f.impTint), above every DoT tint
+--   +LEVEL_TEXT        name / health % / elite icon, above everything so they stay readable
+--
+-- Aura buttons report a SECRET frame strata and refuse SetFrameLevel while auras are secret, so
+-- their level can only be set by choosing their ancestor's -- never by touching them (GOTCHAS S5).
+ns.LEVEL_TINT      = 2
+ns.LEVEL_IMPORTANT = 24
+ns.LEVEL_TEXT      = 25
+
+-- Enemy-player bars carry two channels: the DoT tint takes everything except a thin strip along the
+-- TOP, which is reserved for the class colour. Both stay fully saturated, which alpha-blending them
+-- could not do -- a half-transparent orange over a blue Shaman is a third colour, so the DoT signal
+-- would look different on every class and neither channel would be readable.
+--
+-- A fixed pixel reserve, not a fraction: it is the minimum needed to still register the class hue, so
+-- it should not grow with the bar. Nothing here is conditional on whether a DoT is actually up -- it
+-- cannot be, since only Blizzard knows that. Nothing painted means the whole bar shows the class
+-- colour; a DoT painting the lower region leaves exactly this strip behind.
+--
+-- Hostile creatures are NOT split: they have no class-colour channel, so it would only cost tint area.
+-- Shared with Tint.lua, which anchors its texture proxy to the region below the strip.
+ns.TINT_CLASS_STRIP = 4
+
 local CAST_INTERP  = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate
 local CAST_DIR     = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.ElapsedTime
 local CHANNEL_DIR  = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime
@@ -148,6 +178,12 @@ local function LayoutPlate(f, cfg)
 	end
 	f.mark:ClearAllPoints()
 	f.mark:SetPoint("BOTTOM", f.hb, "TOP", 0, mY)
+
+	-- Height of the DoT tint region for an enemy player = everything except the class strip along the
+	-- top (see ns.TINT_CLASS_STRIP). Derived from the CONFIGURED height, not hb:GetHeight() -- hb sizes
+	-- itself via SetAllPoints, so its height is unresolved until a layout pass and reads 0 on the first
+	-- frame. Stashed on the frame so Tint.lua uses this exact number instead of deriving its own.
+	f.splitY = math.max(1, (cfg.height or 12) - ns.TINT_CLASS_STRIP)
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -181,6 +217,25 @@ local function CreatePlateFrame(plate)
 	bg:SetAllPoints(hb)
 	bg:SetColorTexture(0, 0, 0, 0.5)
 
+	-- Important-cast recolour layer. This used to be a vertex color on the fill itself, which the
+	-- DoT tints (drawn on aura buttons ABOVE the fill) would silently paint over -- so it moved up
+	-- here as its own texture, driven by SetAlphaFromBoolean exactly like cb.noInterrupt below.
+	-- It tracks the FILL, not the bar, so it recolours the same region the vertex color used to.
+	local top = CreateFrame("Frame", nil, hb)
+	top:SetFrameLevel(hb:GetFrameLevel() + ns.LEVEL_IMPORTANT)
+	top:SetAllPoints(hb:GetStatusBarTexture())
+	local impTint = top:CreateTexture(nil, "ARTWORK")
+	impTint:SetAllPoints(top)
+	impTint:SetAlpha(0)
+	f.impTint = impTint
+
+	-- Text layer: name, health %, elite icon. On its own frame above the tints so a full-bar tint
+	-- cannot bury them. Anchors still point at hb, which is this frame's parent.
+	local fg = CreateFrame("Frame", nil, hb)
+	fg:SetFrameLevel(hb:GetFrameLevel() + ns.LEVEL_TEXT)
+	fg:SetAllPoints(hb)
+	f.fg = fg
+
 	local border = CreateFrame("Frame", nil, hb, "BackdropTemplate")
 	border:SetPoint("TOPLEFT", hb, "TOPLEFT", -1, 1)
 	border:SetPoint("BOTTOMRIGHT", hb, "BOTTOMRIGHT", 1, -1)
@@ -188,21 +243,32 @@ local function CreatePlateFrame(plate)
 	border:SetBackdropBorderColor(0, 0, 0, 1)
 	f.border = border
 
-	local name = hb:CreateFontString(nil, "OVERLAY")
+	-- Everything drawn ON the bar gets a black drop shadow on top of its outline. The outline alone
+	-- was enough while the bar was threat red, but a class-coloured bar can be Rogue yellow
+	-- (1.00/0.96/0.41) or Priest white (1/1/1), and white text on that is gone. Shadow rather than
+	-- THICKOUTLINE on purpose: thick outlines turn CJK glyphs to mush at nameplate font sizes.
+	local function Legible(fs)
+		fs:SetShadowColor(0, 0, 0, 1)
+		fs:SetShadowOffset(1, -1)
+		return fs
+	end
+
+	local name = Legible(fg:CreateFontString(nil, "OVERLAY"))
 	name:SetFont(FONT, 9, "OUTLINE")
 	name:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 1, 3)   -- left-aligned above the bar
 	name:SetJustifyH("LEFT")
 	f.name = name
 
+
 	-- percent (inside bar, right): a number + a separate static "%" sign just to its right. The "%"
 	-- is separate because the percent value can come back secret (cannot concat "%" onto a secret).
-	local hpPctSign = hb:CreateFontString(nil, "OVERLAY")
+	local hpPctSign = Legible(fg:CreateFontString(nil, "OVERLAY"))
 	hpPctSign:SetFont(FONT, 8, "OUTLINE")
 	hpPctSign:SetPoint("RIGHT", hb, "RIGHT", -2, 0)
 	hpPctSign:SetText("%")
 	f.hpPctSign = hpPctSign
 
-	local hpPct = hb:CreateFontString(nil, "OVERLAY")
+	local hpPct = Legible(fg:CreateFontString(nil, "OVERLAY"))
 	hpPct:SetFont(FONT, 8, "OUTLINE")
 	hpPct:SetPoint("RIGHT", hpPctSign, "LEFT", 0, 0)
 	hpPct:SetJustifyH("RIGHT")
@@ -217,13 +283,13 @@ local function CreatePlateFrame(plate)
 
 	local mark = f:CreateTexture(nil, "OVERLAY")   -- raid target icon, centered directly above the bar
 	mark:SetSize(24, 24)
-	mark:SetPoint("BOTTOM", hb, "TOP", 0, 0)       -- name (on hb, a child of f) draws above it
+	mark:SetPoint("BOTTOM", hb, "TOP", 0, 0)       -- name (on the fg layer) draws above it
 	mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")  -- pre-set; SetRaidTargetIconTexture sets only the texcoord (mirrors Plater)
 	mark:Hide()
 	f.mark = mark
 
-	-- elite / rare classification icon, INSIDE the bar + left-aligned (on hb so it sits above the fill)
-	local elite = hb:CreateTexture(nil, "OVERLAY")
+	-- elite / rare classification icon, INSIDE the bar + left-aligned (on fg so it sits above the tints)
+	local elite = fg:CreateTexture(nil, "OVERLAY")
 	elite:SetPoint("LEFT", hb, "LEFT", 1, 0)
 	elite:Hide()
 	f.elite = elite
@@ -346,6 +412,7 @@ local function CreatePlateFrame(plate)
 
 	if ns.Auras then ns.Auras.Create(f) end
 
+	f.plate = plate   -- the colour path needs it to reach Blizzard's own health bar
 	plate.dnp = f
 	return f
 end
@@ -394,6 +461,10 @@ local function UpdateLevel(f, unit)
 end
 
 local function ThreatColor(unit)
+	-- A spec whose tint ruleset covers the bar (Shadow) opts out of threat colouring entirely: with
+	-- a DoT on nearly everything in an instance the red/blue would be painted over almost all the
+	-- time, so the bar may as well hold still at "normal red" underneath. See Tint.lua flatThreat.
+	if ns.Tint and ns.Tint.OverridesThreat() then return CN() end
 	local s = UnitThreatSituation("player", unit)
 	if Guards.IsSecret(s) or s == nil then
 		return CN()
@@ -414,6 +485,39 @@ local function ClassColor(unit)
 	end
 end
 
+-- Class colour for an enemy player whose class we are NOT allowed to read (battleground / arena:
+-- UnitClassBase is SecretWhenUnitIdentityRestricted). Blizzard's own nameplate paints that bar with
+-- plain `UnitClass` + `RAID_CLASS_COLORS` in UNTAINTED code, which needs no secret handling at all --
+-- so the class colour is already on screen, under the bar we hide with SetAlpha(0). Measured
+-- 2026-08-17 in a battleground: the colour is still being updated while we hold it at alpha 0, and
+-- reading it back yields a SECRET.
+--
+-- A secret is fine here. We receive it, store it, and hand it straight to SetVertexColor -- never
+-- compare it, index with it, or do arithmetic on it. Same shape as SetValue(secretHealth) and
+-- SetRaidTargetIconTexture(secretIndex) elsewhere in this file.
+local function BlizzardBarColor(f)
+	local uf = f.plate and f.plate.UnitFrame
+	local bar = uf and uf.healthBar
+	if not (bar and bar.GetStatusBarColor) then return nil end
+	local ok, r, g, b = pcall(bar.GetStatusBarColor, bar)
+	if not ok then return nil end
+	-- Secret check before the nil compare, always.
+	if Guards.IsSecret(r) then return { r = r, g = g, b = b, secret = true } end
+	if r == nil then return nil end
+	return { r = r, g = g, b = b }
+end
+
+-- One-shot report if SetVertexColor turns out to refuse these particular secrets. Not silent: a
+-- quiet fall back to red is indistinguishable from "this character has no class colour", and that
+-- would read as the feature simply not working.
+local secretColorRefused = false
+local function ReportSecretColorRefused()
+	if secretColorRefused then return end
+	secretColorRefused = true
+	print("|cff66ccffDodoNameplate|r: SetVertexColor refused a secret class colour -- "
+		.. "enemy-player bars fall back to red in restricted PvP. Please report this.")
+end
+
 local function ReactionColor(unit)
 	local r, g, b = UnitSelectionColor(unit)
 	if not Guards.IsSecret(r) and r ~= nil then return { r = r, g = g, b = b } end
@@ -431,10 +535,14 @@ local function HostileColor(unit)
 	return ThreatColor(unit)
 end
 
-local function GroupColor(group, unit)
+local function GroupColor(group, unit, f)
 	if group == HOSTILE then
 		return HostileColor(unit)
-	elseif group == PARTY or group == FRIENDLY or group == ENEMY_PLAYER then
+	elseif group == ENEMY_PLAYER then
+		-- Borrowing Blizzard's bar is scoped to this group on purpose. For a creature it would hand
+		-- back whatever THEY decided (their threat/reaction tint), not a class colour.
+		return ClassColor(unit) or BlizzardBarColor(f) or ReactionColor(unit) or CN()
+	elseif group == PARTY or group == FRIENDLY then
 		return ClassColor(unit) or ReactionColor(unit) or CN()
 	else
 		return ReactionColor(unit) or { r = 0.2, g = 0.8, b = 0.2 }
@@ -443,24 +551,23 @@ end
 
 local IMP_HP_DEFAULT = { r = 1, g = 1, b = 1 }   -- fallback important-cast health color (white)
 
--- Health bar color = group/threat color, UNLESS the unit is casting an important spell and this group
--- enables the recolor: then fold `f.castImportant` (may be SECRET in instances) into the vertex color
--- via EvaluateColorValueFromBoolean -- never compared in Lua, so it works even when the flag is secret.
+-- Health bar color = group/threat color, and nothing else. The important-cast recolor is NOT folded
+-- in here any more: it used to be a vertex color on the fill, which the DoT tints draw over, so it
+-- moved to f.impTint (StartCast) -- one implementation, one place, above the tints.
 local function ColorBar(f, unit)
 	local tex = f.hb:GetStatusBarTexture()
 	if not (tex and f.group) then return end
-	local c = GroupColor(f.group, unit)
-	local cfg = ns.db and ns.db.groups[f.group]
-	if cfg and cfg.importantHpRecolor and HasValue(f.castImportant) then
-		local sp = cfg.importantHpColor or IMP_HP_DEFAULT
-		local E = C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean
-		if E then
-			tex:SetVertexColor(E(f.castImportant, sp.r, c.r), E(f.castImportant, sp.g, c.g), E(f.castImportant, sp.b, c.b))
-			return
-		elseif not Guards.IsSecret(f.castImportant) and f.castImportant then
-			tex:SetVertexColor(sp.r, sp.g, sp.b)
-			return
-		end
+	local c = GroupColor(f.group, unit, f)
+	if c.secret then
+		-- Guarded because this is the one step nothing has verified: SetVertexColor demonstrably eats
+		-- the SingleColorValue that EvaluateColorValueFromBoolean returns, but a raw secret number
+		-- out of GetStatusBarColor is not the same type. Unguarded it would throw once per plate
+		-- update for every enemy in a battleground.
+		if pcall(tex.SetVertexColor, tex, c.r, c.g, c.b) then return end
+		ReportSecretColorRefused()
+		local n = CN()
+		tex:SetVertexColor(n.r, n.g, n.b)
+		return
 	end
 	tex:SetVertexColor(c.r, c.g, c.b)
 end
@@ -561,6 +668,7 @@ end
 local function StartCast(f, unit, channeled)
 	local cb = f.castbar
 	local cfg = f.group and ns.db and ns.db.groups[f.group]
+	f.impTint:SetAlpha(0)   -- cleared on entry so the early returns below cannot leave it lit
 	if not cfg or cfg.showCast == false then cb:Hide(); return end
 
 	local name, texture, notInterruptible, spellID
@@ -588,7 +696,14 @@ local function StartCast(f, unit, channeled)
 		cb.fillR:SetTimerDuration(cb.duration, CAST_INTERP, dir)
 	end
 
-	f.castImportant = important   -- store (storing a secret is fine; only ever fed to sinks)
+	-- Health bar recolor while an important spell is casting: a texture ABOVE the DoT tints, flipped
+	-- by SetAlphaFromBoolean so it works even when `important` is secret (instances). Colour comes
+	-- from the group's own importantHpColor -- the same setting the old vertex-color fold read.
+	if cfg.importantHpRecolor then
+		local sp = cfg.importantHpColor or IMP_HP_DEFAULT
+		f.impTint:SetColorTexture(sp.r, sp.g, sp.b, 1)
+		f.impTint:SetAlphaFromBoolean(important, 1, 0)
+	end
 	ApplyCastColor(cb, important, cfg)
 	-- direction (secret-safe): show the reverse (R->L) bar for important casts, the forward (L->R) bar
 	-- otherwise -- toggled via SetAlphaFromBoolean so it works even when 'important' is secret.
@@ -598,15 +713,13 @@ local function StartCast(f, unit, channeled)
 	cb.noInterrupt:SetAlphaFromBoolean(notInterruptible, 1, 0)   -- striped overlay on uninterruptible casts
 	cb:Show()
 	UpdateCastTarget(f, unit, cfg)
-	ColorBar(f, unit)             -- reflect the important-cast color on the health bar now
 end
 
 local function StopCast(f)
 	local cb = f.castbar
 	cb.duration = nil
 	cb:Hide()
-	f.castImportant = nil
-	if f.unit then ColorBar(f, f.unit) end   -- revert the health bar off the important-cast color
+	f.impTint:SetAlpha(0)   -- drop the important-cast recolor
 end
 
 local function CheckCast(f, unit)
@@ -632,11 +745,12 @@ function Style.Apply(plate, unit, group)
 	local uf = plate.UnitFrame
 	local f = plate.dnp or CreatePlateFrame(plate)
 	f.unit = unit
-	f.castImportant = nil   -- reset so a recycled plate does not inherit the previous unit's recolor
+	f.impTint:SetAlpha(0)   -- reset so a recycled plate does not inherit the previous unit's recolor
 
 	if ns.db.overlays.hideCritter and ns.IsCritter(unit) then
 		if uf then uf.dnpHide = true; HookUnitFrame(uf); uf:SetAlpha(0) end
 		if ns.Auras then ns.Auras.Clear(f) end
+		if ns.Tint then ns.Tint.Clear(f) end
 		f:Hide()
 		return
 	end
@@ -664,10 +778,17 @@ function Style.Apply(plate, unit, group)
 		f:SetAlpha(tapped and 0.5 or 1)
 		f:Show()
 		CheckCast(f, unit)
-		if IsEnemyPlate(f.group) and ns.Auras then ns.Auras.Attach(f, unit) elseif ns.Auras then ns.Auras.Clear(f) end
+		local enemy = IsEnemyPlate(f.group)
+		if ns.Auras then
+			if enemy then ns.Auras.Attach(f, unit) else ns.Auras.Clear(f) end
+		end
+		if ns.Tint then
+			if enemy then ns.Tint.Attach(f, unit) else ns.Tint.Clear(f) end
+		end
 	else
 		if uf then uf.dnpHide = false; uf:SetAlpha(1) end
 		if ns.Auras then ns.Auras.Clear(f) end
+		if ns.Tint then ns.Tint.Clear(f) end
 		f:Hide()
 	end
 end
@@ -676,8 +797,9 @@ function Style.Clear(plate)
 	if not plate then return end
 	if plate.dnp then
 		if ns.Auras then ns.Auras.Clear(plate.dnp) end
+		if ns.Tint then ns.Tint.Clear(plate.dnp) end
 		plate.dnp:Hide()
-		plate.dnp.castImportant = nil
+		plate.dnp.impTint:SetAlpha(0)
 	end
 	local uf = plate.UnitFrame
 	if uf then uf.dnpHide = false; uf:SetAlpha(1) end
@@ -692,6 +814,18 @@ function Style.Auras(plate, unit)
 	local f = plate and plate.dnp
 	if f and f:IsShown() and IsEnemyPlate(f.group) and ns.Auras then
 		ns.Auras.Attach(f, unit)
+	end
+end
+
+-- Re-evaluate the DoT tint for one plate (spec change; tapped state flips arrive via UNIT_FLAGS,
+-- which already re-runs the whole of Style.Apply).
+function Style.Tint(plate, unit)
+	local f = plate and plate.dnp
+	if not (f and ns.Tint) then return end
+	if f:IsShown() and IsEnemyPlate(f.group) then
+		ns.Tint.Attach(f, unit)
+	else
+		ns.Tint.Clear(f)
 	end
 end
 

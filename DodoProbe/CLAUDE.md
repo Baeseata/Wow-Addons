@@ -132,6 +132,64 @@ GitHub 全站搜过，**没找到任何插件在 12.x 做出战斗中可用的�
 ⚠ `c:IsEventRegistered("UNIT_AURA")` 对 AuraContainer 返回 **ERROR**(调用被拒),
 **不是 false** —— 读不出「注册没有」这个结论,别把它当答案。
 
+## 🎨 `/dp class` —— 战场里能不能拿到敌对玩家的职业色
+
+```
+/dp class            采一次:target + nameplate1..10,连区域上下文一起落盘
+```
+
+**起因**(2026-08-17):DodoNameplate 在战场里所有敌对玩家血条都是红的。`/dnp test` 回
+`class: SECRET`,契约对上 —— `UnitClassBase` 标着 `SecretWhenUnitIdentityRestricted`。
+
+**被测的线索** = `UnitClassFromGUID`。契约上 `SecretArguments = "AllowedWhenTainted"`
+(⇒ 允许把一个 secret 的 GUID 递进去,而 `UnitGUID` 在受限内容里正是 secret),而三个返回值里
+**只有本地化 `className` 带 `ConditionalSecret`**,`classFilename`(token)和 `classID` 都没标。
+
+⚠ **第一次提取标注时 `ConditionalSecret` 被整个漏掉**,当时读出来就是「这函数完全没限制」——
+干净、可复述、而且是错的。逐字重读才抓出来。**契约要逐字读,别信摘要。**
+
+### 🔴 结论(2026-08-17 实测,寇魔古寺 `pvp`,已定案 —— 不用再跑)
+
+```
+target      GUID=SECRET   ClassBase=SECRET   || cName=SECRET   cFile=SECRET   cID=SECRET => rgb=n/a
+nameplate1  GUID=SECRET   ClassBase=SECRET   || cName=SECRET   cFile=SECRET   cID=SECRET => rgb=n/a
+nameplate3  GUID=T:string ClassBase=T:string || cName=T:string cFile=T:string cID=6      => rgb=0.77/0.12/0.23
+```
+
+**GUID 是 secret 时,`UnitClassFromGUID` 三个返回值全 secret** —— 包括契约上**没标**
+`ConditionalSecret` 的 `classFilename` 和 `classID`。
+
+🔑 **可迁移的那条:`SecretArguments = "AllowedWhenTainted"` 是「允许你递进去」,不是「允许你知道」。**
+secret 从参数**传导**到返回值。看起来像洗白漏洞的标注其实不是 —— 正因为输出照样 secret,
+输入才允许是 secret。凡看到这个标注就想「那我把 secret 喂进去换明文出来」的,先按传导假设。
+配套:**per-return 的 `ConditionalSecret` 只标了三个里的一个,而实测三个全变** ⇒
+canon 那条「契约只对『是不是 secret』权威」还要再弱一档 —— **它连这个都可能说不全。**
+
+🎁 `nameplate3` 是**白捡的正对照**:同一战场同一瞬间,一个 GUID 明文的单位(队友)整条链一路明文、
+颜色查出来了 ⇒ 排除「探针坏了」,并坐实这是**按单位身份开关的墙**,不是「没值」。
+⇒ 野外那趟负对照因此**不需要**(它只在结果是 `nil` 时才有用)。
+
+⚠ 这一轮暴露的探针缺陷,已修:`cell()` 对字符串一律返回 `T:string` ⇒ name / token 两格
+打成类型名,拿不到「被测对象是谁」。现在照实打出来(超 24 字截断)。
+
+**流程**(还要重跑时):进战场选个敌对玩家 → `/dp class` → 只有结果是 `nil` 才需要**出来野外再跑一次
+(对照)** → `/reload` → 读 `DodoProbeDB.log` 里 `[class]` 那些行。
+
+每行三态照实记(真值 / `nil` / `SECRET` / `ERR`),`ClassBase` 那格是已知被墙的对照:
+```
+nameplate3  name=某人  player=true atk=true | GUID=SECRET | ClassBase=SECRET ||
+            FromGUID: cName=SECRET cFile=MAGE cID=8 => rgb=0.41/0.80/0.94
+```
+
+🔴 **判据是最后那格 `rgb`,不是 `cFile`。** token 明文但查不出颜色完全可能,那种情况这条路
+仍然不通 —— 所以探针直接去查 `RAID_CLASS_COLORS` / `C_ClassColor`,查出数字才算通。
+
+🔴 **契约只对「是不是 secret」权威,对「给不给值」不权威** —— 这条目自己写着
+`MayReturnNothing = true`。前科:位置那四个 API 契约零 secret 标注,真机在副本里 x/y/z 全 `nil`。
+
+🔴 **负对照做成可见的**:探针记下每种区域类型采过几次,跑完当场报「还缺野外 / 还缺战场那一半」。
+没有基线,「战场里是 nil」跟「它本来就 nil」长得一模一样 —— 这条不靠谁记得。
+
 ## 📍 `/dp pos` —— 玩家坐标到底给不给值(0.14 新增)
 
 ```
