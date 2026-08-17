@@ -11,7 +11,10 @@ local ADDON, ns = ...
 ns.DEFAULTS = {
 	locked   = false,
 	announce = true,
-	sound    = true,
+	-- One of ns.SOUND_MODES. Was a boolean before 0.12 -- DodoSays.lua migrates
+	-- the stored value, and "beep" is chosen here so an install that predates
+	-- the voices keeps making exactly the noise it always did.
+	sound    = "beep",
 	debug    = false,
 	hideHint = false, -- the two lines under the board about marking the floor
 	point    = nil,   -- { anchor, x, y }  board
@@ -23,8 +26,6 @@ ns.DEFAULTS = {
 local SWITCHES = {
 	{ key = "announce", label = "Centre-screen call-outs",
 	  tip = "The big word during the calling half. This is the part that keeps you alive." },
-	{ key = "sound",    label = "Play a sound on each call",
-	  tip = "Fires with the call-out. Useful when your eyes are on the floor, not the HUD." },
 	{ key = "locked",   label = "Lock the board in place",
 	  tip = "Stops it being dragged. The board still shows and still takes clicks." },
 	{ key = "debug",    label = "Debug trace to chat",
@@ -68,6 +69,56 @@ function ns.BuildOptions()
 		cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
 		anchor = cb
 	end
+
+	-- Sound is a four-way choice, so it gets radio behaviour rather than a tick
+	-- box: "silent" and "chime" are both legitimate answers, and one checkbox
+	-- cannot say which of the two an unticked state meant.
+	--
+	-- Hand-rolled exclusion on the standard check-button template rather than a
+	-- dropdown -- this is a canvas panel, and at four rows a dropdown would
+	-- hide three of the answers behind a click and buy nothing.
+	local soundLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	soundLabel:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -18)
+	soundLabel:SetText("Sound on each call")
+	anchor = soundLabel
+
+	local soundButtons = {}
+	-- Normalise first, or an unrecognised value (a stale boolean) leaves all
+	-- four rows blank -- which reads as "nothing is selected", a state none of
+	-- the modes describes and no click here can explain.
+	local function refreshSound()
+		ns.normalizeSound(ns.db)
+		for _, b in ipairs(soundButtons) do
+			b:SetChecked(ns.db.sound == b.modeKey)
+		end
+	end
+
+	for i, m in ipairs(ns.SOUND_MODES) do
+		local cb = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+		cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", i == 1 and 8 or 0, -6)
+		cb.modeKey = m.key
+		cb.Text:SetText(m.label)
+		-- refreshSound() rather than trusting the click: clicking the row that
+		-- is already on would otherwise untick it and leave all four clear,
+		-- which is a state none of the four modes describes.
+		cb:SetScript("OnClick", function(self)
+			ns.db.sound = self.modeKey
+			refreshSound()
+		end)
+		cb:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetText(m.label, 1, 1, 1)
+			GameTooltip:AddLine(m.tip, nil, nil, nil, true)
+			GameTooltip:Show()
+		end)
+		cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+		soundButtons[#soundButtons + 1] = cb
+		anchor = cb
+	end
+	refreshSound()
+	-- The minimap panel edits the same value, so what was rendered when this
+	-- was built can be stale by the time anyone opens it.
+	panel:SetScript("OnShow", refreshSound)
 
 	local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 	reset:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, -18)

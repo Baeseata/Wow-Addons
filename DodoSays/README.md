@@ -32,6 +32,29 @@ and it calls them back to you while he echoes.
 The board only accepts taps while he is preaching. Outside that it stays on
 screen but greys out.
 
+## Sound
+
+Each call can also be heard, which matters because during the echo your eyes
+belong on the floor rather than on a HUD. Four settings, in the options panel:
+
+| Setting | What you hear |
+|---|---|
+| Silent | Nothing |
+| Chime | Blizzard's raid-warning chime — the long-standing default |
+| Voice (Chinese) | The marker spoken aloud |
+| Voice (English) | The marker spoken aloud |
+
+Sound fires on each call of the echo, together with the cast bar — never during
+the sermon while you are still tapping. The heads-up before the echo starts is
+deliberately silent: your eyes are on the board at that point, so the dimmed
+arrow says it, and a spoken quarter there would land on top of the tap you were
+making and name a different one.
+
+Swapping in your own voices takes no code: the files live in
+`Sounds/<language>/<marker>.ogg`, named after the quarter (`cross.ogg`,
+`square.ogg`, `triangle.ogg`, `circle.ogg`). Drop a replacement over any of
+them and it is used as-is.
+
 ## Commands
 
 | | |
@@ -62,3 +85,16 @@ here depends on reading them; the wave lengths are measured live and corrected
 every round.
 
 The addon stays completely asleep outside this one encounter.
+
+## Credits
+
+The addon code is All Rights Reserved. The bundled voice lines are not mine:
+
+- **Chinese** — recorded by **Xia Yike (夏一可)**, from the
+  [DBM-VoicePack-Yike](https://github.com/Mini-Dragon/DBM-VoicePack-Yike)
+  pack, licensed **CC BY-ND 4.0**.
+- **English** — from the **DBM Voicepack VEM** pack by **weisslove**.
+
+Both are the original recordings, re-encoded and level-matched so the four
+words carry equally over combat noise. Nothing was re-cut, re-voiced or
+remixed, and no word says anything other than what was recorded.

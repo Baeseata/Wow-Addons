@@ -39,9 +39,16 @@ H.install()
 -- none of which this suite fires -- so it cannot disturb anything above. The
 -- files it does NOT get (Sim, Trace, Options, Minimap) are only ever reached
 -- from subcommands nothing here runs.
+-- Options.lua rides along for ns.DEFAULTS, which normalizeSound falls back to.
+-- Its top level only declares tables and functions -- the panel is not built
+-- until ns.BuildOptions() is called, which nothing here does.
 local ns = H.load({ "Util.lua", "Board.lua", "Announce.lua", "Detector.lua",
-	"Macros.lua", "DodoSays.lua" })
-ns.db = { announce = false, sound = false, debug = false }
+	"Options.lua", "Macros.lua", "DodoSays.lua" })
+-- "off" rather than false: the boolean is the PRE-0.12 shape, and leaving it
+-- here would mean most of this suite runs against a value the addon no longer
+-- writes -- while still looking silent, because an unrecognised mode is
+-- silent. The sound section below sets this per case.
+ns.db = { announce = false, sound = "off", debug = false }
 
 -- Record everything crossing the replay seam.
 local log = {}
@@ -769,6 +776,208 @@ check("then says it ran out", e4, "noslots")
 check("and the message counts what it managed",
 	ns.Macros.Report(m4, u4, e4):find("2 of 4") ~= nil, true)
 H.clearMacros()
+
+-- ---------------------------------------------------------------------------
+io.write("Sound: four modes, and the voice must name the quarter on screen\n")
+-- The failure that matters here is not silence -- it is the addon confidently
+-- saying "square" while the icon says "cross". Silence is survivable; a wrong
+-- marker walks the player into the venom believing they are safe. So every
+-- assertion below is on WHICH file was asked for, never on how many played.
+-- ---------------------------------------------------------------------------
+local VOICE = "Interface\\AddOns\\DodoSays\\Sounds\\"
+
+-- `call` carries (step, id, castLength) and `preview` carries just the id --
+-- same seam, different shapes -- so this puts the id where each one reads it.
+local function soundsFor(mode, event, id)
+	ns.db.sound = mode
+	H.clearSounds()
+	if event == "preview" then ns.Emit(event, id) else ns.Emit(event, 0, id, 1) end
+	return H.sounds()
+end
+
+-- Does the call handler reach its own last line in the barest state there is,
+-- with nothing built and nothing drawn?
+--
+-- ⚠ This has to stay FIRST in the section. The moment anything above sets
+-- announce = true, Flash builds the countdown bar, runBar's nil branch stops
+-- being reachable, and this quietly becomes an assertion about nothing.
+-- ⚠ It is also not reproducing a live client: ADDON_LOADED calls
+-- Announce.ApplyPosition(), which builds that frame long before any pull. What
+-- it buys is a tripwire on the handler as a whole -- emit() swallows
+-- subscriber errors outside debug mode, so with nothing watching that channel
+-- any future line that throws mid-handler costs everything after it in
+-- silence. Debug mode is the only place that error surfaces.
+ns.db.debug, ns.db.sound = true, "off"
+local printedBefore = #H.printed
+ns.Emit("call", 0, "cross", 1)
+local died = false
+for i = printedBefore + 1, #H.printed do
+	if tostring(H.printed[i]):find("subscriber failed") then died = true end
+end
+check("the call handler runs to the end, nothing drawn", died, false)
+ns.db.debug = false
+
+local s = soundsFor("off", "call", "cross")
+check("silent means silent", #s, 0)
+
+s = soundsFor("beep", "call", "cross")
+check("the chime still fires", #s, 1)
+check("and it is a kit, not a file", s[1] and s[1].kind, "kit")
+
+s = soundsFor("zh", "call", "cross")
+check("a voice mode plays a file instead", s[1] and s[1].kind, "file")
+check("out of its own language folder", s[1] and s[1].ref, VOICE .. "zh\\cross.ogg")
+check("and does not also chime", #s, 1)
+
+-- Every quarter, not one sample. A mapping that is right for cross and wrong
+-- for circle is precisely the bug this cannot afford, and it is invisible
+-- until you walk all four -- which is also why the file is named for the
+-- quadrant id rather than the marker number the pack shipped with.
+for _, q in ipairs(ns.QUADRANTS) do
+	local got = soundsFor("zh", "call", q.id)[1]
+	check("zh " .. q.id .. " speaks " .. q.id, got and got.ref, VOICE .. "zh\\" .. q.id .. ".ogg")
+	got = soundsFor("en", "call", q.id)[1]
+	check("en " .. q.id .. " speaks " .. q.id, got and got.ref, VOICE .. "en\\" .. q.id .. ".ogg")
+end
+
+-- The heads-up is silent in EVERY mode, including the voices. It fires while
+-- the player is still tapping quarters, so anything audible there arrives as
+-- feedback on the tap they just made while naming a different quarter -- and
+-- Board.lua emits it on `>= expected - 1`, so the last two taps each get one.
+-- 0.12 shipped with a voice here and both problems showed up in the first live
+-- rehearsal. The dimmed arrow already says it, to eyes that are on the board.
+--
+-- ⚠ All three assert zero, which is the weakest shape a check can have: they
+-- would pass equally well if sound were broken everywhere. What proves the
+-- channel actually works is the call block above -- these only say the preview
+-- stays out of it.
+for _, mode in ipairs({ "zh", "en", "beep" }) do
+	check("the heads-up stays silent in " .. mode, #soundsFor(mode, "preview", "square"), 0)
+end
+
+-- Both ways of being handed something the mode table does not know. Silence is
+-- the deliberate answer to both: guessing a quarter is how a player dies.
+check("an unknown mode is silent, not an error", #soundsFor("klingon", "call", "cross"), 0)
+check("so is a quarter that does not exist", #soundsFor("zh", "call", "nowhere"), 0)
+
+-- The regression that this section was written blind to and caught anyway:
+-- switching the centre-screen text off must not take the sound with it. They
+-- are separate switches, and what linked them was a nil index inside the
+-- subscriber pcall -- silent outside debug mode, so on a live client it would
+-- read as "the voices just don't work for me" with nothing to point at.
+ns.db.announce = true
+local withText = soundsFor("zh", "call", "cross")[1]
+ns.db.announce = false
+local withoutText = soundsFor("zh", "call", "cross")[1]
+check("the voice does not depend on the centre-screen text",
+	withoutText and withoutText.ref, withText and withText.ref)
+check("and it is still the right quarter", withoutText and withoutText.ref, VOICE .. "zh\\cross.ogg")
+
+
+-- The pre-0.12 boolean. Nothing else in this suite reaches migrateDB -- it
+-- runs on the ADDON_LOADED path, which the offline run never fires -- and an
+-- install that silently went mute on upgrade would never be reported as a bug,
+-- only uninstalled.
+check("an install that had sound on keeps its chime", ns.migrateDB({ sound = true }).sound, "beep")
+check("one that had it off stays off",                ns.migrateDB({ sound = false }).sound, "off")
+check("a real mode is left alone",                    ns.migrateDB({ sound = "en" }).sound, "en")
+check("and an untouched install is left to defaults", ns.migrateDB({}).sound, nil)
+
+-- normalizeSound, and the bug it was written for. 0.12 shipped with `sound`
+-- still listed in Minimap.lua's toggle table, whose shared OnClick writes
+-- `self:GetChecked() and true or false` -- so opening the panel most people
+-- actually use and touching that row stamped a boolean over the mode key and
+-- muted the addon, while the box stayed ticked. Nothing pointed at it: an
+-- unrecognised mode is silent by design.
+-- ⚠ Of these two, only the SECOND can tell whether migrateDB still runs inside
+-- normalizeSound. `true` maps to "beep" and the fallback default is also
+-- "beep", so the first line stays green with the migration ripped out --
+-- measured, not assumed. `false` is the only input where the two paths part.
+check("a stale boolean normalises to the chime", ns.normalizeSound({ sound = true }).sound, "beep")
+check("and false to silence",                    ns.normalizeSound({ sound = false }).sound, "off")
+check("a real mode is left alone",               ns.normalizeSound({ sound = "zh" }).sound, "zh")
+check("junk falls back to the default",          ns.normalizeSound({ sound = "klingon" }).sound, ns.DEFAULTS.sound)
+check("so does a missing value",                 ns.normalizeSound({}).sound, ns.DEFAULTS.sound)
+check("and the default is itself a real mode",   ns.SOUND_MODE_BY_KEY[ns.DEFAULTS.sound] ~= nil, true)
+
+-- The structural half: no panel may drive `sound` through a boolean toggle
+-- again. Reading the source because the table is a local -- and reading BOTH
+-- panels, because the whole failure was that only one of them got updated.
+for _, f in ipairs({ "Minimap.lua", "Options.lua" }) do
+	local fh = io.open(f, "r")
+	local src = fh and fh:read("*a") or ""
+	if fh then fh:close() end
+	check(f .. " was read at all", #src > 0, true)
+	check("no boolean toggle row owns sound in " .. f,
+		src:find('key%s*=%s*"sound"', 1, false), nil)
+end
+
+ns.db.sound = "off"
+
+-- ---------------------------------------------------------------------------
+io.write("Shipped files carry no stray CJK\n")
+-- The CF listing and everything in the package are English. A Chinese
+-- character that slips into a shipped file is the sort of thing nobody notices
+-- until it is already on the store page.
+--
+-- The file list is DERIVED FROM THE TOC, not written out here: a file added to
+-- the addon is covered automatically. A hand-kept list stops covering things
+-- the first time someone forgets to extend it, and stays green while doing so.
+-- ---------------------------------------------------------------------------
+local function slurp(p)
+	local fh = io.open(p, "r")
+	if not fh then return nil end
+	local s = fh:read("*a"); fh:close(); return s
+end
+
+local shipped, tocSrc = { "DodoSays.toc", "README.md", "Bindings.xml" }, slurp("DodoSays.toc")
+for line in (tocSrc or ""):gmatch("[^\r\n]+") do
+	local f = line:match("^%s*([%w_]+%.lua)%s*$")
+	if f then shipped[#shipped + 1] = f end
+end
+check("the toc yielded its lua files", #shipped > 8, true)
+
+local function hasCJK(s)
+	local ok, found = pcall(function()
+		for _, cp in utf8.codes(s) do
+			if (cp >= 0x3000 and cp <= 0x303F) or (cp >= 0x4E00 and cp <= 0x9FFF)
+				or (cp >= 0xFF00 and cp <= 0xFFEF) then return true end
+		end
+		return false
+	end)
+	return ok and found or false
+end
+
+-- The one sanctioned exception: the credit naming the voice actor. Her name in
+-- Chinese is how she is actually known, and dropping it would make the
+-- attribution worse at the single thing attribution exists to do.
+--
+-- ⚠ Anchored to the credit line itself, never to the file. Any OTHER Chinese
+-- in README.md still fails -- a file-sized exemption is how a guard quietly
+-- stops covering anything while still reporting green.
+local function exempt(path, line)
+	return path == "README.md" and line:find("Xia Yike", 1, true) ~= nil
+end
+
+local offenders, exempted = {}, 0
+for _, f in ipairs(shipped) do
+	local src = slurp(f)
+	check(f .. " was readable", src ~= nil, true)
+	for line in (src or ""):gmatch("[^\r\n]+") do
+		if hasCJK(line) then
+			if exempt(f, line) then exempted = exempted + 1
+			else offenders[#offenders + 1] = f .. " | " .. line:sub(1, 70) end
+		end
+	end
+end
+check("no CJK outside the credit line", offenders[1], nil)
+-- Reverse assertion: the exemption does exactly one job. If this number climbs,
+-- someone widened the exemption instead of fixing whatever tripped it.
+check("the exemption covers exactly one line", exempted, 1)
+-- ...and the scanner must actually be able to see CJK, or every check above is
+-- vacuously green. (This file lives in tools/ and never ships.)
+check("the scanner can see CJK at all", hasCJK("夏一可"), true)
+check("and does not fire on plain ASCII", hasCJK("Xia Yike, CC BY-ND 4.0"), false)
 
 -- ---------------------------------------------------------------------------
 -- The tally. Every client value in this run was unreadable except these, and

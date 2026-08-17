@@ -11,6 +11,45 @@ local function applyDefaults(db, defaults)
 	return db
 end
 
+-- --------------------------------------------------------------------------
+-- Bring a saved table forward. Separate from the event handler so it can be
+-- tested directly -- the alternative is asserting on a migration that only
+-- ever runs inside ADDON_LOADED, which the offline suite never fires.
+--
+-- Must run BEFORE applyDefaults: that only fills nils, and a stored boolean is
+-- not nil. Left alone it would survive forever and match none of the mode
+-- keys, leaving every pre-0.12 install silent with nothing on screen saying
+-- why. true becomes "beep" so those installs keep making the same noise.
+-- --------------------------------------------------------------------------
+function ns.migrateDB(db)
+	if type(db.sound) == "boolean" then
+		db.sound = db.sound and "beep" or "off"
+	end
+	return db
+end
+
+-- --------------------------------------------------------------------------
+-- Force `sound` back to something that can actually play. Both settings panels
+-- call this before they render, and they call THIS ONE rather than each doing
+-- their own -- two hand-written copies of one rule is exactly what caused the
+-- bug this exists to clean up: the minimap panel kept writing a boolean over
+-- the mode key, and an unrecognised mode plays nothing at all.
+--
+-- migrateDB handles the boolean; anything else (a hand-edited saved file, a
+-- key removed in some future version) falls back to the default rather than
+-- leaving the addon mute with no way to tell from the UI.
+-- --------------------------------------------------------------------------
+function ns.normalizeSound(db)
+	if not db then return db end
+	if not ns.SOUND_MODE_BY_KEY[db.sound] then
+		ns.migrateDB(db)
+		if not ns.SOUND_MODE_BY_KEY[db.sound] then
+			db.sound = ns.DEFAULTS.sound
+		end
+	end
+	return db
+end
+
 function ns.SavePosition(frame)
 	local anchor, _, _, x, y = frame:GetPoint()
 	ns.db.point = { anchor = anchor, x = x, y = y }
@@ -243,7 +282,7 @@ boot:SetScript("OnEvent", function(self, event, name)
 		self:UnregisterEvent("ADDON_LOADED")
 
 		DodoSaysDB = DodoSaysDB or {}
-		ns.db = applyDefaults(DodoSaysDB, ns.DEFAULTS)
+		ns.db = applyDefaults(ns.migrateDB(DodoSaysDB), ns.DEFAULTS)
 
 		ns.BuildOptions()
 		ns.ApplyPosition()

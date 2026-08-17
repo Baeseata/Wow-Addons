@@ -128,6 +128,33 @@ for i, q in ipairs(QUADRANTS) do
 	QUADRANT_BY_ID[q.id] = q
 end
 
+-- --------------------------------------------------------------------------
+-- How loud a call is. Four states rather than a switch, because "silent" and
+-- "the stock chime" are genuinely different answers: someone who turned sound
+-- off wants silence, and someone who never touched the setting is leaning on
+-- the chime that has been there since the first build. Collapsing those two
+-- would quietly change the default behaviour for everyone already installed.
+--
+-- `key` on the voice rows doubles as the folder under Sounds/, and the file
+-- inside is named for the quadrant id -- so a new language is one row here
+-- plus four files, with no mapping table that can drift out of step with the
+-- quadrants. (`voice` is what separates "plays a file" from "plays a chime";
+-- nothing keys off the language itself.)
+-- --------------------------------------------------------------------------
+local SOUND_MODES = {
+	{ key = "off",  label = "Silent",
+	  tip = "No sound on calls at all." },
+	{ key = "beep", label = "Chime",
+	  tip = "Blizzard's raid-warning chime. This is the long-standing default." },
+	{ key = "zh",   label = "Voice (Chinese)", voice = true,
+	  tip = "Speaks the marker: cross, square, triangle, circle." },
+	{ key = "en",   label = "Voice (English)", voice = true,
+	  tip = "Speaks the marker: cross, square, triangle, circle." },
+}
+
+local SOUND_MODE_BY_KEY = {}
+for _, m in ipairs(SOUND_MODES) do SOUND_MODE_BY_KEY[m.key] = m end
+
 -- Longest round anyone can be shown, read off the wave table rather than
 -- written down twice. If the fight ever grows an eighth wave, correcting
 -- Detector's WAVES_BY_ROUND is enough and the board follows.
@@ -177,4 +204,6 @@ ns.nameKey        = nameKey
 ns.QUADRANTS      = QUADRANTS
 ns.QUADRANT_BY_ID = QUADRANT_BY_ID
 ns.markerIcon     = markerIcon
+ns.SOUND_MODES       = SOUND_MODES
+ns.SOUND_MODE_BY_KEY = SOUND_MODE_BY_KEY
 ns.maxOf          = maxOf

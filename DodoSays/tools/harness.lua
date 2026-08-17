@@ -197,7 +197,15 @@ end
 -- below; the stubs only ever read it.
 -- ---------------------------------------------------------------------------
 local world = { channel = nil, casting = {}, guid = {}, plainGUID = false,
-	inCombat = false, macros = {} }
+	inCombat = false, macros = {}, sounds = {} }
+
+-- Every sound the addon asked for, in order, as { kind = "file"|"kit", ref }.
+-- Recorded rather than counted because the failure that matters is not "no
+-- sound played" but "the WRONG quarter was spoken" -- a count cannot tell those
+-- apart, and a player hearing "square" while the icon says "cross" walks into
+-- the venom with full confidence.
+function H.sounds() return world.sounds end
+function H.clearSounds() world.sounds = {} end
 
 -- Standing in a city vs standing in the fight. It changes exactly one thing --
 -- whether a slash tap that recorded nothing explains itself -- and both answers
@@ -269,7 +277,17 @@ function H.install()
 	_G.UIParent = newFrame()
 	_G.GameTooltip = newFrame()
 	_G.SOUNDKIT = setmetatable({}, { __index = function() return 1 end })
-	_G.PlaySound = noop
+	_G.PlaySound = function(kit)
+		world.sounds[#world.sounds + 1] = { kind = "kit", ref = kit }
+	end
+	-- The real one takes a path relative to the WoW folder and returns
+	-- willPlay, soundHandle. Nothing in the addon reads the return, so this
+	-- only records -- but it must EXIST, because Announce type-checks it and
+	-- would silently skip every voice line if it did not.
+	_G.PlaySoundFile = function(path)
+		world.sounds[#world.sounds + 1] = { kind = "file", ref = path }
+		return true, 1
+	end
 	_G.Settings = nil
 	_G.GetCursorPosition = function() return 0, 0 end
 	_G.C_Map = { GetBestMapForUnit = function() return nil end }

@@ -138,8 +138,10 @@ local TOGGLES = {
 	  tip = "The two lines under the board telling you to mark the floor. Once you have marked it, they are just taking up room." },
 	{ key = "announce", label = "Centre-screen call-outs",
 	  tip = "The big marker during the echo. This is the part that keeps you alive." },
-	{ key = "sound", label = "Sound on each call",
-	  tip = "Fires with the call-out, for when your eyes are on the floor." },
+	-- ⚠ `sound` used to live here as a tick box. It is four-way as of 0.12 and
+	-- a tick box cannot express that -- worse, this loop writes booleans, so
+	-- leaving it here would silently stamp `true` over the mode key and mute
+	-- the addon. It is a cycling button below the toggles instead.
 	{ key = "locked", label = "Lock the board in place",
 	  tip = "Stops the board being dragged. It still shows and still takes clicks." },
 }
@@ -203,6 +205,36 @@ local function buildPanel()
 		y = y - ROW
 	end
 
+	-- Sound, four-way. A button carrying its own current value rather than four
+	-- more rows: this panel is 280px wide and both of its layout bugs started by
+	-- crowding it. It also reads without hovering, which a tick box row would
+	-- not -- "Chime" vs "Voice (Chinese)" is the whole question here.
+	--
+	-- It costs exactly one ROW, the same as the tick box it replaces, so the
+	-- height sum at the bottom of this function is untouched.
+	local soundBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	soundBtn:SetPoint("TOPLEFT", 12, y - 2)
+	soundBtn:SetSize(210, 22)
+	soundBtn:SetScript("OnClick", function()
+		local modes, at = ns.SOUND_MODES, 0
+		for i, m in ipairs(modes) do
+			if m.key == (ns.db and ns.db.sound) then at = i break end
+		end
+		ns.db.sound = modes[(at % #modes) + 1].key
+		Mini.RefreshSound()
+	end)
+	soundBtn:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Sound on each call", 1, 1, 1)
+		GameTooltip:AddLine("Click to cycle: silent, the stock chime, or a voice that " ..
+			"names the quarter. Fires with the call-out, for when your eyes are on the " ..
+			"floor rather than the HUD.", nil, nil, nil, true)
+		GameTooltip:Show()
+	end)
+	soundBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	panel.soundBtn = soundBtn
+	y = y - ROW
+
 	local board = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 	board:SetPoint("TOPLEFT", 16, y - 8)
 	board:SetSize(140, 22)
@@ -242,8 +274,23 @@ local function buildPanel()
 	return panel
 end
 
+-- The label IS the state here, so it gets rebuilt on every open: the Blizzard
+-- options panel can change this value while this window is shut.
+--
+-- It normalises on the way through, too. A boolean can still be sitting in the
+-- saved table -- everything before 0.12 wrote one, and so did this very panel
+-- until 0.12 -- and an unrecognised mode plays nothing. Showing "?" to someone
+-- who came here to fix their sound would be the second bug, not a diagnosis.
+function Mini.RefreshSound()
+	if not (panel and panel.soundBtn) then return end
+	ns.normalizeSound(ns.db)
+	local m = ns.db and ns.SOUND_MODE_BY_KEY[ns.db.sound]
+	panel.soundBtn:SetText("Sound: " .. (m and m.label or "?"))
+end
+
 function Mini.Show()
 	buildPanel()
+	Mini.RefreshSound()
 	for _, t in ipairs(TOGGLES) do
 		local on
 		if t.key == "__position" then

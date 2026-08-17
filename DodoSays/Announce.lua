@@ -99,8 +99,18 @@ end
 -- Detector measures the length instead of reading it.
 -- --------------------------------------------------------------------------
 local function runBar(seconds)
+	-- No bar means build() has not run, so there is no countdown to draw.
+	--
+	-- ⚠ On a live client this cannot currently happen: ADDON_LOADED calls
+	-- Announce.ApplyPosition() unconditionally and that builds the frame before
+	-- any fight starts. The guard is here because of what it costs when that
+	-- stops being true -- subscribers run inside a pcall that only reports in
+	-- debug mode, so indexing nil here would die silently AND take the rest of
+	-- the same handler with it. Cheap insurance against a future reshuffle of
+	-- the load path, not a fix for a bug anyone has seen.
+	if not bar then return end
 	if not seconds or seconds <= 0 then
-		if bar then bar:Hide() end
+		bar:Hide()
 		return
 	end
 	local ok, now = pcall(GetTime)
@@ -147,11 +157,55 @@ function Announce.Flash(text, r, g, b, hold, alpha)
 	fade:Play()
 end
 
-local function beep(kit)
-	if ns.db and ns.db.sound == false then return end
-	if type(PlaySound) ~= "function" or not SOUNDKIT then return end
-	pcall(PlaySound, kit, "Master")
+-- --------------------------------------------------------------------------
+-- Sound for one call. `id` is the quadrant being called, and in the voice
+-- modes the file name IS that id -- so the sound cannot disagree with the icon
+-- on screen unless someone renames a file.
+--
+-- The kit is looked up in here rather than passed in: `SOUNDKIT.FOO` at the
+-- call site indexes SOUNDKIT before this function runs, so a nil SOUNDKIT
+-- would blow up a beat before the guard that exists to catch it.
+--
+-- Everything is type-checked and pcall'd because this runs mid-pull. A missing
+-- file, a renamed API or a stripped-down client must cost the player a sound
+-- and nothing else -- the call-out itself is what keeps them alive.
+-- --------------------------------------------------------------------------
+local VOICE_ROOT = "Interface\\AddOns\\DodoSays\\Sounds\\"
+
+local function playCall(id)
+	local mode = ns.db and ns.db.sound
+	local spec = mode and ns.SOUND_MODE_BY_KEY[mode]
+	-- Unknown mode = silence, and that covers the pre-0.12 boolean if it ever
+	-- reaches here unmigrated. Silent is the safe way to be wrong: a wrong
+	-- marker spoken confidently is worse than no marker at all.
+	if not spec or mode == "off" then return end
+
+	if not spec.voice then
+		if type(PlaySound) ~= "function" or not SOUNDKIT then return end
+		pcall(PlaySound, SOUNDKIT.UI_RAID_BOSS_WHISPER_WARNING, "Master")
+		return
+	end
+
+	local q = id and ns.QUADRANT_BY_ID[id]
+	if not q or type(PlaySoundFile) ~= "function" then return end
+	pcall(PlaySoundFile, VOICE_ROOT .. mode .. "\\" .. q.id .. ".ogg", "Master")
 end
+
+-- ⛔ The heads-up is deliberately SILENT, and 0.12 shipped a version that was
+-- not. Two things went wrong the moment it had a voice (measured in a live
+-- rehearsal, invisible in every test):
+--
+--   * It fires while the player is still tapping quarters, so a spoken
+--     "cross" lands on top of them pressing triangle -- it reads as feedback
+--     on the tap they just made, naming a different quarter.
+--   * Board.lua emits it on `>= expected - 1`, so the last two taps each
+--     trigger one. Identical Flash content made that invisible on screen;
+--     sound is what exposed it.
+--
+-- The deeper reason it should never have had one: the preview happens while
+-- the player's eyes are ON the board, placing taps -- the dimmed arrow says it
+-- fine. Speech earns its place in the echo half, when their eyes are on the
+-- floor and the bar is running. One sound, one meaning: "stand here now".
 
 -- The heads-up shown while the last sermon wave is still landing: an arrow
 -- into where the echo will start. No cast bar, because nothing is being cast
@@ -211,9 +265,13 @@ ns.Subscribe(function(event, a, b, c)
 		-- Detector and Sim both drive that same sequence, so this works
 		-- identically in a pull and in a rehearsal.
 		local nextId = ns.Board.Sequence()[step + 1]
+		-- Sound first, deliberately. It is the one channel that still works
+		-- when the player's eyes are on the floor, and putting it ahead of the
+		-- drawing means no amount of frame trouble downstream can swallow it --
+		-- which is exactly what used to happen. Structure, not vigilance.
+		playCall(b)
 		Announce.Flash(spoken(b, nextId), nil, nil, nil, castLength)
 		runBar(castLength)
-		beep(SOUNDKIT.UI_RAID_BOSS_WHISPER_WARNING)
 
 	elseif event == "preview" then
 		-- Held for a long time on purpose: it must survive until the echo

@@ -4,11 +4,13 @@
 ## Title: DodoSays
 ## Notes: Memory-game helper for Azta'rec (Venomfall Deeps). Tap the safe quarters while he preaches; it calls them back while he echoes.
 ## Author: Doodo
-## Version: 0.11.0
+## Version: 0.12.0
 ## SavedVariables: DodoSaysDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 ## X-Category: Boss Encounters
-## X-License: All Rights Reserved
+## X-License: All Rights Reserved (addon code)
+## X-Credits-Voice-ZH: Xia Yike, CC BY-ND 4.0, github.com/Mini-Dragon/DBM-VoicePack-Yike
+## X-Credits-Voice-EN: DBM Voicepack VEM by weisslove
 ## X-Curse-Project-ID: 1654722
 
 # Load order matters: Util (no deps) -> Board (UI) -> Announce (subscribes to replay)
