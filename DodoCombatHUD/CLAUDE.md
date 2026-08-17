@@ -122,17 +122,25 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 |---|---|---|---|
 | 目标 DoT | 血条左上 | **固定格位** | 我主动维持 ⇒ 掉了 = 我失误 ⇒「该在的不在」要一眼看出来 |
 | 大招存续 | 施法条左下 | 流式 | 也是我开的,但没挂是**我自己没按**、本来就知道 ⇒ 价值在「还剩几秒」不在「在不在」 |
-| 嗜血 | 血条右上 | **独立一格** | 见下 |
-| 其余团队增益 | 嗜血下面 | 流式 | 别人给的 ⇒ 没有是正常 ⇒ 位置不固定反而对 |
+| 嗜血 + 其余团队增益 | 血条右侧 | **2×N 网格 = 一个容器两个 group**(0.11) | 见下 |
 
-- 🔑 **嗜血单开一格,不丢进流式那格。**「嗜血必须得有」如果靠 `sortMethod` 排对,就成了押在
-  一个没验过的排序行为上的需求;给它专属容器 ⇒ **结构上**保证有位置(canon:能靠结构保证的别靠算式保证)。
+- 🔑 **0.11 起右侧那两排合成一个容器**(`rightBox`),嗜血和团队增益是它的两个 group。
+  坑位顺序 = `A1,B1,A2,B2,…`(`Axis=Vertical` + 每线 2 格高 ⇒ 逐列、列内从上往下);
+  **嗜血组 `layoutIndex=1` 吃掉 A1**,团队增益组接着排 ⇒ `B1,A2,B2,A3,B3…`。每排几个 = `/dch raidcols`。
+- 🔴 **为什么不能是两个容器**:嗜血要「空着也占住 A1」,而两个独立容器各自从自己的原点摆,
+  谁也不知道对方占了哪个坑;给它们分不同 ID 子集也不行 —— **团队增益是别人给的,
+  事先不知道会来哪几个**。合并是唯一表达得出这个排法的形状。
+- ⚠ **没实测过的两点**(0.11 首跑必验):① 嗜血组空着(单人常态)时 A1 那个坑会不会**塌陷**,
+  让团队增益前移上去 —— DoT 那排当初做成一格一容器正是为了躲「flow layout 跳过空组」,
+  但**那条从没在"一个容器多个 group"这个形状上量过**;② 嗜血组的 `maxFrameCount = 1`
+  仍是那个只验过 6、没验过 1 的值。判据:自己开个能量灌注 —— 落 **B1** = 占位保住了、落 **A1** = 塌陷。
 - 🔴 **`parent` 和 `SetPoint` 故意分开。** parent 决定「跟谁一起消失」,SetPoint 只决定「在哪儿」。
   新三排 parent 到 `root`,只锚 `cast.frame` / `health.frame` —— 认它们当 parent 的话,施法条一 `Hide()`
   大招图标跟着全没,而症状是「只有正在施法时才看得见」,**完全像 bug、想不到是 parent**。
   DoT 那排是另一回事:它**本来就该**跟血条一起消失,所以继续 parent 到 `health.frame`。
-- 🔴 **右侧两格都锚血条,不互相锚。**「我们的对象锚到容器」被禁(`UntrustedLayoutScriptExecution`),
-  容器锚容器也别赌 ⇒ 下面那格的 y 是**算**出来的,不走链式锚点。
+- 🔴 **容器只锚我们自己的框体,绝不锚另一个容器。**「我们的对象锚到容器」被禁
+  (`UntrustedLayoutScriptExecution`),容器锚容器也别赌。0.11 右侧合并成一个容器后这条更省心 ——
+  右边只剩**一个**锚点要摆,而且 A1 落在原来嗜血格那个位置 ⇒ 老布局的坐标一个像素没动。
 - 🔴 **三排 player 容器的 filter 不带 `PLAYER`。** 嗜血和能量灌注常常是**别人**放的,带上就永远筛不到,
   而症状是「那格永远空着」—— 跟 ID 填错分不开。我们看的是「挂在 player 身上的增益」,来源无所谓。
 - **大招那排不跟着施法条显隐动**:`LayoutBar(cast, ...)` 在 `ApplyLayout` 里**无条件**跑 ⇒ 施法条藏起来
@@ -150,8 +158,11 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
   判据:`/dch dot` 显示「你自己配的」而你并没改过 ⇒ `/dch dot reset` 回内置。
 - 🔴 **填的必须是**光环**那个 ID,不是技能那个。** 冷却管理器 Essential 里的「虚空形态」是 `228260`
   (施法),挂在身上的光环是 `194249` —— 同名不同 ID。填错**不报错**,只是那格永远空着。
-- ⚠ **`raidMax` 的小值没实测过**(6 验过、1 没试、DodoNameplate 那边 0 是"先占位")。
-  它只在**建组**时读一次 ⇒ 改完要 `/reload`。撞上就 `/dch raidmax 6`。
+- ⚠ **小的 `maxFrameCount` 没实测过**(6 验过、1 没试、DodoNameplate 那边 0 是"先占位")。
+  它只在**建组**时读一次 ⇒ 改完要 `/reload`。撞上就 `/dch raidcols 3`。
+  🔴 老键 `raidMax`(语义 = 总上限)**0.11 已废,改名 `raidCols`(语义 = 每排几个)** ——
+  故意改名而不是复用:老存档里那个 `2` 会被读成"每排 2 个",跟"我配的是每排 4"在屏幕上分不开。
+  `/dch raidmax` 留成别名,但会吵一句说明含义变了。
 - ID 的来源、每张表的取法、以及唤魔师 DoT 为什么是空的 —— 全写在 `AuraSets.lua` 文件头,别在这儿抄第二份。
 
 ### ⚠ 右侧那两格**单人验不出来**
@@ -164,8 +175,9 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 
 | 屏幕上看到的 | 多半是 |
 |---|---|
-| 右侧那列**横着**排 | `AnchorUtil.FlowDirection.Down` 不存在(登录时会吵一句橙字) |
-| 下面那两格明明该有 buff 却空着 | `raidMax` 小值退化 ⇒ `/dch raidmax 6` + `/reload` |
+| 右侧网格排布不对 | 三件套里有一件没设对,见 `MakeRightBox` 上面那段(Axis / GrowthDirection 的参数顺序 / MaximumLineSize 是**像素**) |
+| 右侧明明该有 buff 却空着 | `maxFrameCount` 小值退化 ⇒ `/dch raidcols 3` + `/reload` |
+| 右边**整片**没了(连嗜血一起) | `SetEnabled` 是**容器级**不是 group 级 ⇒ 共享容器被其中一排关掉了(见 `ApplyBoxFilter`) |
 | 一串 `attempt to call a nil value` | `AuraSets.lua` 没加载(TOC 少一行,或**新文件要完整重启客户端**,`/reload` 不重扫)。登录时会先吵一句 |
 
 ## 🔴 四个真栽过的坑

@@ -126,7 +126,15 @@ ns.SPEC_CDS = {
     [SPEC.ROG_SUB]   = { 121471, 185313 },                -- Shadow Blades / Shadow Dance
     [SPEC.PRI_DISC]  = { 421453, 19236 },                 -- Ultimate Penitence / Desperate Prayer
     [SPEC.PRI_HOLY]  = { 200183, 64843 },                 -- Apotheosis / Divine Hymn
-    [SPEC.PRI_SHAD]  = { 194249, 47585, 15286 },          -- Voidform(光环 ID!)/ Dispersion / Vampiric Embrace
+    -- 🔴 熵能裂隙:叫这个名字的 spellID 有**五个**,只有 450193 是挂在你身上那个 8 秒 buff。
+    --    447444 = 隐藏被动(天赋本体,Apply Aura: Dummy,无持续时间)
+    --    447445 = 20 秒的地面 Area Trigger(裂隙那个物体本身,不在任何单位身上)
+    --    447448 = 一次性的暗影伤害事件(无持续时间)
+    --    459314 = 同为 8 秒,但带 **"No Aura Icon"** 标志 ⇒ 结构上不产生图标,筛到也画不出来
+    --    450193 = 8 秒 + Summon(Entropic Rift)+ 移速 ⇒ 就是它            ← 用这个
+    --    ⚠ 这是文件头那条「填光环 ID 不是技能 ID」的第二个实例,而且这次**名字完全不能当判据**
+    --      (五个全叫「熵能裂隙」)⇒ /dch cd 列出来名字对,只证明 ID 存在,不证明选对了那一个。
+    [SPEC.PRI_SHAD]  = { 194249, 47585, 15286, 450193 },  -- Voidform(光环 ID!)/ Dispersion / Vampiric Embrace / 熵能裂隙
     [SPEC.DK_BLOOD]  = { 55233, 49028, 48792, 48707 },    -- Vampiric Blood / Dancing Rune Weapon / Icebound / AMS
     [SPEC.DK_FROST]  = { 51271, 48792, 48707 },           -- Pillar of Frost / Icebound / AMS
     [SPEC.DK_UNH]    = { 1233448, 42650, 48792, 48707 },  -- Dark Transformation / Army of the Dead / …

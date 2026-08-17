@@ -18,6 +18,7 @@ local NAMES = {
     -- 0.10 的三排 aura 容器 + 当前专精。加新的模块级 local 记得同步这张清单 ——
     -- 不加的话这个 guard 对它**完全失明**,而那正是 0.9.0 首次真机崩掉的那条缝。
     "cdBox", "lustBox", "raidBox", "curSpec", "FLOW_DOWN",
+    "rightBox",   -- 0.11:右侧两排合并后的真容器(lustBox/raidBox 退化成它的两个视图)
 }
 
 local lines = {}

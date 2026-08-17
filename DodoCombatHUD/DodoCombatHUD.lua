@@ -140,11 +140,12 @@ local DEFAULTS = {
     raidFontSize = 14,
     raidSpacing  = 2,
     raidXOffset  = 4,             -- 离血条右沿多远
-    -- 🔴 下面那个流式格的上限。**2 这个小值没实测过**(6 验过、1 没试、DodoNameplate 那边
-    -- 0 是"先占位"的意思)⇒ 万一它退化成 0 的语义,症状是「那两格永远空」,
-    -- 而那跟「没人给我上 buff」在单人环境下**完全分不开**。
-    -- 撞上就 `/dch raidmax 6` 顶一下(改完要 /reload:maxFrameCount 只在建组时读一次)。
-    raidMax      = 2,
+    -- 右侧那个 2×N 网格**每排几个**(0.11 起,老键 `raidMax` 已废 —— 它的语义是"总上限",
+    -- 换成列数以后含义完全不同,**故意改名而不是复用**:老存档里那个 2 会被读成"每排 2 个",
+    -- 而那跟"我配的是每排 4"在屏幕上分不开。改名 ⇒ 老存档没这个键 ⇒ CopyDefaults 填新默认。
+    -- ⚠ 总容量 = raidCols * 2,其中 **A1 那个坑归嗜血**,团队增益实际拿到 raidCols*2-1 个。
+    -- 撞上问题就 `/dch raidcols 3` 顶一下(改完要 /reload:maxFrameCount 只在建组时读一次)。
+    raidCols     = 4,
     -- 藏掉暴雪自己的玩家施法条(我们下面那根是自绘的,两根一起显示纯属打架)
     hideBlizzCast = false,
     -- 材质。两个而不是一个:疯狂条要的是**暴雪原生那张图**(自带配色,染色会脏),
@@ -314,6 +315,9 @@ local dots = { slots = {}, built = false, dead = false }
 -- 写在下面某个函数体后面的话,那些函数里的赋值会赋成**全局**,而读的人拿到恒 nil。
 -- 守它的是 tools/test_scope.lua,新增模块级变量都要加进它的 NAMES 清单。
 local cdBox, lustBox, raidBox = nil, nil, nil   -- { container=, buttons={}, ids={} }
+-- 0.11:右侧那两排合成**一个**容器(两个 group)。rightBox 持有真容器;
+-- lustBox / raidBox 退化成指向它的两个"视图"(带各自的 group 名),下游不用全改。
+local rightBox = nil
 local curSpec = nil                             -- 当前专精 ID(ChrSpecialization),nil = 问不出来
 
 -- 当前专精。⚠ 两套 API 都探一下:12.x 把不少 `GetXxx` 挪进了 `C_SpecializationInfo`,
@@ -431,9 +435,12 @@ local DOT_KEYS  = { w = "dotWidth",  h = "dotHeight",  font = "dotFontSize"  }
 local CD_KEYS   = { w = "cdWidth",   h = "cdHeight",   font = "cdFontSize"   }
 local RAID_KEYS = { w = "raidWidth", h = "raidHeight", font = "raidFontSize" }
 
--- 右侧那两个容器要**往下**长。⚠ `AnchorUtil.FlowDirection` 里有没有 `Down` 我没核过 ——
--- 现有代码只用过 Right/Up。探测 + 吵一句,别静默回落成"往右长"(那会横着铺出去,
--- 而"方向反了"跟"没生效"在屏幕上完全是两回事,吵一句才分得开)。
+-- ⚠ 2026-08-17 核实:**`AnchorUtil.FlowDirection.Down` 是存在的** —— Plater / DBM-Core /
+-- NorthernSkyRaidTools / 我们自己的 DodoNameplate 四家在产插件全都在用它。
+-- ⇒ 下面这个 fallback **从来没有触发过**,那句橙字一次都没印出来。
+-- 老 CLAUDE.md 把「右侧那列横着排」的根因记成"Down 不存在",**那条是错的**;
+-- 真根因是 lust/raid 的 GrowthDirection 参数传反了 + 从没设过 Axis(见 MakeRightBox)。
+-- 探测本身留着当兜底(零成本),但**别再拿它解释任何症状**。
 local FLOW_DOWN
 local function ResolveFlowDown()
     local F = AnchorUtil and AnchorUtil.FlowDirection
@@ -441,6 +448,64 @@ local function ResolveFlowDown()
     if F.Down then return F.Down end
     Print("|cffff8800AnchorUtil.FlowDirection.Down 不存在|r —— 右侧那列先横着排,回头得改")
     return F.Right
+end
+
+-- 右侧那个 2×N 网格(0.11):**一个容器 + 两个 group**,不是两个容器。
+-- 🔑 为什么必须合成一个:嗜血要「固定占住 A1、空着也占」,团队增益要从 B1 接着排。
+--    两个独立容器**做不到** —— 各自从自己的原点摆,谁也不知道对方占了哪个坑;
+--    而"给它们分不同的 ID 子集"也不行:团队增益是别人给的,**事先不知道会来哪几个**。
+--    同一个容器里 flow layout 按 layoutIndex 依次摆 ⇒ lust 占第 1 个坑,raid 从第 2 个起。
+-- 🔑 坑位顺序靠 **Axis** 定:Vertical + 每线 2 格高 ⇒ A1,B1,A2,B2,A3,B3…(逐列、列内从上往下)
+--    ⇒ 嗜血 A1 / 团队增益 B1,A2,B2,A3,B3 —— 正是要的排法。
+-- 🔴 三个方法的真实语义(照 Plater / DBM-Core / NorthernSkyRaidTools / 我们自己的
+--    DodoNameplate **四家在产插件的一致写法**,不是猜的):
+--      SetFlowLayoutAxis(Horizontal|Vertical) = **主轴**(先横排还是先竖排)
+--      SetFlowLayoutGrowthDirection(a, b)     = a 是**水平**朝向、b 是**垂直**朝向,
+--                                               **不是**「主方向 / 换行方向」
+--      SetFlowLayoutMaximumLineSize(n)        = **像素**,不是个数(主轴竖直时按**高**算)
+--    ⚠ 老代码给 lust/raid 传的是 `(down, right)`:水平位塞了 Down、垂直位塞了 Right,
+--      顺序反的;加上 Axis 从没设过(吃默认 Horizontal)+ lineSize=huge ⇒ 实际行为是
+--      **「横着一排、永不换行」**。CLAUDE.md 症状表把它记成「FlowDirection.Down 不存在」——
+--      **那条根因是错的**,Down 一直都在,所以 ResolveFlowDown 那句橙字从没触发过,
+--      真原因一直零信号。cdBox 传的 `(right, down)` 是对的,不受影响。
+local function MakeRightBox(parent, cols)
+    local bucket = {}
+    local rw, rh, rsp = DB.raidWidth, DB.raidHeight, DB.raidSpacing
+    local ok, c = pcall(function()
+        local cc = CreateFrame("AuraContainer", "DodoCombatHUDRight", parent,
+            "CustomAuraContainerTemplate")
+        cc:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis.Vertical)
+        cc:SetFlowLayoutAnchorPoint("TOPLEFT")
+        cc:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right,
+            AnchorUtil.FlowDirection.Down)
+        cc:SetFlowLayoutMaximumLineSize(2 * rh + rsp)   -- 每列 2 格(像素!)
+        cc:SetUnit("player")
+        -- filter 里**故意不带 PLAYER**:嗜血 / 能量灌注常常是别人放的,带上就永远筛不到。
+        -- ⚠ maxFrameCount = 1:CLAUDE.md 明记「1 没实测过」(只验过 6)。这里**必须**是 1,
+        --    否则嗜血组会吃掉不止 A1 那一个坑。它要是退化成"0 = 先占位"的语义,症状是
+        --    **嗜血那格永远空**,而单人环境跟"没人给我嗜血"分不开 ⇒ 只能靠 /dch probe 分辨。
+        cc:AddAuraGroup("lust", "HELPFUL", {
+            maxFrameCount = 1,
+            sortMethod = AuraContainerSortMethod.Expiration,
+            sortDirection = AuraContainerSortDirection.Normal,
+            candidateFilters = { includeSpellIDs = {} },
+            initializeFrame = MakeAuraInit(bucket, RAID_KEYS),
+            layout = { elementSpacing = rsp, elementWidth = rw,
+                       elementHeight = rh, layoutIndex = 1 },
+        })
+        cc:AddAuraGroup("raid", "HELPFUL", {
+            maxFrameCount = math.max(1, cols * 2 - 1),   -- 总坑数减掉 A1 那个
+            sortMethod = AuraContainerSortMethod.Expiration,
+            sortDirection = AuraContainerSortDirection.Normal,
+            candidateFilters = { includeSpellIDs = {} },
+            initializeFrame = MakeAuraInit(bucket, RAID_KEYS),
+            layout = { elementSpacing = rsp, elementWidth = rw,
+                       elementHeight = rh, layoutIndex = 2 },
+        })
+        return cc
+    end)
+    if not ok then return nil, c end
+    return { container = c, buttons = bucket, keys = RAID_KEYS }
 end
 
 local function BuildDots()
@@ -502,13 +567,19 @@ local function BuildDots()
         -- 大招:施法条下方,左对齐往右排(跟 DoT 那排同一个形状,上下对称)
         cdBox, e1 = MakeAuraBox(root, "DodoCombatHUDCds", "player", "HELPFUL",
             6, CD_KEYS, "TOPLEFT", right, down)
-        -- 嗜血:自己一格,不跟任何东西抢。maxFrameCount 照用实测过的 6 ——
-        -- 同一时刻只可能有一个(疲劳机制保证),不用去赌 1 那个没试过的值。
-        lustBox, e2 = MakeAuraBox(root, "DodoCombatHUDLust", "player", "HELPFUL",
-            6, RAID_KEYS, "TOPLEFT", down, right)
-        -- 其余外部增益:流式,上限 = DB.raidMax(默认 2,小值没实测过,见 DEFAULTS 那段)
-        raidBox, e3 = MakeAuraBox(root, "DodoCombatHUDRaid", "player", "HELPFUL",
-            math.max(1, math.floor(DB.raidMax or 2)), RAID_KEYS, "TOPLEFT", down, right)
+        -- 嗜血 + 其余团队增益:**同一个容器的两个 group**(为什么见 MakeRightBox 上面那段)。
+        -- lustBox / raidBox 保留成两个"视图":共享同一个 container,只是 group 名不同 ⇒
+        -- 下游(filter 推送 / probe / slash 命令)照旧按两排各管各的,不必全改一遍。
+        local e23
+        rightBox, e23 = MakeRightBox(root, math.max(1, math.floor(DB.raidCols or 4)))
+        if rightBox then
+            lustBox = { container = rightBox.container, buttons = rightBox.buttons,
+                        keys = RAID_KEYS, group = "lust" }
+            raidBox = { container = rightBox.container, buttons = rightBox.buttons,
+                        keys = RAID_KEYS, group = "raid" }
+        else
+            e2, e3 = e23, e23
+        end
     else
         e1 = "AnchorUtil.FlowDirection 拿不到(Right=" .. tostring(right) ..
              " Down=" .. tostring(down) .. ")"
@@ -596,11 +667,13 @@ local function LayoutDots()
     -- ── 另外三排的几何 ──────────────────────────────────────────
     -- ⚠ 显隐**不在这儿**管,统一归 ApplyAuraFilters —— 它同时知道"开关"和"这排有没有 ID",
     --   两处各判一次就是 canon 说的静默分歧发生器。这里只管"多大、在哪儿"。
-    local function box(b, bw, bh, bsp, anchorTo, myPt, itsPt, dx, dy, n, vertical)
+    -- 0.11 起**只剩大招那排**用它(右侧两排合并成 rightBox,几何在下面单独算)。
+    -- 原来的 `vertical` 参数已经没有调用方 ⇒ 删掉,不留恒为 false 的死分支:
+    -- 留着等于让下一个人以为"这函数支持竖排",而那条路从此没人走、也没人验。
+    local function box(b, bw, bh, bsp, anchorTo, myPt, itsPt, dx, dy, n)
         if not b then return end
         local c = b.container
-        if vertical then c:SetSize(bw, n * bh + (n - 1) * bsp)
-        else             c:SetSize(n * bw + (n - 1) * bsp, bh) end
+        c:SetSize(n * bw + (n - 1) * bsp, bh)
         c:ClearAllPoints()
         c:SetPoint(myPt, anchorTo, itsPt, dx, dy)
         pcall(function()
@@ -617,16 +690,40 @@ local function LayoutDots()
     -- 施法条一藏,它的框体仍在原位(LayoutBar 无条件跑过),所以这个锚点是稳的。
     -- 代价:不施法时中间恒定空着一条 castHeight,这是明确买的,不是漏了。
     box(cdBox, DB.cdWidth, DB.cdHeight, DB.cdSpacing,
-        cast.frame, "TOPLEFT", "BOTTOMLEFT", 0, -(DB.cdYOffset or 4), 6, false)
+        cast.frame, "TOPLEFT", "BOTTOMLEFT", 0, -(DB.cdYOffset or 4), 6)
 
     -- 右侧两格:**都锚 health.frame,不互相锚** ——
     -- 「我们的对象锚到容器」是被禁的(UntrustedLayoutScriptExecution),容器锚容器也别赌。
     -- 下面那格的 y 用算的,不靠链式锚点。
+    -- 右侧那个 2×N 网格:0.11 起是**一个**容器,不再是上下两格各一个。
+    -- A1 落在**原来嗜血格**那个位置(血条右上)⇒ 上排 = 原嗜血行、下排 = 原团队增益行,
+    -- 你已经摆好的位置一个像素不动,扩的是**往右**那几列。
     local rw, rh, rsp = DB.raidWidth, DB.raidHeight, DB.raidSpacing
-    box(lustBox, rw, rh, rsp, health.frame, "TOPLEFT", "TOPRIGHT",
-        DB.raidXOffset or 4, 0, 1, true)
-    box(raidBox, rw, rh, rsp, health.frame, "TOPLEFT", "TOPRIGHT",
-        DB.raidXOffset or 4, -(rh + rsp), math.max(1, math.floor(DB.raidMax or 2)), true)
+    if rightBox then
+        local cols = math.max(1, math.floor(DB.raidCols or 4))
+        local c = rightBox.container
+        c:SetSize(cols * rw + (cols - 1) * rsp, 2 * rh + rsp)
+        c:ClearAllPoints()
+        c:SetPoint("TOPLEFT", health.frame, "TOPRIGHT", DB.raidXOffset or 4, 0)
+        -- ⚠ 每线的像素高**必须跟着图标大小重算** —— 它是在建组时设过一次的,
+        --    不在这儿再设的话,改完 /dch rh 就不再是"每列 2 格"(会变成 1 格或 3 格),
+        --    而症状是「排布突然乱了」,想不到是这行没跟上。
+        pcall(function() c:SetFlowLayoutMaximumLineSize(2 * rh + rsp) end)
+        -- 两个 group 各推一次 layout。漏一个的症状是「上排图标大小对、下排不对」——
+        -- 半生效比不生效更难认出是 bug(跟 dotWidth 那两个消费方同一个坑)。
+        pcall(function()
+            c:SetAuraGroupLayout("lust", { elementSpacing = rsp, elementWidth = rw,
+                                           elementHeight = rh, layoutIndex = 1 })
+        end)
+        pcall(function()
+            c:SetAuraGroupLayout("raid", { elementSpacing = rsp, elementWidth = rw,
+                                           elementHeight = rh, layoutIndex = 2 })
+        end)
+        for _, btn in ipairs(rightBox.buttons) do
+            pcall(function() btn:SetSize(rw, rh) end)
+            StyleCountdown(btn.dchCD, "raidFontSize")
+        end
+    end
 end
 
 -- 换目标时容器**不会自己刷**:它只按 unit token 注册 UNIT_AURA,PLAYER_TARGET_CHANGED
@@ -641,7 +738,11 @@ end
 
 -- 把四排的筛选条件推下去 + 决定每排显不显示。**换专精走的就是这条路** ——
 -- 一个框体都不新建(战斗中建受保护框体会被拒),只改 filter,已验证的路子。
--- ⚠ SetEnabled 只在这一处调:它同时知道"开关"和"这排有没有 ID",分成两处判必然漂。
+-- ⚠ SetEnabled 只在**这条路上**调(不散到 LayoutDots 去):这里同时知道"开关"和"这排有没有
+--    ID",分成两处判必然漂。0.11 起它有**三个**落点、各管各的一类容器,别再读成"只有一处":
+--      · 独占容器(大招)—— ApplyBoxFilter 里,靠 `not b.group` 守着
+--      · DoT 固定格位   —— 每格一个,按 `sid ~= nil` 收起
+--      · 右侧共享容器   —— ApplyAuraFilters 末尾统一开关(两排任一有 ID 就留着)
 local function ListFilters(list)
     local set = {}
     for i = 1, #list do set[list[i]] = true end
@@ -659,18 +760,25 @@ end
 --    失败改成吵一句 —— 下次再撞上就有错误原文,而不是又一次静默固化。
 local function ApplyBoxFilter(b, list, on)
     if not b then return end
+    local g = b.group or "g"          -- 0.11:右侧两排共享一个容器,靠 group 名区分
     local sig = table.concat(list, ",")
     if sig ~= b.sig then
         local ok, err = pcall(function()
-            b.container:SetAuraGroupCandidateFilters("g", ListFilters(list))
+            b.container:SetAuraGroupCandidateFilters(g, ListFilters(list))
         end)
         if ok then
             b.sig = sig          -- 只有成功才记 ⇒ 失败时下次刷新会自动重试
         else
-            Print("|cffff3333aura filter 推送失败|r(下次刷新重试):" .. tostring(err))
+            Print("|cffff3333aura filter 推送失败|r(" .. g .. ",下次刷新重试):" .. tostring(err))
         end
     end
-    pcall(function() b.container:SetEnabled(on and #list > 0) end)
+    -- 🔴 `SetEnabled` 是**容器级**的,不是 group 级 ⇒ 共享容器的那两排**不能各调各的**:
+    --    嗜血列表空的时候它会把整个容器关掉,**连带团队增益一起消失**,
+    --    而症状是「右边整片没了」—— 看起来像 filter 挂了,其实是被自己人关的。
+    --    ⇒ 带 group 的(= 共享)交给 ApplyAuraFilters 统一开关;独占容器的照旧自己管。
+    if not b.group then
+        pcall(function() b.container:SetEnabled(on and #list > 0) end)
+    end
 end
 
 local function ApplyAuraFilters()
@@ -703,9 +811,16 @@ local function ApplyAuraFilters()
     end
 
     -- ② 大招 ③ 嗜血 ④ 其余团队增益
-    ApplyBoxFilter(cdBox,   ListFor("cds"),  DB.cdsOn ~= false)
-    ApplyBoxFilter(lustBox, ListFor("lust"), DB.raidOn ~= false)
-    ApplyBoxFilter(raidBox, ListFor("raid"), DB.raidOn ~= false)
+    ApplyBoxFilter(cdBox, ListFor("cds"), DB.cdsOn ~= false)
+    local lustList, raidList = ListFor("lust"), ListFor("raid")
+    ApplyBoxFilter(lustBox, lustList, DB.raidOn ~= false)
+    ApplyBoxFilter(raidBox, raidList, DB.raidOn ~= false)
+    -- 共享容器统一开关(见 ApplyBoxFilter 里那段):**两排任一有 ID 就留着**。
+    -- 写成 `and` 的话,把嗜血那排删空就会顺手干掉团队增益 —— 而删空是个合法状态。
+    if rightBox then
+        local on = DB.raidOn ~= false and (#lustList > 0 or #raidList > 0)
+        pcall(function() rightBox.container:SetEnabled(on) end)
+    end
 end
 
 -- 专精变了就重取列表。⚠ 三排里只有 DoT 和大招跟专精走,团队增益那两排是全局表 ——
@@ -1101,7 +1216,7 @@ local function Help()
     Print("  /dch lust                   嗜血那格:列出来 | lust add|del <id> | lust reset")
     Print("  /dch buff                   下面那两格:同上")
     Print("  /dch rw|rh|rfont|rsp|rx     宽 / 高 / 字号 / 间距 / 离血条多远")
-    Print("  /dch raidmax 2              下面那格最多显示几个(改完要 /reload)")
+    Print("  /dch raidcols 4             右侧网格每排几个(共 2 排;改完要 /reload)")
     Print("  ⚠ DoT 和大招**按专精分别存**;嗜血和团队增益是全职业一份(别人给的,跟专精无关)")
     Print("  /dch dsize 36               DoT 图标宽高一起设(现在 " ..
           tostring(DB.dotWidth) .. " x " .. tostring(DB.dotHeight) .. ")")
@@ -1316,7 +1431,7 @@ local function ProbeAuraFilters()
             local list = ListFor(name)
             -- ② 绕开 sig 缓存重推一次,把错误原文打出来
             local ok, err = pcall(function()
-                b.container:SetAuraGroupCandidateFilters("g", ListFilters(list))
+                b.container:SetAuraGroupCandidateFilters(b.group or "g", ListFilters(list))
             end)
             emit(("  %s: #list=%d  sig=%s  推送=%s"):format(name, #list, tostring(b.sig),
                 ok and "|cff33ff33OK|r" or ("|cffff3333FAILED|r " .. tostring(err))))
@@ -1438,10 +1553,15 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
     elseif cmd == "rfont"  then SetNum("raidFontSize", arg, 8, 60)
     elseif cmd == "rsp"    then SetNum("raidSpacing",  arg, 0, 40)
     elseif cmd == "rx"     then SetNum("raidXOffset",  arg, -50, 200)
-    elseif cmd == "raidmax" then
+    elseif cmd == "raidcols" or cmd == "raidmax" then
         -- ⚠ maxFrameCount 只在**建组**那一刻读一次 ⇒ 改完必须 /reload。不说这句的话
         --   「改了没反应」跟「这个值没用」分不开。
-        SetNum("raidMax", arg, 1, 6)
+        -- `raidmax` 留成别名:老习惯打进去不该静默什么都不发生 —— 但**语义已经变了**
+        --   (从"总上限"变成"每排几个"),所以顺口说一句,别让他按老含义理解这个数。
+        if cmd == "raidmax" then
+            Print("  |cffffcc00raidmax 已改名 raidcols|r,而且含义变了:现在是**每排几个**(共 2 排)")
+        end
+        SetNum("raidCols", arg, 1, 6)
         Print("  ⚠ 要 |cffffcc00/reload|r 之后才生效(建组时只读一次)")
     elseif cmd == "pnumber" then Toggle("powerNumber", "主资源数字")
     elseif cmd == "hnumber" then Toggle("healthNumber", "血量数字")
