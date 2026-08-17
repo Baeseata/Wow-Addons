@@ -68,17 +68,37 @@ Mechanism and its four hard constraints: [`GOTCHAS.md`](GOTCHAS.md) S5.
 - **Build once, switch by spec.** Every ruleset for the player's class is built at `PLAYER_LOGIN`,
   because attaching a texture is only legal inside `initializeFrame` and is refused wherever auras are
   hidden. A respec only flips `SetEnabled`.
-- **Enemy players carry two channels on one bar**: the DoT tint takes the bar except a 4px strip along
-  the top (`ns.TINT_CLASS_STRIP`), which stays class-coloured. Both stay fully saturated —
-  alpha-blending them would make the DoT colour depend on the class and ruin both signals. With no DoT
-  up nothing is painted, so the whole bar is the class colour. Hostile creatures reserve no strip; they
-  have no class-colour channel to protect.
+- **Enemy players carry two channels on one bar**: a 4px strip along the top (`ns.TINT_CLASS_STRIP`)
+  stays class-coloured, a 1px black rule (`ns.TINT_SEAM`) sits under it, and the DoT tint takes
+  everything below — a 5px reserve in total, charged so that the class channel keeps its full 4px.
+  Both channels stay fully saturated — alpha-blending them would make the DoT colour depend on the
+  class and ruin both signals. The rule is what makes 4px readable; at a wider split the colour edge
+  sufficed and the rule was noise, so the two constants are coupled (GOTCHAS S5c). With no DoT up
+  nothing is painted, so the bar is class-coloured above *and* below the rule — the addon cannot know
+  whether a DoT is present. Hostile creatures reserve nothing; they have no class-colour channel.
 - **Class colour in a battleground is borrowed, not computed.** `UnitClassBase` is secret there, so the
   colour is read off Blizzard's own (hidden) nameplate health bar and passed straight to
   `SetVertexColor` as a secret. Scoped to enemy players. Mechanism and its conditions:
   [`GOTCHAS.md`](GOTCHAS.md) S5b.
 - **Configuration**: none yet beyond the `ns.db.tint.enabled` kill switch. `/dnp tint` reports which
   path was taken and the frame levels of an attached plate.
+
+## 6. Execute threshold rule (`Execute.lua`)
+
+- **A 1px vertical line at the player's execute threshold**, on both enemy groups (hostile creatures
+  and enemy players). It answers "how much health is left before I can execute" — the question
+  Blizzard's spell-button glow does *not* answer, since the glow only fires once you are already
+  in range.
+- **Pure geometry, zero unit data.** The line sits at a fixed fraction of the bar's width; the fill
+  retreating past it is the signal. Nothing here touches Secret Values, and it must stay that way —
+  asking *whether* the target is below the threshold means reading health, which is secret.
+- **Anchored to the bar frame, not the fill** — the inverse of every other overlay. See GOTCHAS S6;
+  getting this wrong produces a line that looks fine and means nothing.
+- **Spec table with a `state` field; only `"on"` draws.** `"unverified"` (plausible but unconfirmed
+  for this patch) and `"dynamic"` (a talent or buff moves the threshold) draw nothing on purpose,
+  because a line in the wrong place is worse than no line. Shipped confirmed: Shadow Priest, SW:D at
+  20%. `/dnp exec` distinguishes the reasons for silence.
+- **Configuration**: `ns.db.execute.enabled` kill switch only.
 
 ## 4. Configuration
 

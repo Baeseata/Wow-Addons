@@ -50,6 +50,8 @@ local B_RARE   = { 0.85, 0.85, 0.9 }
 -- Aura buttons report a SECRET frame strata and refuse SetFrameLevel while auras are secret, so
 -- their level can only be set by choosing their ancestor's -- never by touching them (GOTCHAS S5).
 ns.LEVEL_TINT      = 2
+ns.LEVEL_SEAM      = 3
+ns.LEVEL_EXECUTE   = 4
 ns.LEVEL_IMPORTANT = 24
 ns.LEVEL_TEXT      = 25
 
@@ -66,6 +68,17 @@ ns.LEVEL_TEXT      = 25
 -- Hostile creatures are NOT split: they have no class-colour channel, so it would only cost tint area.
 -- Shared with Tint.lua, which anchors its texture proxy to the region below the strip.
 ns.TINT_CLASS_STRIP = 4
+
+-- A 1px black rule sits directly BELOW the class strip, so the reserve costs 5px in total and the
+-- class channel keeps its full 4. Re-added 2026-08-17 after the strip shrank: an earlier build split
+-- the bar near the middle and the colour edge alone read fine, but at 4px it does not -- a thin band
+-- of colour against an adjacent colour reads as a gradient, not a boundary. The rule is what makes
+-- 4px legible. See GOTCHAS S5c.
+--
+-- It is UNCONDITIONAL -- the addon cannot know whether a DoT is up (only Blizzard does), so the rule
+-- is drawn whenever an enemy player's bar is tinted at all, and an undotted bar shows the class
+-- colour above and below it.
+ns.TINT_SEAM = 1
 
 local CAST_INTERP  = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate
 local CAST_DIR     = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.ElapsedTime
@@ -141,6 +154,10 @@ end
 local function LayoutPlate(f, cfg)
 	local w = cfg.width or 120
 	f:SetSize(w, cfg.height or 12)
+	-- Stashed for Execute.lua for the same reason f.splitY is stashed for Tint.lua: hb sizes itself
+	-- through SetAllPoints, so hb:GetWidth() is unresolved on the first frame and reads 0 -- which
+	-- would park the execute line against the left edge instead of at the threshold.
+	f.barWidth = w
 	-- hostile mob name auto-sizes to fill the bar height (no per-group nameSize); others use nameSize.
 	local nameSize = IsEnemyPlate(f.group) and math.max(8, (cfg.height or 12) - 6) or (cfg.nameSize or 9)
 	f.name:SetFont(FONT, nameSize, "OUTLINE")
@@ -179,11 +196,14 @@ local function LayoutPlate(f, cfg)
 	f.mark:ClearAllPoints()
 	f.mark:SetPoint("BOTTOM", f.hb, "TOP", 0, mY)
 
-	-- Height of the DoT tint region for an enemy player = everything except the class strip along the
-	-- top (see ns.TINT_CLASS_STRIP). Derived from the CONFIGURED height, not hb:GetHeight() -- hb sizes
-	-- itself via SetAllPoints, so its height is unresolved until a layout pass and reads 0 on the first
-	-- frame. Stashed on the frame so Tint.lua uses this exact number instead of deriving its own.
-	f.splitY = math.max(1, (cfg.height or 12) - ns.TINT_CLASS_STRIP)
+	-- Height of the DoT tint region for an enemy player = everything except the class strip AND the
+	-- rule under it (ns.TINT_CLASS_STRIP + ns.TINT_SEAM). Subtracting both is what keeps the class
+	-- channel a full 4px -- charge the rule to the tint region, not to the colour it separates.
+	-- Derived from the CONFIGURED height, not hb:GetHeight() -- hb sizes itself via SetAllPoints, so
+	-- its height is unresolved until a layout pass and reads 0 on the first frame. Stashed on the
+	-- frame so Tint.lua uses this exact number instead of deriving its own; the rule is drawn at
+	-- exactly f.splitY .. f.splitY + ns.TINT_SEAM, so the two never overlap by construction.
+	f.splitY = math.max(1, (cfg.height or 12) - ns.TINT_CLASS_STRIP - ns.TINT_SEAM)
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -228,6 +248,31 @@ local function CreatePlateFrame(plate)
 	impTint:SetAllPoints(top)
 	impTint:SetAlpha(0)
 	f.impTint = impTint
+
+	-- The rule between the class strip and the DoT region (enemy players only). Its own frame because
+	-- the level stack is what orders it: above the DoT tints so a tint cannot creep over it, below
+	-- `top` so an important-cast recolour covers the whole bar as one block -- while that recolour is
+	-- up there are no channels left to separate. Tracks the FILL like the tints do, so it shortens
+	-- with the health rather than hanging over empty bar. Positioned and shown by Tint.lua, which is
+	-- the only place that knows whether tinting is live for this spec.
+	local seamHost = CreateFrame("Frame", nil, hb)
+	seamHost:SetFrameLevel(hb:GetFrameLevel() + ns.LEVEL_SEAM)
+	seamHost:SetAllPoints(hb:GetStatusBarTexture())
+	local seam = seamHost:CreateTexture(nil, "OVERLAY")
+	seam:SetColorTexture(0, 0, 0, 1)
+	seam:Hide()
+	f.seam = seam
+
+	-- Execute-threshold rule (Execute.lua). Needs its OWN host because it is the one thing in this
+	-- stack anchored to the BAR rather than to the fill -- it has to stay put while the fill
+	-- retreats past it, which is the entire signal. A host covering the fill would drag it along.
+	local execHost = CreateFrame("Frame", nil, hb)
+	execHost:SetFrameLevel(hb:GetFrameLevel() + ns.LEVEL_EXECUTE)
+	execHost:SetAllPoints(hb)
+	local execLine = execHost:CreateTexture(nil, "OVERLAY")
+	execLine:SetColorTexture(0, 0, 0, 1)
+	execLine:Hide()
+	f.execLine = execLine
 
 	-- Text layer: name, health %, elite icon. On its own frame above the tints so a full-bar tint
 	-- cannot bury them. Anchors still point at hb, which is this frame's parent.
@@ -751,6 +796,7 @@ function Style.Apply(plate, unit, group)
 		if uf then uf.dnpHide = true; HookUnitFrame(uf); uf:SetAlpha(0) end
 		if ns.Auras then ns.Auras.Clear(f) end
 		if ns.Tint then ns.Tint.Clear(f) end
+		if ns.Execute then ns.Execute.Clear(f) end
 		f:Hide()
 		return
 	end
@@ -785,10 +831,17 @@ function Style.Apply(plate, unit, group)
 		if ns.Tint then
 			if enemy then ns.Tint.Attach(f, unit) else ns.Tint.Clear(f) end
 		end
+		-- Same enemy/friendly split as the tint: you cannot execute a friendly unit, so there is
+		-- nothing to mark on one. Unlike the tint this takes no unit token -- the line's position
+		-- depends only on the player's spec and the bar's width.
+		if ns.Execute then
+			if enemy then ns.Execute.Apply(f) else ns.Execute.Clear(f) end
+		end
 	else
 		if uf then uf.dnpHide = false; uf:SetAlpha(1) end
 		if ns.Auras then ns.Auras.Clear(f) end
 		if ns.Tint then ns.Tint.Clear(f) end
+		if ns.Execute then ns.Execute.Clear(f) end
 		f:Hide()
 	end
 end
@@ -798,6 +851,7 @@ function Style.Clear(plate)
 	if plate.dnp then
 		if ns.Auras then ns.Auras.Clear(plate.dnp) end
 		if ns.Tint then ns.Tint.Clear(plate.dnp) end
+		if ns.Execute then ns.Execute.Clear(plate.dnp) end
 		plate.dnp:Hide()
 		plate.dnp.impTint:SetAlpha(0)
 	end
@@ -817,15 +871,22 @@ function Style.Auras(plate, unit)
 	end
 end
 
--- Re-evaluate the DoT tint for one plate (spec change; tapped state flips arrive via UNIT_FLAGS,
--- which already re-runs the whole of Style.Apply).
+-- Re-evaluate the spec-dependent bar decorations for one plate -- the DoT tint and the execute
+-- rule, both of which change when the player respecs. (Tapped state flips arrive via UNIT_FLAGS,
+-- which already re-runs the whole of Style.Apply.)
+--
+-- The two modules are checked SEPARATELY on purpose: an early `return` on ns.Tint being absent
+-- would silently take the execute line down with it, and a stale line is worse than no line.
 function Style.Tint(plate, unit)
 	local f = plate and plate.dnp
-	if not (f and ns.Tint) then return end
-	if f:IsShown() and IsEnemyPlate(f.group) then
-		ns.Tint.Attach(f, unit)
-	else
-		ns.Tint.Clear(f)
+	if not f then return end
+	local enemy = f:IsShown() and IsEnemyPlate(f.group)
+
+	if ns.Tint then
+		if enemy then ns.Tint.Attach(f, unit) else ns.Tint.Clear(f) end
+	end
+	if ns.Execute then
+		if enemy then ns.Execute.Apply(f) else ns.Execute.Clear(f) end
 	end
 end
 

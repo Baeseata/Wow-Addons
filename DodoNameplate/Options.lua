@@ -325,7 +325,8 @@ function ns.OpenOptions()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Slash: /dnp opens options; /dnp test runs the classification probe; /dnp tint reports the tinting.
+-- Slash: /dnp opens options; /dnp test runs the classification probe; /dnp tint reports the tinting;
+-- /dnp exec reports the execute-threshold rule (and why there is no line, when there is none).
 ---------------------------------------------------------------------------------------------------
 SLASH_DODONAMEPLATE1 = "/dnp"
 SlashCmdList.DODONAMEPLATE = function(msg)
@@ -341,6 +342,14 @@ SlashCmdList.DODONAMEPLATE = function(msg)
 		local plate = C_NamePlate.GetNamePlateForUnit("target")
 		print("|cff66ccffDodoNameplate|r tint " ..
 			(plate and plate.dnp and ns.Tint.LevelReport(plate.dnp) or "no styled plate for target"))
+		return
+	end
+	if msg == "exec" or msg == "execute" then
+		-- "No line" is the correct output for four different situations (disabled, no execute on
+		-- this spec, unconfirmed number, talent-dependent number). Without this they all look
+		-- identical to a broken feature, and the honest ones would get "fixed".
+		if not ns.Execute then print("|cff66ccffDodoNameplate|r exec -> module not loaded"); return end
+		print("|cff66ccffDodoNameplate|r exec -> " .. ns.Execute.Status())
 		return
 	end
 	if msg == "test" then

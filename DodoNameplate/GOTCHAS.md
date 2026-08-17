@@ -222,14 +222,19 @@ from class identity at all, but from something else in Blizzard's colour path (t
 you get is "whatever Blizzard painted", which for a creature would be its threat tint, not a class
 colour. Hence the borrow is scoped to `ENEMY_PLAYER` only.
 
-⚠ The one step still unverified at the time of writing: whether `SetVertexColor` accepts a **raw
-secret number** out of `GetStatusBarColor`. It demonstrably accepts the `SingleColorValue` that
-`EvaluateColorValueFromBoolean` returns, but those are not the same type — "same family" is not
-"same conclusion". The call is therefore `pcall`ed, and a refusal falls back to red **and prints
-once**: a quiet fallback would be indistinguishable from "this player has no class colour".
+✅ **VERIFIED IN-GAME 2026-08-17** — `SetVertexColor` **does** accept a **raw secret number** out of
+`GetStatusBarColor`. Jerry ran the morning build and enemy players came out class-coloured **in the
+open world and in a battleground**, DoT tint below, with no refusal message. That also settles the
+branch S5b left open — a nameplate in a BG evidently does **not** get `pvpUseClassColors`, because
+Blizzard's bar underneath was class-coloured and there was something to borrow.
 
-☐ no-guard — a runtime contract in Blizzard code. Acceptance: enemy-player bars are class-coloured in
-a battleground, and no message about a refused secret colour appears.
+This was worth measuring rather than assuming: `SetVertexColor` is known to accept the
+`SingleColorValue` that `EvaluateColorValueFromBoolean` returns, but those are not the same type, and
+"same family" is not "same conclusion".
+
+**Keep the `pcall` and the print-once fallback anyway.** They cost nothing and this is an undocumented
+runtime contract in Blizzard code — a patch can withdraw it, and a quiet fall back to red would be
+indistinguishable from "this player has no class colour". ☐ no-guard: not statically checkable.
 
 ## S5c. The two-channel enemy-player bar
 
@@ -247,8 +252,20 @@ class-coloured. Both fully saturated.
 - **Nothing is conditional on a DoT being up** — it cannot be, only Blizzard knows. Nothing painted
   means the whole bar shows the class colour; a DoT painting the lower region leaves the strip behind.
   The "if dotted, only the strip stays class-coloured" behaviour is emergent, not branched.
-- A 1px seam between the two regions was tried and **removed at Jerry's request 2026-08-17** — the
-  colour edge alone reads fine, and the line was visual noise. Do not re-add it.
+- **The 1px rule between the two regions went out and came back the same day (2026-08-17) — and the
+  reversal is the point, not the flip-flop.** It was first removed at Jerry's request: with the split
+  near the middle of the bar the colour edge alone read fine and the line was visual noise. The strip
+  was then cut to 4px, which **withdrew the premise** — a 4px band against an adjacent colour reads
+  as a gradient rather than a boundary, so the class channel stopped being legible. The rule went
+  back in (`ns.TINT_SEAM`) as what makes 4px work.
+  - ⇒ **If you ever widen the class strip again, the rule becomes noise again.** The two constants
+    are coupled; neither is independently "correct". Do not delete the rule on the strength of the
+    older note — check what `ns.TINT_CLASS_STRIP` currently is first.
+  - The rule is charged to the tint region (`splitY = height - STRIP - SEAM`), so the class channel
+    keeps its full 4px and the reserve costs 5px in total.
+  - It is **unconditional**: whether a DoT is up is Blizzard's knowledge, not ours, so an undotted
+    enemy player shows the class colour above *and* below the line. That is not a bug and cannot be
+    branched away — see the bullet above about nothing being conditional on a DoT.
 - **Hostile creatures are not split.** They have no class-colour channel, so it would only halve the
   tint. `Tint.Attach` branches on `f.group`; the tint textures never learn about any of this, because
   they only ever anchor to the per-token proxy.
@@ -256,3 +273,34 @@ class-coloured. Both fully saturated.
   against threat red; a class-coloured bar can be Rogue yellow or Priest white, and white text on that
   disappears. Shadow rather than `THICKOUTLINE` — thick outlines turn CJK glyphs to mush at nameplate
   font sizes, and names here can be Chinese.
+
+## S6. The execute rule — geometry, not data
+
+`Execute.lua` draws a 1px vertical rule at the player's execute threshold. It is the only decoration
+on the bar that **reads nothing about any unit**, and that is a design constraint, not a coincidence.
+
+- **It anchors to the BAR, every other overlay anchors to the FILL.** The fill crossing the line is
+  the entire signal, so the line has to stay put while the fill retreats past it. Anchor it to the
+  fill and you get a line permanently at 20% *of the current health* — which is to say, a line that
+  never tells you anything, and which looks completely normal in a screenshot. `test/test_execute.lua`
+  asserts the anchor object identity for exactly this reason; that assertion was A/B'd (breaking the
+  position maths reddens it and nothing else).
+- **Position comes from `f.barWidth`** (stashed by `LayoutPlate`), not `hb:GetWidth()` — same reason
+  as `f.splitY`: `hb` sizes itself via `SetAllPoints`, so its width is 0 on the first frame, which
+  would park every line against the left edge. A zero width hides the line rather than drawing it at
+  x=0 (also asserted).
+- 🔴 **Do not make it conditional on the target actually being below the threshold.** Recolouring it,
+  flashing it, or hiding it once in range all require reading health — and health is secret. The
+  moment this module wants to know *whether* the target is in range, it stops being free and inherits
+  the whole Secret Values problem. Blizzard's own spell-button glow already answers "am I in range
+  now"; this line answers the different question "how far away is it", which is the one Blizzard does
+  not answer.
+- **Thresholds are a spec table with a `state` field, and only `state = "on"` draws.** Two states
+  deliberately draw nothing: `"unverified"` (the number is a plausible guess, unconfirmed for this
+  patch) and `"dynamic"` (a talent or buff moves the real threshold — Warrior `Massacre`, Paladin
+  `Avenging Wrath`). **A line in the wrong place is worse than no line**: it does not read as
+  "unknown", it reads as "you cannot execute yet", and it is believed. `/dnp exec` exists so that the
+  four different reasons for "no line" are distinguishable from a bug.
+- Execute thresholds live in spell data (DB2). Unlike the API contracts there is **no machine
+  generated file to grep**, so promoting a spec to `"on"` means confirming it in game — not finding
+  a better source to read.

@@ -49,6 +49,10 @@ ns.defaults = {
 	-- Per-spellID health-bar tinting (Tint.lua). Kill switch only -- the rule table itself lives in
 	-- Tint.lua and there is no options page yet. Applies only to specs that have a ruleset.
 	tint = { enabled = true },
+	-- Execute-threshold rule (Execute.lua). Kill switch only, same as tint: the spec -> threshold
+	-- table lives in that file. Only specs whose entry is marked confirmed draw anything, so
+	-- leaving this on does nothing at all for a spec we have not verified.
+	execute = { enabled = true },
 	-- Group defaults below were captured from Jerry's live config (2026-06-24, reload-flushed
 	-- SavedVariables) and set as the baseline so a fresh download matches his setup.
 	-- Vestigial fields (castGlow/castWidth/a stray group-5 targetScale) were dropped. CopyDefaults
@@ -180,6 +184,9 @@ local function RefreshAllAuras()
 	end
 end
 
+-- Named for the tint, but Style.Tint now re-evaluates every spec-dependent bar decoration -- the
+-- DoT tint AND the execute rule. Both change on respec and neither has any other refresh path, so
+-- do not narrow this back to just the tint.
 local function RefreshAllTints()
 	for unit, entry in pairs(ns.plates) do
 		ns.Style.Tint(entry.plate, unit)

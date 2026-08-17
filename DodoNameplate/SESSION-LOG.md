@@ -6,6 +6,43 @@
 
 ## Part A — Key Decisions
 
+### 2026-08-17 (evening, OMEN): The seam returns at 4px; execute-threshold rule
+
+- **Decision — the 1px seam comes BACK, and the reversal is the point.** The entry below records it
+  being removed the same morning; that judgement was made when the split sat near the middle of the
+  bar, where the colour edge alone read fine. Cutting the class strip to 4px **withdrew that
+  premise** — a 4px band against an adjacent colour reads as a gradient, not a boundary. So
+  `ns.TINT_CLASS_STRIP = 4` and `ns.TINT_SEAM = 1` are **coupled**: widen the strip again and the
+  seam becomes noise again. `GOTCHAS.md` S5c states this so the older note cannot be used to delete
+  the seam a second time.
+- **Decision — charge the seam to the tint region** (`splitY = height - STRIP - SEAM`), so the class
+  channel keeps a full 4px and the reserve costs 5px in total.
+- **Decision — hide the seam in `Tint.Clear` BEFORE its early return.** A respec to a spec with no
+  ruleset reaches `Attach -> not IsActive -> Clear`; below the bundle check, the plate would keep a
+  black line across an otherwise plain class-coloured bar.
+- **Decision — the execute rule reads NOTHING and must stay that way** (`Execute.lua`, new). The
+  line sits at a fixed fraction of the bar's *width*; the fill retreating past it is the whole
+  signal. So it needs none of the Secret Values machinery — and the moment it wants to know
+  *whether* the target is below the threshold (to recolour, flash, or hide), it has to read health,
+  which is secret. Blizzard's spell-button glow already answers "am I in range now"; this answers
+  "how far away is it", which Blizzard does not.
+- **Decision — anchor it to the BAR, not the fill** — the inverse of every other overlay here. The
+  failure mode is nasty: anchored to the fill it becomes a line permanently at 20% *of current
+  health*, which looks completely normal and means nothing. `test/test_execute.lua` asserts the
+  anchor object identity, A/B'd.
+- **Decision — a threshold we have not confirmed draws NOTHING.** The spec table carries a `state`:
+  only `"on"` draws; `"unverified"` (plausible number, unconfirmed for 12.1) and `"dynamic"` (a
+  talent or buff moves it — Warrior `Massacre`, Paladin `Avenging Wrath`) stay invisible on purpose.
+  **A line in the wrong place is worse than no line**: it does not read as "unknown", it reads as
+  "you cannot execute yet", and it is believed. Shipped confirmed: Shadow Priest SW:D 20% (12.1 also
+  buffed its damage ~80%, which is what makes a pre-read worth having). `/dnp exec` distinguishes
+  the four reasons for silence, or the honest ones would get "fixed".
+- **Decision — 2px, not 1px.** A vertical hairline is much easier to lose against a busy bar than
+  the horizontal seam, which has the whole bar width to announce itself. Centred on the threshold.
+- **Note — execute thresholds are DB2 spell data.** Unlike the API contracts there is no machine
+  generated file to grep, so promoting a spec means confirming it in game, not finding a better
+  source. Every number except Shadow Priest's came from model training data and is marked as such.
+
 ### 2026-08-17: Per-spellID bar tinting; enemy class colour is BORROWED, not read
 
 - **Decision — the tint is painted by Blizzard, not by us.** A texture whose parent is a `CustomAuraButton` draws exactly while Blizzard shows that button, so the addon supplies a spell filter and a colour and performs zero comparisons on aura data. AND is expressed by nesting containers, NOT by reading two auras; priority falls out of draw order because a longer AND-chain nests deeper and lands on a higher frame level. `Tint.lua`, rules in a `RULESETS[specID]` table — nothing in the module is Shadow-specific.
@@ -93,7 +130,37 @@
 
 ## Part B — Session Narrative
 
-### 2026-08-17: DoT bar tinting shipped, then class colour in battlegrounds (borrowed from Blizzard)
+### 2026-08-17 (evening, OMEN): Seam back at 4px, execute rule, first monorepo release
+
+Started as a sync job — OMEN was 14 commits behind HOME — and turned into two features.
+
+**A correction worth recording, because it nearly went into the docs as fact.** Asked whether the
+class-colour split was done, I read the code (4px), saw `PENDING-WORK.md` describing "top half /
+bottom half", and "corrected" the doc — including a claim that the code had *always* read the
+constant. Then Jerry explained the actual history: the morning build really was half-and-half with
+a 1px seam, he verified **that**, judged it ugly, and asked for 4px with no seam; that edit was
+pushed unverified. Checking `git log -S TINT_CLASS_STRIP` had shown a single commit, and I took
+that to mean a single version — but **`ab06948` squashes both iterations**, so git history cannot
+say which one a human looked at. Two lessons, both now in the repo: the doc line was not stale (it
+described what shipped at the time it was written), and *"which version was verified" is not a
+question git can answer*. `PENDING-WORK.md` carries the warning next to that commit id.
+
+That also un-blocked three question marks: the morning pass **did** confirm `SetVertexColor` accepts
+a raw secret out of `GetStatusBarColor`, in the open world *and* in a battleground — which in turn
+settles that a nameplate in a BG does not get `pvpUseClassColors` (there was a class colour there to
+borrow). GOTCHAS S5b updated from "unverified at the time of writing" to measured; the `pcall` and
+print-once fallback stay, now justified as "undocumented Blizzard contract, a patch can withdraw
+it" rather than "we don't know".
+
+**Then the execute rule.** New `Execute.lua`, ~180 lines, and the cheapest feature in the addon: it
+reads no unit data, so none of the Secret Values apparatus applies. The design work was in what it
+refuses to do — see Part A. Verification is `test/test_execute.lua`, which stubs the WoW API and
+loads the **real** module (not a hand-rolled fixture); 15 assertions, and every one of them was A/B'd
+by seeding real violations: marking Shadow Priest `unverified` reddens exactly the four assertions
+that depend on it, breaking the position maths reddens only the geometry one (`got 50.0 want 20`),
+reverting the width to 1 reddens only the width one. Undoing those probes needed care — `Execute.lua`
+is untracked, and `git checkout --` on an untracked file is a silent no-op — so restores went through
+file backups and were confirmed by **reading the line back**, not by trusting an exit code.
 
 - **Built `Tint.lua`** to the design already verified by `/dp tint` (GOTCHAS S5): per-token permanent proxy frame standing in for a health bar that does not exist at login; textures anchored to the proxy and re-pointed at the bar's **fill** on attach (anchoring to the whole bar would bury the health level); one declared frame-level stack `ns.LEVEL_TINT / LEVEL_IMPORTANT / LEVEL_TEXT`. Name, health % and the elite icon **had to move off `hb` onto a new `f.fg` layer** — a tint covering the fill covers whatever else is drawn on the fill, and they were. The important-cast recolour moved out of `ColorBar`'s vertex colour into `f.impTint` above the tints, so there is one implementation rather than two.
 - **In-instance acceptance passed**, which also answered the one thing the probe could not: `SetParent` on the proxy DOES re-level Blizzard's aura buttons through the C-side cascade. A visible tint inside an instance is only possible if that happened — had it not, the tint would draw behind the bar and show nothing at all, the same symptom as a wrong spell ID or a late attach. `/dnp tint` prints `hb / proxy / container` levels precisely to separate those. GOTCHAS S5a's red warning was rewritten into a conclusion rather than left standing as a falsified caveat.

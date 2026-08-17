@@ -284,6 +284,12 @@ end
 -- Attach / clear
 ---------------------------------------------------------------------------------------------------
 function Tint.Clear(f)
+	-- Before the early return, and unconditional: the rule is only meaningful while a tint region
+	-- exists under it. A respec to a spec with no ruleset reaches Tint.Attach -> not IsActive ->
+	-- here, and if this sat below the bundle check the plate would keep a black line across an
+	-- otherwise plain class-coloured bar.
+	if f and f.seam then f.seam:Hide() end
+
 	local bundle = f and f.dnpTintBundle
 	if not bundle then return end
 	if bundle.owner == f then
@@ -338,8 +344,21 @@ function Tint.Attach(f, unit)
 		-- taken from the configured height rather than recomputed here.
 		proxy:SetPoint("TOPLEFT", fill, "BOTTOMLEFT", 0, f.splitY)
 		proxy:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0, 0)
+		-- The rule sits in the ns.TINT_SEAM pixels directly ABOVE the tint region, so it eats into
+		-- neither channel: class strip on top, rule, tint below. Same fill anchor as the proxy, so
+		-- the two shorten together. Re-pointed here rather than in LayoutPlate because this is the
+		-- branch that already knows the plate is a tinted enemy player.
+		if f.seam then
+			f.seam:ClearAllPoints()
+			f.seam:SetPoint("TOPLEFT", fill, "BOTTOMLEFT", 0, f.splitY + ns.TINT_SEAM)
+			f.seam:SetPoint("TOPRIGHT", fill, "BOTTOMRIGHT", 0, f.splitY + ns.TINT_SEAM)
+			f.seam:SetHeight(ns.TINT_SEAM)
+			f.seam:Show()
+		end
 	else
 		proxy:SetAllPoints(fill)
+		-- Hostile creatures are one channel: nothing to separate, so no rule.
+		if f.seam then f.seam:Hide() end
 	end
 	-- Unconditional, and after SetParent (which resets it): Blizzard re-levels nameplates to control
 	-- overlap, so the offset has to be re-asserted rather than set once. Everything the containers

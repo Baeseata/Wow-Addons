@@ -36,6 +36,8 @@ Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, git
 - **Aura architecture**: `Auras.lua` preallocates three `CustomAuraContainerTemplate` containers for each permanent `nameplate1` through `nameplate40` token at `PLAYER_LOGIN`. Main, CC, and buff groups are precreated; `maxFrameCount=0` disables a group. The addon never enumerates restricted aura data or handles `UNIT_AURA`.
 - **Aura display**: main priority + personal nameplate debuffs, shared CC, purgeable buffs, big defensives, external defensives, and optional generic buffs. Wrapper frames clip each row to the configured aggregate icon limit.
 - **Bar tinting**: `Tint.lua` recolours the health-bar fill from a spec's spell rules (Shadow Priest ships: SW:P orange, VT purple, both blue) by handing Blizzard a texture per spell and letting it switch the texture on. It reads no aura data. Spec-gated; no options page yet, kill switch is `ns.db.tint.enabled`. `/dnp tint` reports it.
+- **Execute rule**: `Execute.lua` draws a 1px vertical line at the player's execute threshold on enemy bars, so the remaining health before the ability comes online is readable at a glance. Pure geometry — it reads no unit data and touches none of the Secret Values machinery; keep it that way (GOTCHAS S6). Only specs whose table entry is `state = "on"` draw; `"unverified"` and `"dynamic"` entries deliberately draw nothing. Kill switch `ns.db.execute.enabled`, `/dnp exec` explains any silence. Shipped confirmed: Shadow Priest (SW:D, 20%).
+- **Tests**: `test/test_execute.lua` runs the real `Execute.lua` against a stubbed WoW API — `lua test/test_execute.lua` from the addon folder. Excluded from CF packaging along with the docs.
 
 ## Load order
 
@@ -45,8 +47,9 @@ Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, git
 4. `Plate.lua` - health/name/cast/marker/target presentation.
 5. `Auras.lua` - secure 12.1 aura containers.
 6. `Tint.lua` - per-spellID health-bar tinting (needs `ns.LEVEL_*` from `Plate.lua`).
-7. `Core.lua` - events, SavedVariables, role and purge capability.
-8. `Options.lua` - Settings pages.
+7. `Execute.lua` - execute-threshold rule (needs `ns.Guards`; reads no unit data at all).
+8. `Core.lua` - events, SavedVariables, role and purge capability.
+9. `Options.lua` - Settings pages.
 
 ## Invariants
 
