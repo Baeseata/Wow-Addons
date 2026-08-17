@@ -101,6 +101,11 @@ lua tools/test_detector.lua
   → 打 **annotated** tag `DodoSays-vX.Y.Z` → CI 自动传。
   🔴 **lightweight tag 会把 commit message 当 changelog 甩上 CF**(而我们的 commit message 是中文)
   ⇒ 判据:`git cat-file -t <tag>` 必须回 **`tag`**,回 `commit` 就是 lightweight。
+  🔴 **打 tag 必须带 `--cleanup=verbatim`** —— git 默认 strip 模式把 `#` 开头的行**当注释删掉**,
+  而 changelog 是 Markdown、标题正是 `#` 开头 ⇒ **所有段落标题静默消失**,tag 打完毫无提示。
+  ⇒ 判据:`git tag -l --format='%(contents)' <tag> | grep '^#'` **必须有输出**;打完 tag、push 之前跑它。
+  ⚠ 这条 `PUBLISHING.md` §7 早就写着(1.2.0 实踩),**0.12.0 又踩一次** —— 因为发版时读的是本文件、
+  不是那份。**这就是它现在也写在这里的原因**;别把它删了改成一句"详见 PUBLISHING.md"。
 - **发版账本 = Actions 运行记录 + CF 回的 `{"id":…}`**,不是 tag(tag 会被删,那两样不会)。
 - **打包白名单实查（2026-08-16 重核 `.github/workflows/curseforge-release.yml:129-131`）**：只有
   `*.lua *.toc README.md LICENSE *.tga *.blp *.png *.ttf *.xml *.mp3 *.ogg` 进包，
