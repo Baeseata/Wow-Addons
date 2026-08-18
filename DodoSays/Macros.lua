@@ -28,8 +28,14 @@ local RAID_ICON_BASE = 137000
 -- The Dodo prefix is what keeps this out of its one genuinely destructive case.
 -- EditMacro on a name collision rewrites whatever was there, and what was there
 -- could be the player's own macro -- so the names have to be ours beyond doubt.
--- The client's limit is 16 characters; the longest of these is "Dodo Triangle"
--- at 13, which is why nothing here has to measure it.
+-- Nothing here measures length, and the reason is our own names: the longest is
+-- "Dodo Triangle" at 13 characters. It is *not* that the client caps names at
+-- 16 -- that was the old claim here and it is wrong. A DodoProbe run on 12.1.0
+-- build 120100 renamed a macro to 12 Chinese code points (32 bytes) and read it
+-- back through C_Macro.GetMacroName intact, so the real ceiling is at least 32
+-- bytes and was never measured past that. Anyone sizing a name that could get
+-- long -- localised labels especially -- has to go measure it, not trust a
+-- number from this comment.
 function Macros.NameFor(q)  return "Dodo " .. q.label end
 function Macros.BodyFor(q)  return "/dodosays " .. q.id end
 function Macros.IconFor(q)  return RAID_ICON_BASE + q.marker end

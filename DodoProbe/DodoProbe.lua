@@ -1393,6 +1393,226 @@ local function ClassRun()
     say("  |cffffff00结果只在 /reload 之后才写进文件|r,/dp copy 可当场复制")
 end
 
+-- ===== /dp macro:DodoGuanzhu(灌注顺位)开工前要量的六件事 =====
+-- 🔴 **这个子命令有副作用**(建一个临时宏再删掉)⇒ 故意不进默认 /dp,只能手敲。
+-- 无害化(canon「探针必须无害化」):① 只碰一个绝对不撞名的宏 ② 动手前先确认它不存在,
+-- 撞了就中止(EditMacro 撞名会**重写玩家自己的宏**)③ 战斗中不跑(客户端 block 宏 API)
+-- ④ 跑完必删,并且**换一种查询形状**核实删干净了 —— 别用删它那条 selector 去验它没了。
+local MACRO_TMP = "DPzzTmpMacro"
+
+-- 数 UTF-8 码位。不用 strlenutf8(不保证在),这个只依赖 string.byte。
+local function utf8len(s)
+    local n = 0
+    for i = 1, #s do
+        local b = s:byte(i)
+        if b < 0x80 or b >= 0xC0 then n = n + 1 end
+    end
+    return n
+end
+
+-- 把条件串喂给**宏自己的求值器**。零副作用:它只求值,不施法。
+-- 这是验「一行多组条件的 fallback」最直接的办法 —— 不用真按宏、不消耗 CD。
+local function parse(cond)
+    if type(SecureCmdOptionParse) ~= "function" then return "|cffff3333函数不存在|r" end
+    local ok, action, target = pcall(SecureCmdOptionParse, cond)
+    if not ok then return "|cffff3333ERROR|r " .. tostring(action) end
+    if action == nil then return "|cff888888不成立(nil)|r" end
+    return "|cff00ff00" .. tostring(action) .. "|r → @|cffffd100"
+        .. tostring(target or "(宏默认目标)") .. "|r"
+end
+
+-- 残留清理。开头和结尾各调一次:开头防上一次跑到一半崩了留下的,结尾是正常收尾。
+local function MacroTmpWipe()
+    local idx = GetMacroIndexByName and GetMacroIndexByName(MACRO_TMP)
+    if idx and idx > 0 then pcall(DeleteMacro, idx) end
+end
+
+local function MacroRun()
+    local L = {}
+    local function add(s) L[#L + 1] = s end
+    local function row(k, v) add(string.format("  %-28s %s", k, v)) end
+
+    add("|cff33ff99=== /dp macro · 灌注顺位插件 开工前置 ===|r")
+    add(("  build %s   脱战/战斗 = %s"):format(
+        (GetBuildInfo and select(4, GetBuildInfo())) or "?",
+        InCombatLockdown() and "|cffff8800IN COMBAT|r" or "out of combat"))
+    -- 🔴 结果必须自带环境标签。主城是**最宽松**的环境(不是 addon-restricted map),
+    --    在这儿测出来的明文,在副本/团本里完全可能变 SECRET ⇒ 两个环境都要跑一次,
+    --    没有标签的话两份结果混在一起就分不出谁是谁了。
+    local okI, inInst, instType = pcall(IsInInstance)
+    add(("  地图 = %s / %s   组队 = %s"):format(
+        tostring(okI and instType or "?"),
+        tostring((GetZoneText and GetZoneText()) or "?"),
+        (IsInRaid and IsInRaid()) and "团队" or ((IsInGroup and IsInGroup()) and "小队" or "|cffffaa00单人|r")))
+
+    -- ── ① 名字形态:写进宏的 @名字 到底长什么样 ────────────────────
+    add("|cffffd100── ① 名字形态(决定宏里写什么)──|r")
+    -- ⚠ 名字有可能是 secret ⇒ 一律走 tag() 分类,**绝不 tostring 它**(那会当场炸,
+    --   而这插件全部的意义就是"全程 pcall 不炸")。
+    local function nameCell(u)
+        if not UnitExists(u) then return "|cff888888(没有这个单位)|r" end
+        return ("Name=%s Full=%s Get(,true)=%s"):format(
+            tag(pcall(UnitName, u)), tag(pcall(UnitFullName, u)), tag(pcall(GetUnitName, u, true)))
+    end
+    row("player", nameCell("player"))
+    row("target", nameCell("target"))
+    row("focus", nameCell("focus"))
+    row("本服名(Normalized)", tostring(GetNormalizedRealmName and GetNormalizedRealmName()))
+
+    -- ── ② 宏条件求值:全程零副作用,直接问宏自己的解析器 ──────────
+    add("|cffffd100── ② 宏条件语义(SecureCmdOptionParse,不施法)──|r")
+    local me   = UnitName("player")
+    local full = (GetUnitName and GetUnitName("player", true)) or me
+    local SPL  = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(10060)) or "能量灌注"
+
+    -- 🔑 最值钱的一条:第一组是个**必然不存在**的名字,第二组是 player。
+    -- 落到 player = 「一行多组条件会 fallback」这个整个设计的地基被坐实。
+    row("fallback(假名→player)",
+        parse("[@ZzNoSuchPlayerZz,help,nodead][@player] " .. SPL))
+    row("自己短名可解析吗",  parse("[@" .. me .. ",help,nodead] " .. SPL))
+    row("自己全名(带服)",    parse("[@" .. full .. ",help,nodead] " .. SPL))
+    row("焦点组(要先设焦点)", parse("[@focus,help,nodead][@player] " .. SPL))
+
+    -- 🔑 拿**当前目标**的名字当 @名字 —— 这条专门验「团队外的陌生人能不能进名单」。
+    -- ⚠ 名字可能是 secret,而 secret 的 type 仍然是 string ⇒ 只判 type 会在拼接那一步炸,
+    --   必须先问 issecretvalue。这也正是这一行要量的那件事本身。
+    if UnitExists("target") and UnitIsPlayer("target") then
+        local okT, tn = pcall(GetUnitName, "target", true)
+        local isSec = okT and issecretvalue and issecretvalue(tn)
+        if isSec then
+            row("[@目标名字,help]", "|cffff8800目标名字是 SECRET ⇒ 写不进宏|r")
+        elseif okT and type(tn) == "string" then
+            row("[@目标名字,help]", parse("[@" .. tn .. ",help,nodead] " .. SPL))
+            -- 裸的 + exists:区分「名字压根解析不成 unit」和「解析成了但 help 判假」。
+            -- 裸的都不成立 ⇒ 是解析失败 ⇒ @名字 只在队伍/团队范围内有效。
+            row("[@目标名字] 裸",     parse("[@" .. tn .. "] " .. SPL))
+            row("[@目标名字,exists]", parse("[@" .. tn .. ",exists] " .. SPL))
+            row("  (那个名字)", "|cff00ff00" .. tn .. "|r")
+        else
+            row("[@目标名字,help]", "|cff888888拿不到目标名字|r")
+        end
+    else
+        row("[@目标名字,help]", "|cff888888SKIP:没选中玩家目标|r")
+    end
+    -- 无效条件怎么表现:侧证「宏条件里没有射程这一档」。ERROR 或不成立都说明它不认;
+    -- ⚠ 若这行**成立**,说明我把射程判死是错的 —— 那这一条比其他五条都重要。
+    row("[@player,inrange] ?", parse("[@player,inrange] " .. SPL))
+    -- 🔴 上面那行**自己分不出**两种情况:(a) inrange 是真条件 (b) 未知条件被直接忽略。
+    --    两种情况下它都成立 ⇒ 零分辨力。下面两行是负对照,noinrange 是决定性的那条:
+    --    一个真条件不可能和它的反面同时为真 ⇒ 两个都成立 = 解析器在忽略未知条件。
+    row("[@player,noinrange]",  parse("[@player,noinrange] " .. SPL))
+    row("[@player,zzzgarbage]", parse("[@player,zzzgarbage] " .. SPL))
+    add("      |cffffff00判读:后两行也成立 ⇒ 未知条件被忽略,inrange 不是真条件(射程结论不变)|r")
+    row("[@player,nodead] 自己", parse("[@player,nodead] " .. SPL))
+
+    -- 死人的 help 是真是假 —— 决定 nodead 能不能省(每人省 7 字节)。
+    -- 找不到死人就如实报 skip:「没量到」和「量到了是假」必须分得开。
+    local deadUnit
+    for i = 1, 40 do
+        local u = "raid" .. i
+        if UnitExists(u) and UnitIsPlayer(u) and UnitIsDeadOrGhost(u) then deadUnit = u break end
+    end
+    if not deadUnit then
+        for i = 1, 4 do
+            local u = "party" .. i
+            if UnitExists(u) and UnitIsPlayer(u) and UnitIsDeadOrGhost(u) then deadUnit = u break end
+        end
+    end
+    if deadUnit then
+        local dn = GetUnitName(deadUnit, true)
+        row("死人 [@x,help]",   parse("[@" .. dn .. ",help] " .. SPL))
+        row("死人 [@x,help,nodead]", parse("[@" .. dn .. ",help,nodead] " .. SPL))
+    else
+        row("死人 help", "|cff888888SKIP:队里现在没有死人|r")
+    end
+
+    -- ── ③ 过滤判据是不是明文(录名单时要用)────────────────────
+    add("|cffffd100── ③ 收录过滤用的判据(要明文才能算)──|r")
+    local function tp(label, fn) row(label, tag(pcall(fn))) end
+    tp("UnitIsPlayer(target)",   function() return UnitIsPlayer("target") end)
+    tp("UnitCanAssist(p,target)",function() return UnitCanAssist("player", "target") end)
+    tp("UnitIsDeadOrGhost(tgt)", function() return UnitIsDeadOrGhost("target") end)
+    tp("UnitIsConnected(target)",function() return UnitIsConnected("target") end)
+    tp("UnitName(target)",       function() return UnitName("target") end)
+    tp("UnitClass 第2返(职业色)",function() return (select(2, UnitClass("target"))) end)
+    tp("UnitInRange(target)",    function() return UnitInRange("target") end)  -- 预期 SECRET
+    tp("PI 技能名(10060)",       function() return SPL end)
+
+    -- ── ⑤ 射程专项:noinrange 判假 ⇒ inrange 疑似**真条件**,这组来定案 ────
+    add("|cffffd100── ⑤ 射程(inrange 疑似真条件)──|r")
+    -- 🔴 排掉最后一个替代解释:noinrange 判假也可能是「no+未知」走了另一条路,
+    --    而不是 inrange 被识别。nozzzgarbage 成立 ⇒ no+未知一样被忽略 ⇒ 定案。
+    row("[@player,nozzzgarbage]", parse("[@player,nozzzgarbage] " .. SPL))
+    -- @target 是 **unit token 不是名字** ⇒ 对陌生人照样解析得到,
+    -- 可以拿主城里的路人当尺子量 inrange 到底是多远。
+    row("[@target,help]",      parse("[@target,help] " .. SPL))
+    row("[@target,exists]",    parse("[@target,exists] " .. SPL))
+    row("[@target,inrange]",   parse("[@target,inrange] " .. SPL))
+    row("[@target,noinrange]", parse("[@target,noinrange] " .. SPL))
+    -- 标尺:拿几个已知距离的判据交叉定位 inrange 到底对应多少码。
+    tp("CheckInteractDist 1(28y)", function() return CheckInteractDistance("target", 1) end)
+    tp("CheckInteractDist 2(11y)", function() return CheckInteractDistance("target", 2) end)
+    tp("CheckInteractDist 3(10y)", function() return CheckInteractDistance("target", 3) end)
+    tp("C_Spell.IsSpellInRange",   function() return C_Spell.IsSpellInRange(10060, "target") end)
+    tp("IsSpellInRange(旧全局)",   function() return IsSpellInRange(SPL, "target") end)
+
+    -- ── ④ 长度上限:字节还是字符(唯一有副作用的一段)──────────────
+    add("|cffffd100── ④ 长度上限(决定名单能放几个人)──|r")
+    if InCombatLockdown() then
+        row("长度探针", "|cffff8800SKIP:战斗中,客户端 block 宏 API|r")
+    elseif type(CreateMacro) ~= "function" then
+        row("长度探针", "|cffff3333SKIP:没有 CreateMacro|r")
+    else
+        MacroTmpWipe()                       -- 防上一次跑到一半崩了留下的
+        local before = GetNumMacros()
+        local exist  = GetMacroIndexByName(MACRO_TMP)
+        if exist and exist > 0 then
+            row("长度探针", "|cffff3333中止:" .. MACRO_TMP .. " 竟然已存在,不覆盖|r")
+        else
+            local idx
+            local okC = pcall(function() idx = CreateMacro(MACRO_TMP, 134400, "x", nil) end)
+            if not okC or not idx or idx == 0 then
+                row("长度探针", "|cffff3333建不出来(槽位满?)|r")
+            else
+                -- 300 个汉字 = 300 码位 / 900 字节 ⇒ 两种上限都会被它撞到。
+                local okE, errE = pcall(EditMacro, idx, nil, nil, string.rep("中", 300))
+                -- ⚠ 别用 GetMacroBody:暴雪自己的 Blizzard_MacroUI 全程用 GetMacroInfo 的
+                --   第 3 个返回值,而 GetMacroBody 在 12.1 源码里一次都没出现 ⇒ 它可能是 nil,
+                --   裸调会当场崩。type 检查兜住 secret / nil 两种,#got 才不会炸。
+                local okB, _, _, body3 = pcall(GetMacroInfo, idx)
+                local got = (okB and type(body3) == "string") and body3 or ""
+                row("正文 300汉字→回读", ("%d 字节 / %d 码位 %s"):format(#got, utf8len(got),
+                    okE and "" or ("|cffff3333EditMacro:" .. tostring(errE) .. "|r")))
+                -- 实测基准(12.1.0 build 120100,美服 Illidan):写 300 汉字 → 回读
+                -- 768 字节 / 256 码位 ⇒ **按码位截,不按字节** ⇒ 中文名不吃亏。
+                -- ⚠ UI 输入框那边是 letters="255",跟 API 层的 256 差 1 ⇒ 生成时按 255 保守算。
+                add("      |cffffff00基准:768字节/256码位 = 按码位截。对不上就是暴雪改了|r")
+                -- 宏名 2 ASCII + 10 汉字 = 12 码位 / 32 字节,16 上限两种读法都会截。
+                local okN = pcall(EditMacro, idx, "DP" .. string.rep("中", 10), nil, nil)
+                local okG2, n2 = pcall((C_Macro and C_Macro.GetMacroName) or GetMacroInfo, idx)
+                local gotN = (okG2 and type(n2) == "string") and n2 or ""
+                row("宏名 2A+10汉→回读", ("%d 字节 / %d 码位 [%s]%s"):format(#gotN, utf8len(gotN),
+                    tostring(gotN), okN and "" or " |cffff3333改名被拒|r"))
+                -- 清理。⚠ 上一步改过名了 ⇒ 只能靠 idx 删,MacroTmpWipe 已经找不到它。
+                pcall(DeleteMacro, idx)
+                local after = GetNumMacros()
+                row("清理", (before == after) and "|cff00ff00已删净(宏总数前后一致)|r"
+                    or ("|cffff3333没删净! 前=" .. tostring(before) .. " 后=" .. tostring(after)
+                        .. " —— 去宏界面手删那个 DP 开头的|r"))
+            end
+        end
+        MacroTmpWipe()
+    end
+    local okS, used = pcall(GetNumMacros)      -- 这行在 if 外面 ⇒ 不能靠上面那个 type 检查兜
+    row("宏槽位", okS and ("账号已用 " .. tostring(used) .. " / 120") or "|cff888888读不到|r")
+
+    P.lastOut = StripColors(table.concat(L, "\n"))
+    for _, s in ipairs(L) do print(s) end
+    LogPush("macro", P.lastOut)
+    ShowCopyBox(P.lastOut)
+    say("已弹复制窗(Ctrl+A / Ctrl+C)。|cffffd100/reload|r 落盘,|cffffd100/dp copy|r 再开一次。")
+end
+
 SLASH_DODOPROBE1 = "/dp"
 SLASH_DODOPROBE2 = "/dodoprobe"
 SlashCmdList.DODOPROBE = function(msg)
@@ -1464,6 +1684,10 @@ SlashCmdList.DODOPROBE = function(msg)
 
     elseif cmd == "class" then
         ClassRun()
+
+    elseif cmd == "macro" then
+        -- 有副作用(建一个临时宏再删),所以只走手敲,不进默认 /dp。
+        MacroRun()
 
     elseif cmd == "log" then
         local n = (DodoProbeDB and type(DodoProbeDB.log) == "table") and #DodoProbeDB.log or 0
