@@ -1,0 +1,16 @@
+## Interface: 120005, 120007, 120100
+## Title: DodoGrid
+## Notes: Healer-focused party/raid frames. Secret-Values safe. Party + Blizzard-style raid grid.
+## Author: Doodo
+## Version: 0.5.0
+## SavedVariables: DodoGridDB
+## Group: Dodo
+## OptionalDeps: Dodo
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## X-License: All Rights Reserved
+
+Core.lua
+Auras.lua
+Dispel.lua
+HideBlizzard.lua
+Options.lua
