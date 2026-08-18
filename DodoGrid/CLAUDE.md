@@ -14,8 +14,10 @@ This addon used to live in its own repo `Baeseata/DodoGrid`. It is now a folder 
 - Compare live-vs-repo with `git diff --no-index --ignore-cr-at-eol` (clone checkout is CRLF, the
   live folder is LF — naive hash compares claim everything differs). Export back with
   `git -c core.autocrlf=false archive` to keep LF.
-- The old standalone repo is **not deleted** — if some clone of it still has unpushed work, push it
-  there first and hand-merge; do not assume this folder is newer.
+- The old standalone repo is **archived / read-only since 2026-08-17** (not deleted; it still reads
+  at `c1f32a0` = v0.5.0). If some clone of it turns out to have unpushed work you **cannot push it
+  back** — archived repos reject writes. Copy those files straight into this folder and commit here,
+  or `gh repo unarchive Baeseata/DodoGrid` first. Do not assume this folder is newer without diffing.
 - DodoGrid is **not on CurseForge**: the monorepo release workflow only fires on a `<Addon>-vX.Y.Z`
   tag, so it never touches this addon.
 
