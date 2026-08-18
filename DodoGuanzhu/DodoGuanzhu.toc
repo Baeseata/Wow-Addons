@@ -1,0 +1,18 @@
+## Interface: 120005, 120007, 120100
+## Title: DodoGuanzhu
+## Notes: 牧师能量灌注顺位:预设名单,一个宏按优先级给人,都给不出去才给自己。
+## Author: Doodo
+## Version: 0.1.0
+## SavedVariables: DodoGuanzhuDB
+## Group: Dodo
+## OptionalDeps: Dodo
+## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## X-License: All Rights Reserved
+
+Core.lua
+Macro.lua
+Capture.lua
+Preview.lua
+Slash.lua
+Options.lua
+Minimap.lua
