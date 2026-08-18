@@ -7,6 +7,14 @@ local defaults = {
     summonReminder = true,
     fontSize = 36,
     offsetY = 180,
+    rotation = {
+        enabled = true,
+        iconSize = 64,
+        posX = 0,
+        posY = -150,
+        locked = true,
+        showOutOfCombat = true,
+    },
 }
 
 local function copyDefaults(src, dst)
@@ -296,6 +304,12 @@ function DodoUnholy:CreateOptionsPanel()
         offsetYBox:SetText(tostring(self.db.offsetY))
     end)
 
+    -- 出招助手 (Rotation.lua) 在此追加它自己的选项区
+    -- (须放在主 OnShow 的 SetScript 之后,其内部 HookScript 才能叠加而不被覆盖)
+    if self.AddRotationOptions then
+        self:AddRotationOptions(panel, hint)
+    end
+
     self.optionsPanel = panel
     self.fontSizeBox = fontSizeBox
     self.offsetYBox = offsetYBox
@@ -326,16 +340,33 @@ function DodoUnholy:Initialize()
 
     self:CreateWarningFrame()
     self:CreateOptionsPanel()
+    if self.InitRotation then
+        self:InitRotation()
+    end
     self:RefreshWarnings()
 
     SLASH_DODOUNHOLY1 = "/dodounholy"
     SLASH_DODOUNHOLY2 = "/duh"
     SlashCmdList.DODOUNHOLY = function(msg)
-        msg = msg and msg:lower() or ""
+        msg = msg and msg:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
         if msg == "config" or msg == "settings" or msg == "option" or msg == "options" then
             self:OpenOptions()
+        elseif msg == "scan" and self.ScanBars then
+            self:ScanBars()
+        elseif msg == "debug" and self.DebugRotation then
+            self:DebugRotation()
+        elseif msg == "cl" and self.ProbeCombatLog then
+            self:ProbeCombatLog()
+        elseif msg == "lock" then
+            self.db.rotation.locked = true
+            self:ApplyRotationAppearance()
+            print("|cff33ff99DodoUnholy|r：出招图标已锁定。")
+        elseif msg == "unlock" then
+            self.db.rotation.locked = false
+            self:ApplyRotationAppearance()
+            print("|cff33ff99DodoUnholy|r：出招图标已解锁,拖动它移动位置。")
         else
-            print("|cff33ff99DodoUnholy|r：输入 /duh config 打开设置。")
+            print("|cff33ff99DodoUnholy|r：/duh config 设置 | scan 导出技能ID | debug 实时读数 | cl 战斗日志探针 | lock/unlock 锁定/解锁图标。")
         end
     end
 end

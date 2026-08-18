@@ -4,8 +4,9 @@
 ## Title: DodoUnholy
 ## Notes: dodo的邪dk小助手
 ## Author: Doodo
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: DodoUnholyDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
 DodoUnholy.lua
+Rotation.lua
