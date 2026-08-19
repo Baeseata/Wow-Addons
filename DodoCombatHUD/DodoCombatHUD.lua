@@ -814,7 +814,14 @@ local function ApplyDotFilters()
         local sid = dotList[i]
         if not sid then
             slot.spellID = nil          -- 收起这格:没有推送动作,直接记
-        elseif eligible and sid ~= slot.spellID then
+        elseif not eligible then
+            -- 🔴 目标不合格 ⇒ **把记录清掉**,下次遇到合格目标强制重推一次。
+            --    理由:`slot.spellID` 的语义是「我确信这一格现在筛的是它」,而一次不合格的
+            --    目标恰恰证明我们不再确信 —— 留着它就等于拿一个过期的把握去跳过重推,
+            --    而「跳过重推」正是这个 bug 每一次的最后一环。重推很便宜(换目标本来就要
+            --    UpdateAllAuras 全刷一遍),用它换掉「万一那次推送其实没落地」这一整类。
+            slot.spellID = nil
+        elseif sid ~= slot.spellID then
             -- 跟 ApplyBoxFilter 同一个洞(理由见那儿的长注释):`slot.spellID` 原来写在 pcall
             -- 外面 ⇒ 推送失败照样记 ⇒ 永不重试。**修类不修例**,两处一起改。
             local ok, err = pcall(function()
