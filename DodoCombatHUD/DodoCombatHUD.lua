@@ -781,34 +781,63 @@ local function ApplyBoxFilter(b, list, on)
     end
 end
 
-local function ApplyAuraFilters()
-    if not dots.built then return end
+-- 目标能不能承载「我上的 DoT」这个概念 —— **这是 filter 推不推得下去的前提,不是显示偏好**。
+-- 暴雪的 `AuraContainerUtil.CanApplyIdentityCandidateFilters` 只禁两格:**友方身上的 debuff**
+-- 和敌方身上的 buff。我们这排正是「HARMFUL 挂在 target 上」⇒ **目标是友方、或压根没目标时,
+-- includeSpellIDs 落进被禁的那一格,被静默丢掉**(不抛错,pcall 看不见)⇒ 容器退回
+-- 「没有 candidate filter」,而 nil 在暴雪那边是**全放行** ⇒ 那一格画的是「我在他身上的
+-- 全部 debuff」,三格于是画同样的东西,且全程零报错。
+-- 🔴 问不出来(pcall 失败)一律按**不合格**算:说不清自己在什么状态就按最严的走 ——
+--    反过来写的话,一个读不到的判据会变成「那就推吧」,而推不下去正是这个 bug 的入口。
+local function DotUnitEligible()
+    local okE, exists = pcall(UnitExists, "target")
+    if not okE or not exists then return false end
+    local okA, assist = pcall(UnitCanAssist, "player", "target")
+    if not okA then return false end
+    return not assist
+end
 
-    -- ① 目标 DoT:固定格位。列表短于 DOT_SLOTS 时,多出来的格子收起来 ——
-    --    别留一个空框体在那儿,那会让"这专精只有 1 个 DoT"看起来像"另外三个掉了"。
+-- ① 目标 DoT:固定格位。列表短于 DOT_SLOTS 时,多出来的格子收起来 ——
+--    别留一个空框体在那儿,那会让"这专精只有 1 个 DoT"看起来像"另外三个掉了"。
+--
+-- 🔴 **单独抽出来,因为它必须在每次换目标时重跑**(0.11.1)。原来它只是 ApplyAuraFilters
+--    里的一段,而那个函数只在开局 / 换专精 / 动设置时跑 —— 也就是说 filter **一辈子只推一次**,
+--    而那一次多半发生在**没目标或友方目标**上(登录那一刻)。撞上就是永久退化:
+--    `slot.spellID` 记下了「推过了」⇒ 从此不再回头 ⇒ 三格永远画一样的东西。
+--    ⇒ 记的语义也跟着改了:不再是「我打算推什么」,而是「**在一个合格的目标上**真推下去的是什么」。
+local function ApplyDotFilters()
+    if not dots.built then return end
     local dotList = ListFor("dots")
     local dotOn = DB.dotsOn ~= false and DB.healthOn ~= false
+    local eligible = DotUnitEligible()
     for i, slot in ipairs(dots.slots) do
         local sid = dotList[i]
-        if sid ~= slot.spellID then
-            -- 跟 ApplyBoxFilter 同一个洞(理由见那儿的长注释):`slot.spellID` 原来也写在 pcall
-            -- 外面 ⇒ 推送失败照样记 ⇒ 永不重试 ⇒ 那一格退化成「目标身上我上的**全部** debuff」,
-            -- 四格于是画同样的东西。**修类不修例**,两处一起改。
-            local ok, err = true, nil
-            if sid then
-                ok, err = pcall(function()
-                    slot.container:SetAuraGroupCandidateFilters("g", DotFilters(sid))
-                end)
-            end
+        if not sid then
+            slot.spellID = nil          -- 收起这格:没有推送动作,直接记
+        elseif eligible and sid ~= slot.spellID then
+            -- 跟 ApplyBoxFilter 同一个洞(理由见那儿的长注释):`slot.spellID` 原来写在 pcall
+            -- 外面 ⇒ 推送失败照样记 ⇒ 永不重试。**修类不修例**,两处一起改。
+            local ok, err = pcall(function()
+                slot.container:SetAuraGroupCandidateFilters("g", DotFilters(sid))
+            end)
             if ok then
-                slot.spellID = sid      -- sid 为 nil(收起这格)时没有推送动作,直接记
+                slot.spellID = sid
             else
                 Print("|cffff3333DoT 第 " .. i .. " 格 filter 推送失败|r(下次刷新重试):"
                     .. tostring(err))
             end
         end
-        pcall(function() slot.container:SetEnabled(dotOn and sid ~= nil) end)
+        -- 🔴 fail-closed:目标不合格(友方 / 没目标)时**这排整个收起来**。
+        --    留着的话它画的必然是「没经过筛选的那一堆」—— 一格空着是个可读的状态,
+        --    一格画着**不该它画的东西**是在撒谎,而监控面板撒谎比不显示贵得多。
+        pcall(function() slot.container:SetEnabled(dotOn and sid ~= nil and eligible) end)
     end
+end
+
+local function ApplyAuraFilters()
+    if not dots.built then return end
+
+    ApplyDotFilters()
 
     -- ② 大招 ③ 嗜血 ④ 其余团队增益
     ApplyBoxFilter(cdBox, ListFor("cds"), DB.cdsOn ~= false)
@@ -1423,6 +1452,40 @@ local function ProbeAuraFilters()
         n = n + 1
     end
     emit("  我身上 HELPFUL 光环 = " .. n .. " 个   (若 = 0,这次对照零信息量)")
+    -- ④ DoT 那排。**0.11.1 之前这个探针根本没覆盖它** —— 而 2026-08-16 那次坏的就是这排,
+    --    2026-08-18 又复发了一次。它跟右边三排**准入规则不同**(HARMFUL 挂在 target 上
+    --    ⇒ 目标必须是敌方),所以右边三排全绿完全不替它背书。
+    local okT, hasT   = pcall(UnitExists, "target")
+    local okA, assist = pcall(UnitCanAssist, "player", "target")
+    emit(("  target 存在=%s  可协助=%s  ⇒ DoT filter 准入 %s"):format(
+        okT and tostring(hasT) or "ERROR", okA and tostring(assist) or "ERROR",
+        DotUnitEligible() and "|cff33ff33合格|r" or "|cffff3333不合格(友方/无目标)|r"))
+    -- 对照物:目标身上「我上的 debuff」有几个。0 的话「这排是空的」是必然结果、
+    -- 跟 filter 好坏无关 = 零信息量(canon:跑 A/B 前先确认你那个计数器现在真的会动)。
+    -- 只数个数,**一个字段值都不碰** —— 碰了万一是 secret 当场炸。
+    local nt = 0
+    for i = 1, 40 do
+        local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, "target", i, "HARMFUL|PLAYER")
+        if not ok or type(a) ~= "table" then break end
+        nt = nt + 1
+    end
+    emit("  目标身上我上的 debuff = " .. nt .. " 个   (若 = 0,这排空着属必然)")
+    for i, slot in ipairs(dots.slots) do
+        local want = ListFor("dots")[i]
+        local how
+        if not want then
+            how = "跳过(这格没配)"
+        elseif not DotUnitEligible() then
+            how = "|cffff3333跳过(目标不合格)|r"
+        else
+            local ok, err = pcall(function()
+                slot.container:SetAuraGroupCandidateFilters("g", DotFilters(want))
+            end)
+            how = ok and "|cff33ff33OK|r" or ("|cffff3333FAILED|r " .. tostring(err))
+        end
+        emit(("  dot%d: 该盯=%s  已推=%s  重推=%s"):format(
+            i, tostring(want), tostring(slot.spellID), how))
+    end
     for _, e in ipairs({ { "cds", cdBox }, { "lust", lustBox }, { "raid", raidBox } }) do
         local name, b = e[1], e[2]
         if not b then
@@ -1437,7 +1500,7 @@ local function ProbeAuraFilters()
                 ok and "|cff33ff33OK|r" or ("|cffff3333FAILED|r " .. tostring(err))))
         end
     end
-    emit("  ⇒ 跑完那三格若当场变空 = 之前 filter 确实没推下去")
+    emit("  ⇒ 跑完哪一排当场变空 = 那排之前 filter 确实没推下去")
     emit("---- 探针完(/reload 后结果落进 DodoProbe.lua)----")
 end
 
@@ -1755,7 +1818,11 @@ f:SetScript("OnEvent", function(_, event, unit)
     elseif event == "PLAYER_TARGET_CHANGED" then
         -- ⚠ 只刷 DoT 那排。另外三排绑的是 `player`,换目标跟它们没关系 ——
         --   以后别照抄这一句给它们加上。
-        if DB then RefreshDots() end
+        -- 🔴 **顺序要紧,而且两步都要**(0.11.1):先重推 filter、再刷数据。
+        --    filter 的准入取决于**当前目标是敌是友**(见 DotUnitEligible),
+        --    所以「换目标」正是它唯一可能从不合格变合格的时刻;只调 RefreshDots
+        --    的话,登录时没推下去的那次就再也补不上了。
+        if DB then ApplyDotFilters(); RefreshDots() end
     elseif event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
         -- 德鲁伊变形 / 换专精会走这里,而那时**资源类型整个换了**(能量↔法力↔星能)
         -- ⇒ 必须重探测 + 重布局,不能只刷显隐。少这一步的症状是

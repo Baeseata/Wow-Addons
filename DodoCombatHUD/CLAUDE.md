@@ -111,6 +111,10 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 - **格位按 `ns.DOT_SLOTS` 预建,不按列表长度建。** 格数随专精变(术士痛苦 4 个、萨满 1 个),
   而**换专精不许重建框体** —— 战斗中建受保护框体大概率被拒,那时的症状是「换了专精那排就没了」。
   用不上的格子 `SetEnabled(false)` 收起来,换专精只改 filter。
+- 🔴 **这排有个别处三排都没有的准入前提:目标必须是敌方。**(0.11.1)
+  `includeSpellIDs` 对「友方身上的 debuff」是被禁的 ⇒ 友方 / 无目标时 filter 静默失效。
+  所以它的 filter **每次换目标都要重推**,而且判不合格时**整排收起来**(见坑 5)。
+  ⇒ **右边三排全绿完全不替这排背书** —— 它们绑 `player`+`HELPFUL`,永远在准许区。
 - **`maxFrameCount` 用 6 不用 1。** 语义上每格最多也只有 1 个,但 6 是探针里实测跑通过的值,
   1 没试过,而 DodoNameplate 那边 0 又是另一个意思 —— 三个候选三种语义,这种地方别赌。
 
@@ -178,9 +182,10 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 | 右侧网格排布不对 | 三件套里有一件没设对,见 `MakeRightBox` 上面那段(Axis / GrowthDirection 的参数顺序 / MaximumLineSize 是**像素**) |
 | 右侧明明该有 buff 却空着 | `maxFrameCount` 小值退化 ⇒ `/dch raidcols 3` + `/reload` |
 | 右边**整片**没了(连嗜血一起) | `SetEnabled` 是**容器级**不是 group 级 ⇒ 共享容器被其中一排关掉了(见 `ApplyBoxFilter`) |
+| **DoT 那排三格画同样的东西**(而且不是你配的那三个) | filter 没生效。**先看目标是不是友方 / 有没有目标** —— 那是它的准入前提(坑 5);`/dch probe` 一行报准入 |
 | 一串 `attempt to call a nil value` | `AuraSets.lua` 没加载(TOC 少一行,或**新文件要完整重启客户端**,`/reload` 不重扫)。登录时会先吵一句 |
 
-## 🔴 四个真栽过的坑
+## 🔴 五个真栽过的坑
 
 **1. `UnitChannelInfo` 和 `UnitCastingInfo` 的返回顺序从第 7 位起就分叉**
 (引导是 `notInterruptible`,施法是 `castID`),`spellID` 一个在第 8 位一个在第 9 位。
@@ -212,10 +217,42 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 (`auraGroup:SetCandidateFilters` 的实现不在可读的 Lua 源码里,大概率在 C 层)。
 **修的是放大器,不是根因** —— 失败现在会吵一句 + 下次刷新自动重试。
 
-🔬 **复发时跑 `/dch probe`**(常驻,不是临时探针):报 `UnitCanAssist` / 三排的 `#list`+`sig`+推送结果,
+🔬 **复发时跑 `/dch probe`**(常驻,不是临时探针):报 `UnitCanAssist` / **DoT 每格的「该盯/已推/重推」+ 准入判定**(0.11.1 补上 —— 之前这个探针**只覆盖右边三排,恰好漏掉了唯一坏过的那排**)/ 三排的 `#list`+`sig`+推送结果,
 并**绕开 sig 缓存强推一次**。⚠ 它自带一行「我身上 HELPFUL 光环 = N 个」——
 **N = 0 时整次结果零信息量**(三格是空的会变成必然结果,跟 filter 好坏无关)。
 输出同时进 DodoProbe 的落盘日志,Claude 直接读文件,不用截屏(见 canon `rules/wow-addons.md`)。
+
+**5. DoT 那排的 filter 一辈子只推一次,而那一次多半推在**没目标 / 友方目标**上(0.11.1 修)**
+
+暴雪的准入规则(canon `rules/wow-addons.md` 抄自 `AuraContainerUtil.CanApplyIdentityCandidateFilters`)
+**只禁两格:友方身上的 debuff、敌方身上的 buff**。DoT 这排正是「HARMFUL 挂在 `target` 上」——
+⇒ **目标是友方、或压根没目标时,`includeSpellIDs` 落进被禁那格,被静默丢掉**(不抛错,`pcall` 看不见)。
+而 0.11.0 之前:filter 只在 `ApplyAuraFilters` 里推,那个函数只在**开局 / 换专精 / 动设置**时跑;
+`PLAYER_TARGET_CHANGED` 只调 `RefreshDots()`(刷数据,不重推 filter)。
+⇒ 登录那一刻若没敌对目标,这排就**永久**停在「没有 candidate filter」= 全放行 = 三格画同样的东西。
+
+🔑 **跟第 4 条是同一个症状、不同的根因** —— 而这正是它难查的地方:
+第 4 条修完(2026-08-16)之后 2026-08-18 又复发了一次,同样三格画同一个东西、同样零报错。
+**「修过一次的症状再次出现」不等于「上次没修好」**,得当成一个新的根因去查。
+
+**0.11.1 的修法(对两种可能都成立,故意的)**:准入到底是**推送那一刻**判、还是**每次筛选**时判,
+我没验出来 —— 所以两头都堵:
+- ① **换目标时重推**(`PLAYER_TARGET_CHANGED` → `ApplyDotFilters()` → `RefreshDots()`)。
+  若是推送时判 ⇒ 一选中敌对目标就自动补上。`slot.spellID` 的语义随之改成
+  「**在合格目标上**真推下去的是什么」,不合格时不记 ⇒ 保证会重试。
+- ② **fail-closed**:`DotUnitEligible()` 判不合格就把这排 `SetEnabled(false)` 整个收起来。
+  若是筛选时判 ⇒ 那一刻画出来的必然是没筛过的一堆,收起来才不撒谎。
+  **一格空着是可读状态,一格画着不该它画的东西是在撒谎** —— 监控面板撒谎比不显示贵得多。
+- 判据问不出来(`pcall` 失败)一律按**不合格**算:说不清就按最严的走。
+
+⚠ **如实标注**:这是**推理出来的根因,没在真机上确证**(推理链:canon 里那条准入规则 + 代码里
+「只推一次、换目标不重推」这个可读事实)。真机复发时先跑 `/dch probe`,它现在会直接报
+「DoT filter 准入 合格/不合格」。**别把这段读成已确证。**
+
+☑ **A/B**:`tools/test_dotgate.lua` 从真文件抠出 `DotUnitEligible` 跑 5 条 + 2 条种回缺陷
+(把 fail-closed 写反 / 干脆不判敌友)—— 两条都必须变红,否则那个测试是空转的。
+
+---
 
 ---
 
