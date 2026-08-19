@@ -4,7 +4,7 @@
 ## Title: DodoCombatHUD
 ## Notes: dodo的战斗监控HUD(自绘;目标DoT+血条+主资源+次要资源分段条+施法引导条+大招存续+团队增益,多职业)
 ## Author: Doodo
-## Version: 0.11.1
+## Version: 0.11.2
 ## SavedVariables: DodoCombatHUDDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

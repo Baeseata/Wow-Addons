@@ -781,20 +781,46 @@ local function ApplyBoxFilter(b, list, on)
     end
 end
 
+-- 一个判据「是不是**明文的真**」。secret / 问不出来 ⇒ 一律 false。
+-- 🔴 `issecretvalue` 必须**排在取值之前**:secret 保留原生类型,`type(v)=="boolean"` 挡不住它,
+--    而报错是在**比较**那一刻抛的(canon:12.x secret 的第一课)。
+-- 🔴 末尾是 **truthy 判断,不是 `v == true`**。第一版写的 `== true` 差点发出去 ——
+--    暴雪的 Unit* 系有一大批**返回 `1`/`nil` 而不是 `true`/`false`** 的老 API,
+--    真撞上的话这个判据恒为假 ⇒ **DoT 那排从此一次都不显示**。而它 fail-closed、不报错、
+--    看起来完全像"目标一直不合格" —— 比原来那个 bug 更难查。
+--    secret 已经在上面挡掉了,所以这儿放宽到 truthy 是安全的。
+--    (是 tools/test_dotgate.lua 那条 A/B 空转、去查为什么空转时逼出来的。)
+local function PlainTruthy(v)
+    if type(issecretvalue) == "function" then
+        local okS, isS = pcall(issecretvalue, v)
+        if not okS or isS then return false end   -- 是 secret,或连问都问不出来 ⇒ 按最严的算
+    end
+    return v ~= nil and v ~= false
+end
+
 -- 目标能不能承载「我上的 DoT」这个概念 —— **这是 filter 推不推得下去的前提,不是显示偏好**。
 -- 暴雪的 `AuraContainerUtil.CanApplyIdentityCandidateFilters` 只禁两格:**友方身上的 debuff**
 -- 和敌方身上的 buff。我们这排正是「HARMFUL 挂在 target 上」⇒ **目标是友方、或压根没目标时,
 -- includeSpellIDs 落进被禁的那一格,被静默丢掉**(不抛错,pcall 看不见)⇒ 容器退回
 -- 「没有 candidate filter」,而 nil 在暴雪那边是**全放行** ⇒ 那一格画的是「我在他身上的
 -- 全部 debuff」,三格于是画同样的东西,且全程零报错。
--- 🔴 问不出来(pcall 失败)一律按**不合格**算:说不清自己在什么状态就按最严的走 ——
---    反过来写的话,一个读不到的判据会变成「那就推吧」,而推不下去正是这个 bug 的入口。
+--
+-- 🔴 **判据用 `UnitCanAttack` 的正向式,不用 `not UnitCanAssist`**(0.11.2 改)。
+--    第一版写的是「不可协助 ⇒ 合格」—— 那是**负向谓词**,凡是"不可协助"的东西(读不出来、
+--    nil、secret、跨阵营、载具、相位不同…)统统被反授成"合格"。canon 那条
+--    「PERMISSIVE policy 用负向谓词 = 反授其它全部」讲的就是这个形状:**授权用等号,别用不等号。**
+--    实撞(2026-08-19):团里一个友方目标上 `UnitCanAssist` 返回 **false** ——
+--    于是第一版判成"合格"、照推不误,而 filter 该被暴雪丢的照样丢 ⇒ **修了个寂寞**。
+--    `UnitCanAttack` 是正向的:它为真才合格,读不到就不合格,天然 fail-closed。
+--
+-- ⚠ **两个判据都要在真机上量过才算数**(`/dch probe` 现在把 4 个来源一起打出来)——
+--    「城里对陌生人是明文」不替「副本里对团友」背书,那是两个环境。
 local function DotUnitEligible()
     local okE, exists = pcall(UnitExists, "target")
-    if not okE or not exists then return false end
-    local okA, assist = pcall(UnitCanAssist, "player", "target")
+    if not okE or not PlainTruthy(exists) then return false end
+    local okA, canAttack = pcall(UnitCanAttack, "player", "target")
     if not okA then return false end
-    return not assist
+    return PlainTruthy(canAttack)
 end
 
 -- ① 目标 DoT:固定格位。列表短于 DOT_SLOTS 时,多出来的格子收起来 ——
@@ -1462,11 +1488,31 @@ local function ProbeAuraFilters()
     -- ④ DoT 那排。**0.11.1 之前这个探针根本没覆盖它** —— 而 2026-08-16 那次坏的就是这排,
     --    2026-08-18 又复发了一次。它跟右边三排**准入规则不同**(HARMFUL 挂在 target 上
     --    ⇒ 目标必须是敌方),所以右边三排全绿完全不替它背书。
-    local okT, hasT   = pcall(UnitExists, "target")
-    local okA, assist = pcall(UnitCanAssist, "player", "target")
-    emit(("  target 存在=%s  可协助=%s  ⇒ DoT filter 准入 %s"):format(
-        okT and tostring(hasT) or "ERROR", okA and tostring(assist) or "ERROR",
-        DotUnitEligible() and "|cff33ff33合格|r" or "|cffff3333不合格(友方/无目标)|r"))
+    -- 🔴 **先报被测对象是谁。** 上一版没打印目标身份 ⇒ 一份读数拿回来之后,
+    --    「那到底是哪个目标」只能靠回忆,而回忆和读数打架时谁也说服不了谁
+    --    (canon:凡采样类探针,输出里必须报出被测对象的身份)。
+    -- 🔴 **四个来源一起打,不靠单一判据。** 2026-08-19 实撞:团里友方目标上
+    --    `UnitCanAssist` 返回 false —— 拿它单独反推敌友会得出一个干净的错结论。
+    --    名字可能是 secret ⇒ 拼进字符串前必须先问,直接 tostring 会当场崩。
+    local function show(fn, ...)
+        local ok, v = pcall(fn, ...)
+        if not ok then return "ERROR" end
+        if type(issecretvalue) == "function" then
+            local okS, isS = pcall(issecretvalue, v)
+            if not okS then return "?" end
+            if isS then return "SECRET" end
+        end
+        return tostring(v)
+    end
+    emit(("  target: 名字=%s  玩家=%s  在队伍=%s"):format(
+        show(UnitName, "target"), show(UnitIsPlayer, "target"),
+        show(UnitPlayerOrPetInParty, "target")))
+    emit(("  敌友四个来源: CanAttack=%s  CanAssist=%s  IsFriend=%s  Reaction=%s"):format(
+        show(UnitCanAttack, "player", "target"), show(UnitCanAssist, "player", "target"),
+        show(UnitIsFriend, "player", "target"), show(UnitReaction, "player", "target")))
+    emit(("  target 存在=%s  ⇒ DoT filter 准入 %s   (判据 = CanAttack 必须是明文 true)"):format(
+        show(UnitExists, "target"),
+        DotUnitEligible() and "|cff33ff33合格|r" or "|cffff3333不合格(友方/无目标/读不到)|r"))
     -- 对照物:目标身上「我上的 debuff」有几个。0 的话「这排是空的」是必然结果、
     -- 跟 filter 好坏无关 = 零信息量(canon:跑 A/B 前先确认你那个计数器现在真的会动)。
     -- 只数个数,**一个字段值都不碰** —— 碰了万一是 secret 当场炸。
