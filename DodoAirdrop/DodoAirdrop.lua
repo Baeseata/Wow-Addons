@@ -179,6 +179,9 @@ local function announce(mapName)
     if SOUNDKIT and SOUNDKIT.ALARM_CLOCK_WARNING_3 then
         PlaySound(SOUNDKIT.ALARM_CLOCK_WARNING_3, "Master")
     end
+    if type(FlashClientIcon) == "function" then
+        FlashClientIcon()
+    end
     print(string.format("|cff33ff99DodoAirdrop|r: %s 记录于 %s", mapName, formatAbsolute(now())))
 end
 
