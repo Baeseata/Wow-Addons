@@ -1,5 +1,10 @@
 # DodoInspect 12.1 逐专精发布矩阵
 
+> ⛔ **这是 2026-08-13 那天的快照,不是现状** —— 内容一个字都没改(改了就是伪造历史)。
+> 2026-08-22 的 S2 开季后复核动了 **252 / 261 / 1468** 三个专精,下面那三行**已经过期**。
+> **当前生效的顺序一律读 `Data/StatPriority.lua` 本身**(每个 entry 自带 `source` + `date`);
+> 改动脉络和「换季怎么重抓」见 `CLAUDE.md` 的 1.13.1 节。
+
 日期：2026-08-13
 
 发布版本：1.9.0（2026-08-13 已发布；tag `DodoInspect-v1.9.0`；CurseForge file [8643276](https://www.curseforge.com/wow/addons/dodoinspect/files/8643276)）

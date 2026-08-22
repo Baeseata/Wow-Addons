@@ -48,11 +48,14 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [252] = { -- Unholy
+        -- 2026-08-22: author flipped Crit ahead of Mastery on 08-17
+        -- ("Crit tends to be slightly better than Mastery on average").
+        -- Both hero trees (San'layn / Rider) list the same order.
         current = true,
         provisional = true,
-        raid = { "mastery", "crit", "haste", "versatility" },
+        raid = { "crit", "mastery", "haste", "versatility" },
         source = "Wowhead (Taeznak)",
-        date = "2026-08-13",
+        date = "2026-08-22",
     },
 
     ------------------------------------------------------------------
@@ -139,18 +142,20 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [1468] = { -- Preservation; healing baseline
+        -- 2026-08-22: the previous hero-tree split was a misreading. The two
+        -- side-by-side boxes on the source page are titled "Raid" and
+        -- "Mythic+", not Flameshaper / Chronowarden; that page carries no
+        -- hero-tree markers at all, and Method (08-20) is also tree-agnostic.
+        -- Raid agrees across both sources. For M+ the sources split by intent:
+        -- Method separates healing-output (M > C > H > V) from damage-leaning
+        -- (C > H > M > V) and Wowhead lists only the damage-leaning one. House
+        -- rule is healers default to healing output, which equals the raid
+        -- order, so this collapses to 1x1. provisional: M+ sources disagree.
         current = true,
-        source = "Wowhead / Spiritbloom.Pro / Method",
-        date = "2026-08-13",
-        builds = {
-            [37] = { -- Flameshaper
-                raid = { "mastery", "crit", "haste", "versatility" },
-            },
-            [38] = { -- Chronowarden
-                raid = { "mastery", "crit", "haste", "versatility" },
-                mythic = { "mastery", "haste", "crit", "versatility" },
-            },
-        },
+        provisional = true,
+        raid = { "mastery", "crit", "haste", "versatility" },
+        source = "Wowhead / Method (Cryve)",
+        date = "2026-08-22",
     },
     [1473] = { -- Augmentation
         current = true,
@@ -369,19 +374,18 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [261] = { -- Subtlety
+        -- 2026-08-22: page was rewritten 08-19 into a 2x2 grid (Deathstalker /
+        -- Trickster x Single Target / Mythic+). All four cells are identical,
+        -- so this stays 1x1. Versatility moved ahead of Crit, and the split
+        -- Haste targets (raid 1100 / M+ 650-700) collapsed into a flat ~700.
         current = true,
         provisional = true,
-        raid = { "mastery", "haste", "crit", "versatility" },
-        contentGoals = {
-            raid = {
-                { stat = "haste", value = 1100, unit = "rating" },
-            },
-            mythic = {
-                { stat = "haste", min = 650, max = 700, unit = "rating" },
-            },
+        raid = { "mastery", "haste", "versatility", "crit" },
+        goals = {
+            { stat = "haste", value = 700, unit = "rating" },
         },
         source = "Wowhead (fuu1)",
-        date = "2026-08-13",
+        date = "2026-08-22",
     },
 
     ------------------------------------------------------------------

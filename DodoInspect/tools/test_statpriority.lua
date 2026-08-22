@@ -322,5 +322,95 @@ checkEqual(ns.FormatStatTarget(20.5), "20.5",
 checkEqual(ns.FormatStatTarget(1600.02), "1600",
     "format: floating-point noise collapses to the whole number")
 
+------------------------------------------------------------------
+-- Shape of the shipped data (Data/StatPriority.lua)
+------------------------------------------------------------------
+
+-- Everything above this line runs on fake specs (9901+) on purpose, so
+-- the suite does not go red the day the guide data is refreshed. That
+-- leaves the shipped table itself with nothing watching it at all:
+-- A/B on 2026-08-22 planted "critt" in spec 252 and all 198 assertions
+-- stayed green. That table is hand-edited every time Blizzard tunes,
+-- which is exactly when a typo gets in. These assertions check its
+-- SHAPE (never a specific order -- refreshing the guide data must not
+-- turn this red).
+
+local VALID_STATS = {
+    crit = true, haste = true, mastery = true, versatility = true,
+}
+
+local seenSpecs, seenOrders = 0, 0
+
+local function checkOrder(order, label)
+    local count = 0
+    for _, element in ipairs(order) do
+        local group = type(element) == "table" and element or { element }
+        for _, stat in ipairs(group) do
+            checks = checks + 1
+            if not VALID_STATS[stat] then
+                failures = failures + 1
+                print(string.format("FAIL  %s: unknown stat key %q",
+                                    label, tostring(stat)))
+            end
+            count = count + 1
+        end
+    end
+    checkEqual(count, 4, label .. ": names all four secondaries exactly once")
+    seenOrders = seenOrders + 1
+end
+
+local function checkGoals(goals, label)
+    for stat in pairs(goals or {}) do
+        checks = checks + 1
+        if not VALID_STATS[stat] then
+            failures = failures + 1
+            print(string.format("FAIL  %s: goal on unknown stat %q",
+                                label, tostring(stat)))
+        end
+    end
+end
+
+for specID, entry in pairs(ns.StatPriority) do
+    if specID < 9000 then -- skip the fakes injected above
+        seenSpecs = seenSpecs + 1
+        local tag = "data[" .. specID .. "]"
+        checkEqual(entry.current, true, tag .. ": is explicitly current")
+        check(type(entry.source) == "string" and #entry.source > 0,
+              tag .. ": names a source")
+        check(type(entry.date) == "string" and #entry.date == 10,
+              tag .. ": carries an ISO review date")
+        check((entry.raid ~= nil) ~= (entry.builds ~= nil),
+              tag .. ": is either flat or per-tree, not both and not neither")
+
+        if entry.raid then checkOrder(entry.raid, tag .. ".raid") end
+        if entry.mythic then checkOrder(entry.mythic, tag .. ".mythic") end
+        for treeID, build in pairs(entry.builds or {}) do
+            local btag = string.format("%s.builds[%d]", tag, treeID)
+            check(build.raid ~= nil, btag .. ": a tree row must define raid")
+            if build.raid then checkOrder(build.raid, btag .. ".raid") end
+            if build.mythic then checkOrder(build.mythic, btag .. ".mythic") end
+        end
+
+        checkGoals(entry.goals and (function()
+            local byStat = {}
+            for _, g in ipairs(entry.goals) do byStat[g.stat] = true end
+            return byStat
+        end)(), tag .. ".goals")
+        for content, list in pairs(entry.contentGoals or {}) do
+            local byStat = {}
+            for _, g in ipairs(list) do byStat[g.stat] = true end
+            checkGoals(byStat, tag .. ".contentGoals." .. content)
+        end
+    end
+end
+
+-- Reverse assertions: without these the loop above could match nothing
+-- and report a clean, confident, entirely vacuous pass. (canon
+-- rules/engineering.md, guard family type (a) third form.)
+check(seenSpecs >= 40, string.format(
+    "data: the sweep actually reached the shipped table (saw %d specs)", seenSpecs))
+check(seenOrders >= 45, string.format(
+    "data: and reached the orders inside it (saw %d orders)", seenOrders))
+
 print(string.format("%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

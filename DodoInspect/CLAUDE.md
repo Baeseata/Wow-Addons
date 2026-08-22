@@ -544,6 +544,59 @@ lua tools/test_gearrank.lua               # 必须 0 failures
 · `git ls-remote --tags origin 'DodoInspect-*'` · TOC 的 `## Version`。
 ⚠ **不是 `PUBLISHING.md`,那个文件不存在**(2026-08-14 实查)。
 
+## 1.13.1:S2 开季后的攻略数据复核(2026-08-22)
+
+改了 **3 个专精**,其余 37 个**核过没变**。⚠ 三条的性质不一样,别当成一批:
+
+| spec | 改动 | 性质 |
+|---|---|---|
+| 252 邪DK | `M>C>H>V` → **`C>M>H>V`** | 作者 08-17 真改了(正文写明 "Crit tends to be slightly better than Mastery") |
+| 261 敏锐 | `M>H>C>V` → **`M>H>V>C`**;两条急速目标(1100/650-700)合成一个 `~700` | 作者 08-19 真改了 |
+| 1468 恩护 | **删掉 builds,压成 1×1 `M>C>H>V`** + 标 provisional | **我们当初读错了**,不是数据更新 |
+
+🔴 **1468 那条值得记**:原来按 Flameshaper(37) / Chronowarden(38) 分了两个英雄树 ——
+而源页面上那两个并排 box 的标题是 **"Preservation Raid Stat Priority"** 和
+**"Preservation Mythic+ Stat Priority"**,是**内容分格**。**把「两个并排的框」默认读成了「两个英雄树」。**
+判据(一次 grep 就能验):Wowhead 分英雄树时会在列表前放 `[symbol=wow-hero-talent-<树名>]`,
+**恩护那页 `wow-hero-talent` 零命中**。M+ 取治疗向(= raid 序)是照本文既定口径
+「坦克默认生存,治疗默认治疗量」,而两个源在 M+ 上确实分歧 ⇒ 挂 `provisional`。
+
+### 🔑 换季 / 调优后怎么复核(**下次照这个走,别再手点 40 页**)
+
+⚠ **本文别处那句「Wowhead 攻略页 WebFetch 抓不到,只回导航」对 `curl` 不成立** ——
+正文是 BBCode,完整躺在 HTML 里,`dateModified` 也在。40 页一次扫完:
+
+```bash
+curl -s -A "Mozilla/5.0" "https://www.wowhead.com/guide/classes/<职业>/<专精>/stat-priority-pve-<dps|tank|healer>"
+```
+- **更新时间** = `"dateModified":"…"`。⚠ **34/37 页会挤在同一分钟**(Wowhead 批量重发布,
+  2026-08-12 那次就是)—— **同一分钟 = 一次机器动作,不是 34 个作者各自改了**,
+  真正动过的是那几个时间戳落单的。Icy Veins 同理(13/13 同一秒),但它的 **changelog 逐页不同**,
+  可以拿来验这个量还有没有分辨力。
+- **顺序** = 抓 `[ol]…[/ol]`。⚠ **两种写法都要认**:`[li][b]Haste[/b] (~700)` **和**
+  裸的 `[li]Strength[/li]` —— 只认前者会静默漏掉一批(武器战就是,第一版 0 命中)。
+- **分不分英雄树** = 列表前 320 字符内有没有 `wow-hero-talent-<树名>`;**分不分内容** = `[tab name="…"]`。
+  ⚠ 摆成 2×2 不代表内容不同 —— 敏锐那页 2 树 × 2 tab **四格完全一样**,所以仍是 1×1。
+- **Method.gg 的正文是 JS 渲染的,curl 只拿得到日期**(`Last Updated: 17th Aug, 2026`,
+  逐页不同 = 有分辨力),正文要走 WebFetch。
+
+**时机比方法重要**:攻略作者**滞后于暴雪调优**。2026-08-18 第一轮调优落地后,
+Icy Veins **13/13 零更新**、Wowhead **34/37 零更新** ⇒ 开季当天去抓等于抓开季前的数据。
+⇒ **等调优落地 + 作者跟进(约 3~7 天)再抓**,别在调优当周抓。
+
+### 🔴 顺带补的 guard:那份数据文件此前是**完全裸奔**的
+
+A/B 实测:在 252 里种一个 `"critt"`,`test_statpriority.lua` + `test_gearrank.lua`
+**198 条断言全绿** —— 因为前者的断言全打在它自己注入的 fake spec(9901+)上,
+**加载了 `Data/StatPriority.lua` 却一条都没断言它**。
+现补一节形状 guard(51 → **527 checks**):stat key 合法 · 每条 order 恰好四个副属性各一次 ·
+`current` 显式 · 有 source/date · flat 与 builds 二选一 · goals 的 stat key 合法。
+**只查形状不查具体顺序** —— 换季刷新数据不该让它变红。
+末尾两条**反向断言**(`seenSpecs >= 40` / `seenOrders >= 45`)防的是「循环一个都没匹配到、
+干干净净报了个 pass」那种真空绿。
+A/B 三种**真实**手改失败模式各精确红一条:打错 stat key(`data[252].raid: unknown stat key "critt"`)·
+重排时漏一个(`got 3, expected 4`)· 忘了 `current=true`。
+
 ## 1.13.0:属性优先级可自定义(**未上过真机**)
 
 侧栏顶部那行右侧的齿轮 → 开编辑窗:4 项绿字属性排序(`>` / `=`)、团/米各一条、
