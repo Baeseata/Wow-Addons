@@ -242,13 +242,18 @@ ns.Config = {
     -- recipe in CLAUDE.md ("tooltip rendered at 6/6 / 9/6") -- one /run
     -- -- and delete this paragraph once it has been seen in game.
     --
-    -- Two things the same /run settles for free, both currently unknown:
-    --   * whether the tooltip reads "3/6" or "3/8". Group 617 has eight
-    --     entries; the last two carry a Flags bit that is believed to
-    --     mean "past the displayed cap", which would make it 3/6. Nobody
-    --     has checked that belief against an actual tooltip.
-    --   * whether the tooltip names the track "Hero". No DB2 table
-    --     carries a track name; "Hero" is read off the track's position.
+    -- "3 of 6" is settled, and not by counting rows: group 617 has eight
+    -- entries, but only five carry an ItemExtendedCostID -- five paid
+    -- upgrade steps, so six ranks -- and the last two are zero-cost
+    -- overflow. All five of this season's tracks have that same 5-paid
+    -- shape, including 618, whose 337/340/344 are likewise unbuyable
+    -- (they drop, they are not upgraded to). Counting rows instead gives
+    -- "3/8" and "Myth 6/9", both wrong.
+    --
+    -- Still open, and the same /run answers it: whether the tooltip
+    -- actually names the track "Hero". No DB2 table carries a track
+    -- name at all -- "Hero" is read off the track's position in the
+    -- chain, so it is a label, not a string we found.
     --
     -- SEASONAL, like the two above: re-derive all three together.
     GEAR_HERO_BONUS_ID = 12843,
