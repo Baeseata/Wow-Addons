@@ -1,338 +1,629 @@
 -- DodoGrid :: Auras.lua
--- Friendly party/raid aura indicators on each cell. 12.0 Secret-Values safe (see CLAUDE.md
--- "FRIENDLY-AURA FEASIBILITY VERDICT" + DodoNameplate/GOTCHAS.md S3). Three healer categories,
--- category-driven ONLY (per-spellID curation is DEAD in instances):
---   (1) mine      : HELPFUL|PLAYER                                   -> small icon row, bottom-left
---   (2) important : HARMFUL|RAID / RAID_IN_COMBAT / CROWD_CONTROL    -> ONE center icon (priority pick)
---   (3) dispel    : HARMFUL|RAID_PLAYER_DISPELLABLE                  -> full-cell border, dispel-school colored
+-- Friendly party/raid aura indicators for Retail 12.1.
 --
--- Enumerate via C_UnitAuras.GetUnitAuras(unit, "HELPFUL"/"HARMFUL", nil, sortRule); classify via
--- C_UnitAuras.IsAuraFilteredOutByInstanceID (server-side, NON-secret bool); every visual is driven from
--- a secret-safe SINK (SetTexture/SetCooldownFromDurationObject/SetAlphaFromBoolean/SetText/Set*Color),
--- never a Lua compare on a maybe-secret spellID/duration. Center-slot priority among the categories an
--- aura matches is user-configurable via ns.db.auras.important.centerPriority (CENTER_ORDERS presets).
---
--- COMBAT SAFETY: all aura frames are CHILDREN of the secure button. INVARIANT #2 only protects a secure
--- button's ANCESTORS / anchor-targets (moving them would move the button); descendants are NOT protected,
--- so Show/Hide/SetPoint/SetSize on these icons is legal in combat -- which is exactly when debuffs appear.
--- (v0.3.1 already does roleIcon:Show()/Hide() + b:SetAlpha() in combat on these same buttons.)
+-- Restricted auras are owned end-to-end by Blizzard's CustomAuraContainerTemplate. This module
+-- declares fixed filters and presentation sinks; it never enumerates aura-event data or reads
+-- an aura instance in addon Lua.
 
 local ADDON, ns = ...
 
-local CUA             = C_UnitAuras
-local GetUnitAuras    = CUA and CUA.GetUnitAuras
-local IsFilteredOut   = CUA and CUA.IsAuraFilteredOutByInstanceID
-local GetAuraDuration = CUA and CUA.GetAuraDuration
-local GetDispelColor  = CUA and CUA.GetAuraDispelTypeColor
-local TruncateWhenZero = C_StringUtil and C_StringUtil.TruncateWhenZero
-local CreateDuration  = C_DurationUtil and C_DurationUtil.CreateDuration
-local SORT = Enum and Enum.UnitAuraSortRule and Enum.UnitAuraSortRule.Expiration
-
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-local TRIM = 0.08          -- crop the default icon border (square icons -> equal crop)
-local GAP  = 1
-local MINE_MAX = 6         -- pool size for the mine row (config caps the visible count below this)
+local COUNT_TEMPLATE = _G.NumberFontNormalSmall and "NumberFontNormalSmall" or nil
+local TRIM = 0.08
+local GAP = 1
+local MINE_MAX = 6
 
-local CENTER_IMPORTANT = { 1, 0.65, 0, 1 }      -- RAID / RAID_IN_COMBAT -> gold
-local CENTER_CC        = { 0.85, 0.10, 0.10, 1 } -- crowd control          -> red
-local MINE_BORDER      = { 0, 0, 0, 0.9 }        -- my buffs               -> subtle dark
-local DISPEL_FALLBACK  = { 0.62, 0.30, 1.00, 1 } -- dispellable, color API unavailable -> purple
+local CENTER_IMPORTANT = { 1, 0.65, 0, 1 }
+local CENTER_CC        = { 0.85, 0.10, 0.10, 1 }
+local MINE_BORDER      = { 0, 0, 0, 0.9 }
+local DISPEL_FALLBACK  = { 0.62, 0.30, 1.00, 1 }
 
--- Center-icon priority presets (user-configurable, ns.db.auras.important.centerPriority). Each maps a
--- category -> rank; an aura can match several categories at once (e.g. RAID-flagged AND dispellable), so
--- the engine scores every match and the highest rank wins the single center slot.
-local CENTER_ORDERS = {
-	raid   = { raid = 3, dispel = 2, cc = 1 },   -- 重要减益 > 可驱散 > CC (default)
-	dispel = { dispel = 3, raid = 2, cc = 1 },   -- 可驱散 > 重要减益 > CC
-	cc     = { cc = 3, raid = 2, dispel = 1 },   -- CC > 重要减益 > 可驱散
+-- Center categories use one secure aura slot each and overlap at the same point. Frame level chooses
+-- the winner; when a higher-priority slot is empty Blizzard hides it and the next one shows through.
+-- Slots allocate one button apiece, avoiding the ten-button batch that every aura group preallocates.
+local CENTER_SEQUENCES = {
+	raid   = { "raid", "raidCombat", "dispel", "cc" },
+	dispel = { "dispel", "raid", "raidCombat", "cc" },
+	cc     = { "cc", "raid", "raidCombat", "dispel" },
+}
+
+local CENTER_FILTERS = {
+	raid       = "HARMFUL|RAID",
+	raidCombat = "HARMFUL|RAID_IN_COMBAT",
+	dispel     = "HARMFUL|RAID_PLAYER_DISPELLABLE",
+	cc         = "HARMFUL|CROWD_CONTROL",
 }
 
 local Auras = {}
 ns.Auras = Auras
 
--- Dispel-school color curve (mirrors Plater_Auras.lua): a Step curve mapping the dispel-type index to a
--- color. GetAuraDispelTypeColor evaluates it C-side off the aura's (secret) dispel type, so we never read
--- the type ourselves -- it just returns a usable Color. We OWN the colors here.
+local bundles = setmetatable({}, { __mode = "k" })
+local errorReported = false
+local templateAvailable
+
+----------------------------------------------------------------------------------------------------
+-- Capability + failure containment
+----------------------------------------------------------------------------------------------------
+local function HasAuraContainerTemplate()
+	if templateAvailable then return true end
+	local getTemplateInfo = C_XMLUtil and C_XMLUtil.GetTemplateInfo
+	if type(getTemplateInfo) ~= "function" then return false end
+	local called, info = pcall(getTemplateInfo, "CustomAuraContainerTemplate")
+	if called and info then templateAvailable = true end
+	return templateAvailable == true
+end
+
+local function ErrorHandler(err)
+	if not errorReported then
+		errorReported = true
+		local handler = geterrorhandler and geterrorhandler()
+		if type(handler) == "function" then return handler(err) end
+	end
+	return err
+end
+
+local function DisableRecord(record)
+	if record and record.container then
+		pcall(record.container.SetEnabled, record.container, false)
+	end
+end
+
+local function DisableBundle(bundle)
+	if not bundle then return end
+	DisableRecord(bundle.mine)
+	DisableRecord(bundle.center)
+	DisableRecord(bundle.dispel)
+	bundle.failed = true
+end
+
+local function ProtectedCall(bundle, fn, construction)
+	if not bundle or bundle.failed then return false end
+	local ok = xpcall(fn, ErrorHandler)
+	if ok then
+		if not bundle.needsGeometry and not bundle.needsRestyle
+			and not bundle.needsConfigRetry and not bundle.needsRefreshRetry then
+			bundle.consecutiveRuntimeFailures = 0
+		end
+		return true
+	end
+
+	if construction then
+		DisableBundle(bundle)
+	else
+		-- A restriction transition can reject a post-construction write for one frame. Keep that
+		-- failure local and retry after the restriction lifts; only quarantine a cell after repeats.
+		bundle.consecutiveRuntimeFailures = (bundle.consecutiveRuntimeFailures or 0) + 1
+		bundle.needsGeometry = true
+		bundle.needsRestyle = true
+		bundle.needsRefreshRetry = true
+		bundle.geometryKey = nil
+		bundle.restyleKey = nil
+		bundle.mineConfigKey = nil
+		bundle.centerConfigKey = nil
+		bundle.dispelConfigKey = nil
+		bundle.needsConfigRetry = true
+		if bundle.consecutiveRuntimeFailures >= 3 then DisableBundle(bundle) end
+	end
+	return false
+end
+
+local function CanTouchAuraButtons()
+	local shouldBeSecret = C_Secrets and C_Secrets.ShouldAurasBeSecret
+	if type(shouldBeSecret) == "function" then
+		local ok, secret = pcall(shouldBeSecret)
+		if not ok or secret then return false end
+	end
+	if InCombatLockdown and InCombatLockdown() then return false end
+	return true
+end
+
+local function CanChangeProtectedGeometry()
+	return not (InCombatLockdown and InCombatLockdown())
+end
+
+----------------------------------------------------------------------------------------------------
+-- Dispel-school color curve. Blizzard evaluates it on the secret aura and applies the result to the
+-- registered border textures; addon Lua never receives or branches on the aura's dispel type.
+----------------------------------------------------------------------------------------------------
 local function MakeDispelCurve()
-	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Step) then
+	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve
+		and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Step) then
 		return nil
 	end
-	local c = C_CurveUtil.CreateColorCurve()
-	if not c then return nil end
-	c:SetType(Enum.LuaCurveType.Step)
-	local function col(r, g, b) return CreateColor and CreateColor(r, g, b, 1) or { r = r, g = g, b = b, a = 1 } end
-	c:AddPoint(0,  col(0.80, 0.00, 0.00))   -- none / physical -> red
-	c:AddPoint(1,  col(0.20, 0.60, 1.00))   -- Magic   -> blue
-	c:AddPoint(2,  col(0.60, 0.00, 1.00))   -- Curse   -> purple
-	c:AddPoint(3,  col(0.60, 0.40, 0.00))   -- Disease -> brown
-	c:AddPoint(4,  col(0.00, 0.70, 0.00))   -- Poison  -> green
-	c:AddPoint(9,  col(0.80, 0.20, 0.20))   -- enrage  -> red
-	c:AddPoint(11, col(0.80, 0.20, 0.20))   -- bleed   -> red
-	return c
+
+	local ok, curve = pcall(function()
+		local value = C_CurveUtil.CreateColorCurve()
+		if not value then return nil end
+		value:SetType(Enum.LuaCurveType.Step)
+		local function Color(r, g, b)
+			return CreateColor and CreateColor(r, g, b, 1) or { r = r, g = g, b = b, a = 1 }
+		end
+		value:AddPoint(0,  Color(0.80, 0.00, 0.00))
+		value:AddPoint(1,  Color(0.20, 0.60, 1.00))
+		value:AddPoint(2,  Color(0.60, 0.00, 1.00))
+		value:AddPoint(3,  Color(0.60, 0.40, 0.00))
+		value:AddPoint(4,  Color(0.00, 0.70, 0.00))
+		value:AddPoint(9,  Color(0.80, 0.20, 0.20))
+		value:AddPoint(11, Color(0.80, 0.20, 0.20))
+		return value
+	end)
+	return ok and curve or nil
 end
+
 local DISPEL_CURVE = MakeDispelCurve()
-
--- A category "passes" when IsAuraFilteredOutByInstanceID returns an explicit false (non-secret bool, or
--- nil when unavailable). Treat ONLY false as a pass so a nil can never false-positive.
-local function passes(unit, id, filter)
-	return IsFilteredOut and IsFilteredOut(unit, id, filter) == false
-end
+local DISPEL_TEXTURE_STYLE = Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
+	and Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset
 
 ----------------------------------------------------------------------------------------------------
--- Icon widget (tex + cooldown swipe + border + stack text). Reused for the mine row + the center icon.
+-- Presentation primitives. Every child of a CustomAuraButton is completely configured before it is
+-- handed to a Set*/Add* sink; those calls synchronously update the display.
 ----------------------------------------------------------------------------------------------------
-local function CreateIcon(parent)
-	local ic = CreateFrame("Frame", nil, parent)
-
-	local tex = ic:CreateTexture(nil, "ARTWORK")
-	tex:SetPoint("TOPLEFT", 1, -1)
-	tex:SetPoint("BOTTOMRIGHT", -1, 1)
-	tex:SetTexCoord(TRIM, 1 - TRIM, TRIM, 1 - TRIM)
-	ic.tex = tex
-
-	local cd = CreateFrame("Cooldown", nil, ic, "CooldownFrameTemplate")
-	cd:SetAllPoints(tex)
-	cd:SetReverse(true)                 -- dark wedge depletes (matches Blizzard / Plater)
-	cd:SetDrawEdge(true)
-	cd:SetFrameLevel(ic:GetFrameLevel() + 1)
-	if cd.SetCountdownAbbrevThreshold then cd:SetCountdownAbbrevThreshold(60) end
-	ic.cd = cd
-
-	local b = CreateFrame("Frame", nil, ic, "BackdropTemplate")
-	b:SetPoint("TOPLEFT", -1, 1)
-	b:SetPoint("BOTTOMRIGHT", 1, -1)
-	b:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-	b:SetFrameLevel(cd:GetFrameLevel() + 1)   -- above the swipe so the stack text stays on top
-	ic.b = b
-
-	local stk = b:CreateFontString(nil, "OVERLAY")
-	stk:SetPoint("BOTTOMRIGHT", 1, -1)
-	stk:SetJustifyH("RIGHT")
-	ic.stk = stk
-
-	ic:Hide()
-	return ic
+local function DisableAuraButtonMouse(button)
+	button:EnableMouse(false)
+	if button.SetMouseClickEnabled then button:SetMouseClickEnabled(false) end
+	if button.SetMouseMotionEnabled then button:SetMouseMotionEnabled(false) end
 end
 
-local function CreateRow(parent, n)
-	local row = CreateFrame("Frame", nil, parent)
-	row.icons = {}
-	for i = 1, n do row.icons[i] = CreateIcon(row) end
-	row:Hide()
-	return row
-end
-
-function Auras.Create(b)
-	if b.auraMine then return end
-	b.auraMine   = CreateRow(b, MINE_MAX)           -- (1) my buffs, bottom-left, grow right
-	b.auraCenter = CreateIcon(b)                     -- (2) important debuff, center (CreateIcon parents it to b)
-
-	-- (3) dispellable: full-cell colored border (above the bar so it reads as a cell highlight)
-	local db = CreateFrame("Frame", nil, b, "BackdropTemplate")
-	db:SetFrameLevel((b:GetFrameLevel() or 1) + 6)
-	db:Hide()
-	b.dispelBorder = db
-end
-
-----------------------------------------------------------------------------------------------------
--- Layout: size + position the three widgets relative to the button. Insecure (children of the button),
--- safe to call any time; in practice runs at build + on config change.
-----------------------------------------------------------------------------------------------------
-local function LayoutRow(row, w, h, n, showTimer, showStacks)
-	for i = 1, MINE_MAX do
-		local ic = row.icons[i]
-		ic:SetSize(w, h)
-		ic:ClearAllPoints()
-		if i == 1 then
-			ic:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-		else
-			ic:SetPoint("BOTTOMLEFT", row.icons[i - 1], "BOTTOMRIGHT", GAP, 0)
-		end
-		ic.stk:SetFont(FONT, math.max(7, h - 14), "OUTLINE")
-		ic.stk:SetShown(showStacks ~= false)
-		ic.cd:SetHideCountdownNumbers(not showTimer)
-		ic:Hide()
+local function CreateEdgeTextures(parent, color)
+	local edges = {}
+	for i = 1, 4 do
+		local edge = parent:CreateTexture(nil, "OVERLAY")
+		edge:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+		edges[i] = edge
 	end
-	row.max = n
-	row:SetSize((w + GAP) * n, h)
+	return edges
 end
 
-function Auras.Layout(b)
-	if not b.auraMine then return end
-	local a    = (ns.db and ns.db.auras) or {}
+local function SetEdgeThickness(edges, thickness)
+	local t = math.max(1, thickness or 1)
+	local top, bottom, left, right = edges[1], edges[2], edges[3], edges[4]
+
+	top:ClearAllPoints()
+	top:SetPoint("TOPLEFT")
+	top:SetPoint("TOPRIGHT")
+	top:SetHeight(t)
+
+	bottom:ClearAllPoints()
+	bottom:SetPoint("BOTTOMLEFT")
+	bottom:SetPoint("BOTTOMRIGHT")
+	bottom:SetHeight(t)
+
+	left:ClearAllPoints()
+	left:SetPoint("TOPLEFT")
+	left:SetPoint("BOTTOMLEFT")
+	left:SetWidth(t)
+
+	right:ClearAllPoints()
+	right:SetPoint("TOPRIGHT")
+	right:SetPoint("BOTTOMRIGHT")
+	right:SetWidth(t)
+end
+
+local function CanRegisterDispelTextures(button)
+	return type(button.AddDispelTypeTexture) == "function" and DISPEL_TEXTURE_STYLE ~= nil
+end
+
+local function RegisterDispelTextures(button, edges)
+	if not CanRegisterDispelTextures(button) then
+		for _, edge in ipairs(edges) do
+			edge:SetColorTexture(DISPEL_FALLBACK[1], DISPEL_FALLBACK[2],
+				DISPEL_FALLBACK[3], DISPEL_FALLBACK[4])
+		end
+		return
+	end
+
+	local options = {
+		style = DISPEL_TEXTURE_STYLE,
+		showWhenHarmful = true,
+		showWhenHelpful = false,
+		showWithoutDispelType = true,
+		customDispelColorCurve = DISPEL_CURVE,
+	}
+	for _, edge in ipairs(edges) do button:AddDispelTypeTexture(edge, options) end
+end
+
+local function AuraConfig()
+	return (ns.db and ns.db.auras) or {}
+end
+
+local function ConfigKey(...)
+	local parts = {}
+	for index = 1, select("#", ...) do
+		parts[index] = tostring(select(index, ...))
+	end
+	return table.concat(parts, "\31")
+end
+
+local function CenterLevel(record, key, a)
+	local important = a.important or {}
+	local sequence = CENTER_SEQUENCES[important.centerPriority] or CENTER_SEQUENCES.raid
+	for index, candidate in ipairs(sequence) do
+		if candidate == key then
+			-- One slot owns a button, cooldown (+1), and overlay (+2). Leave a full level between
+			-- visual stacks so a lower-priority cooldown/count can never bleed over the winner.
+			return record.baseLevel + ((#sequence - index + 1) * 4)
+		end
+	end
+	return record.baseLevel
+end
+
+local function ApplyIconAppearance(button, a)
 	local mine = a.mine or {}
-	local imp  = a.important or {}
-	local dsp  = a.dispel or {}
-	local showTimer  = a.showTimer ~= false
-	local showStacks = a.showStacks ~= false
-
-	-- (1) mine row
-	local mw = mine.size or 13
-	local mn = math.max(1, math.min(mine.max or 3, MINE_MAX))
-	LayoutRow(b.auraMine, mw, mw, mn, showTimer, showStacks)
-	b.auraMine:ClearAllPoints()
-	b.auraMine:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 2 + (mine.xOff or 0), 2 + (mine.yOff or 0))
-
-	-- (2) center icon
-	local cs = imp.size or 20
-	local ic = b.auraCenter
-	ic:SetSize(cs, cs)
-	ic:ClearAllPoints()
-	ic:SetPoint("CENTER", b, "CENTER", imp.xOff or 0, imp.yOff or 0)
-	ic.stk:SetFont(FONT, math.max(8, cs - 12), "OUTLINE")
-	ic.stk:SetShown(showStacks ~= false)
-	ic.cd:SetHideCountdownNumbers(not showTimer)
-
-	-- (3) dispel border (full cell, thickness configurable)
-	local t = math.max(1, dsp.thickness or 2)
-	b.dispelBorder:ClearAllPoints()
-	b.dispelBorder:SetPoint("TOPLEFT", b, "TOPLEFT", -1, 1)
-	b.dispelBorder:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 1, -1)
-	b.dispelBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = t })
-end
-
-----------------------------------------------------------------------------------------------------
--- Assign one aura to one icon. All sinks; safe under secret.
-----------------------------------------------------------------------------------------------------
-local function Assign(ic, unit, aura, hidePermanent, br, bg, bb, ba)
-	ic.tex:SetTexture(aura.icon)   -- fileID -> texture sink
-
-	local dur = GetAuraDuration and GetAuraDuration(unit, aura.auraInstanceID)
-	if not dur and CreateDuration then
-		dur = CreateDuration()
-		dur:SetTimeFromEnd(0, 0, 1)   -- 0-duration fallback (permanent aura: no swipe, no number)
-	end
-	if dur and ic.cd.SetCooldownFromDurationObject and ic.cd.SetAlphaFromBoolean then
-		ic.cd:SetCooldownFromDurationObject(dur)
-		ic.cd:SetAlphaFromBoolean(dur:IsZero(), 0, 1)   -- hide swipe when permanent (secret-safe sink)
-	end
-
-	if TruncateWhenZero then ic.stk:SetText(TruncateWhenZero(aura.applications)) end
-
-	if br then ic.b:SetBackdropBorderColor(br, bg, bb, ba) end
-
-	-- "hide permanent buffs" (mine row only): drive the whole icon's alpha off IsZero via a sink, so an
-	-- always-on buff (Fortitude/Intellect) renders invisible without a Lua compare on the secret duration.
-	-- NOTE: this DIMS in place -- it cannot reclaim the slot (that would need a Lua test on the secret
-	-- duration). Expiration sort puts permanents last, so they never displace a timed buff; the only
-	-- artifact is a blank trailing gap when the row is not full. Accepted secret-safe tradeoff.
-	if hidePermanent and dur and ic.SetAlphaFromBoolean then
-		ic:SetAlphaFromBoolean(dur:IsZero(), 0, 1)
+	local important = a.important or {}
+	local size
+	if button.dgAuraRole == "mine" then
+		size = mine.size or 13
 	else
-		ic:SetAlpha(1)
+		size = important.size or 20
 	end
-	ic:Show()
+
+	button:SetSize(size, size)
+	button.dgCount:SetFont(FONT, math.max(7, size - (button.dgAuraRole == "mine" and 14 or 12)), "OUTLINE")
+	button.dgCount:SetShown(a.showStacks ~= false)
+	button.dgCooldown:SetHideCountdownNumbers(a.showTimer == false)
+	SetEdgeThickness(button.dgEdges, 1)
+end
+
+local function ApplyCenterSlotGeometry(record, button, a)
+	local important = a.important or {}
+	local level = CenterLevel(record, button.dgCenterKey, a)
+	button:ClearAllPoints()
+	button:SetPoint("CENTER", record.anchor, "CENTER", important.xOff or 0, important.yOff or 0)
+	button:SetFrameLevel(level)
+	button.dgCooldown:SetFrameLevel(level + 1)
+	button.dgOverlay:SetFrameLevel(level + 2)
+end
+
+local function ApplyDispelOverlayAppearance(button, a)
+	local dispel = a.dispel or {}
+	local width = (ns.db and ns.db.width) or 72
+	local height = (ns.db and ns.db.height) or 36
+	button:SetSize(width + 2, height + 2)
+	button:ClearAllPoints()
+	button:SetPoint("TOPLEFT", button.dgAnchor, "TOPLEFT", -1, 1)
+	SetEdgeThickness(button.dgEdges, dispel.thickness or 2)
+end
+
+local function CreateIconInitializer(record, role, border, centerKey)
+	return function(button)
+		DisableAuraButtonMouse(button)
+		button.dgAuraRole = role
+		button.dgCenterKey = centerKey
+
+		local icon = button:CreateTexture(nil, "ARTWORK")
+		icon:SetPoint("TOPLEFT", 1, -1)
+		icon:SetPoint("BOTTOMRIGHT", -1, 1)
+		icon:SetTexCoord(TRIM, 1 - TRIM, TRIM, 1 - TRIM)
+
+		local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+		cooldown:SetAllPoints(icon)
+		cooldown:SetReverse(true)
+		cooldown:SetDrawEdge(true)
+		if cooldown.SetCountdownAbbrevThreshold then cooldown:SetCountdownAbbrevThreshold(60) end
+		if cooldown.SetMinimumCountdownDuration then cooldown:SetMinimumCountdownDuration(0) end
+		cooldown:SetFrameLevel(button:GetFrameLevel() + 1)
+
+		-- Keep the border and stack count above the cooldown swipe. The count is still a valid
+		-- descendant sink for SetApplicationCount, matching Blizzard's ownership rules.
+		local overlay = CreateFrame("Frame", nil, button)
+		overlay:SetAllPoints(button)
+		overlay:SetFrameLevel(cooldown:GetFrameLevel() + 1)
+
+		local count = overlay:CreateFontString(nil, "OVERLAY", COUNT_TEMPLATE)
+		count:SetPoint("BOTTOMRIGHT", 1, -1)
+		count:SetJustifyH("RIGHT")
+
+		local dynamicDispel = border == "dispel"
+		local edgeColor = dynamicDispel and { 1, 1, 1, 1 } or border
+		local edges = CreateEdgeTextures(overlay, edgeColor)
+
+		button.dgIcon = icon
+		button.dgCooldown = cooldown
+		button.dgCount = count
+		button.dgEdges = edges
+		button.dgOverlay = overlay
+		ApplyIconAppearance(button, AuraConfig())
+		if centerKey then ApplyCenterSlotGeometry(record, button, AuraConfig()) end
+
+		-- Register sinks only after every region has its final font, size, anchors, and baseline style.
+		button:SetIcon(icon)
+		button:SetDurationCooldown(cooldown)
+		button:SetApplicationCount(count)
+		if dynamicDispel then RegisterDispelTextures(button, edges) end
+
+		record.buttons[#record.buttons + 1] = button
+	end
+end
+
+local function CreateDispelOverlayInitializer(record)
+	return function(button)
+		DisableAuraButtonMouse(button)
+		button.dgAuraRole = "dispelOverlay"
+		button.dgAnchor = record.anchor
+		local dynamicDispel = CanRegisterDispelTextures(button)
+		local edges = CreateEdgeTextures(button, dynamicDispel and { 1, 1, 1, 1 } or DISPEL_FALLBACK)
+		button.dgEdges = edges
+		ApplyDispelOverlayAppearance(button, AuraConfig())
+		RegisterDispelTextures(button, edges)
+		record.buttons[#record.buttons + 1] = button
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
--- Update one cell. Driven off the button's UNIT_AURA. Combat-safe (operates only on button children).
+-- Container construction
 ----------------------------------------------------------------------------------------------------
-function Auras.Update(b, unit)
-	local a = ns.db and ns.db.auras
-	if not b.auraMine or not GetUnitAuras or not a then return end
-	if a.enabled == false then Auras.Clear(b); return end
+local function GroupLayout(index, width, height)
+	return {
+		elementSpacing = GAP,
+		lineSpacing = 0,
+		groupSpacing = GAP,
+		groupLineSpacing = 0,
+		forceNewLine = false,
+		elementWidth = width,
+		elementHeight = height,
+		layoutIndex = index,
+	}
+end
 
+local function NewRecord(parent, unit, frameLevel)
+	local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+	container:EnableMouse(false)
+	-- Match Blizzard's supported construction order: bind the permanent static token before groups or
+	-- slots are registered, then keep the container disabled until initial configuration is complete.
+	container:SetEnabled(false)
+	container:SetUnit(unit)
+	container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+	container:SetSize(1, 1)
+	container:SetFlowLayoutAnchorPoint("TOPLEFT")
+	container:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Down)
+	container:SetFlowLayoutMaximumLineSize(math.huge)
+	if frameLevel then container:SetFrameLevel(frameLevel) end
+	return { container = container, buttons = {}, slots = {}, anchor = parent, baseLevel = frameLevel or 1 }
+end
+
+local function AddGroup(record, key, filter, initializer, width, height)
+	record.container:AddAuraGroup(key, filter, {
+		maxFrameCount = 0,
+		sortMethod = AuraContainerSortMethod.Expiration,
+		sortDirection = AuraContainerSortDirection.Normal,
+		candidateFilters = {},
+		initializeFrame = initializer,
+		layout = GroupLayout(1, width, height),
+	})
+end
+
+local function AddSlot(record, key, filter, initializer)
+	local button = record.container:AddAuraSlot(key, filter, {
+		sortMethod = AuraContainerSortMethod.Expiration,
+		sortDirection = AuraContainerSortDirection.Normal,
+		candidateFilters = {},
+		initializeFrame = initializer,
+	})
+	record.slots[key] = button
+	return button
+end
+
+local function BuildBundle(bundle, button, unit)
+	local baseLevel = button:GetFrameLevel() or 1
+	local a = AuraConfig()
 	local mine = a.mine or {}
-	local imp  = a.important or {}
-	local dsp  = a.dispel or {}
+	local mineSize = mine.size or 13
 
-	---------------------------------------------------------------- (1) my buffs -> mine row
-	local mineSlot = 0
-	if mine.enabled ~= false then
-		local maxN = b.auraMine.max or 3
-		local hidePerm = mine.hidePermanent ~= false
-		local helpful = GetUnitAuras(unit, "HELPFUL", nil, SORT)
-		if helpful then
-			for _, aura in ipairs(helpful) do
-				if mineSlot >= maxN then break end
-				if passes(unit, aura.auraInstanceID, "HELPFUL|PLAYER") then
-					mineSlot = mineSlot + 1
-					Assign(b.auraMine.icons[mineSlot], unit, aura, hidePerm,
-						MINE_BORDER[1], MINE_BORDER[2], MINE_BORDER[3], MINE_BORDER[4])
-				end
-			end
-		end
-	end
-	for i = mineSlot + 1, MINE_MAX do b.auraMine.icons[i]:Hide() end
-	b.auraMine:SetShown(mineSlot > 0)
+	bundle.mine = NewRecord(button, unit, baseLevel + 5)
+	AddGroup(bundle.mine, "mine", "HELPFUL|PLAYER",
+		CreateIconInitializer(bundle.mine, "mine", MINE_BORDER), mineSize, mineSize)
 
-	---------------------------------------------------------------- (2) center icon + (3) dispel border
-	local wantCenter = imp.enabled ~= false
-	local wantDispel = dsp.enabled ~= false
-	local wantCC     = imp.showCC ~= false
-	local order      = CENTER_ORDERS[imp.centerPriority] or CENTER_ORDERS.raid
-	local centerAura, centerRank, centerCat   -- centerCat: "raid" / "dispel" / "cc"
-	local dispelAura
+	bundle.center = NewRecord(button, unit, baseLevel + 7)
+	AddSlot(bundle.center, "raid", CENTER_FILTERS.raid,
+		CreateIconInitializer(bundle.center, "center", CENTER_IMPORTANT, "raid"))
+	AddSlot(bundle.center, "raidCombat", CENTER_FILTERS.raidCombat,
+		CreateIconInitializer(bundle.center, "center", CENTER_IMPORTANT, "raidCombat"))
+	AddSlot(bundle.center, "dispel", CENTER_FILTERS.dispel,
+		CreateIconInitializer(bundle.center, "center", "dispel", "dispel"))
+	AddSlot(bundle.center, "cc", CENTER_FILTERS.cc,
+		CreateIconInitializer(bundle.center, "center", CENTER_CC, "cc"))
 
-	if wantCenter or wantDispel then
-		local harmful = GetUnitAuras(unit, "HARMFUL", nil, SORT)
-		if harmful then
-			for _, aura in ipairs(harmful) do
-				local id = aura.auraInstanceID
-				local isDispel = passes(unit, id, "HARMFUL|RAID_PLAYER_DISPELLABLE")
-				if wantDispel and not dispelAura and isDispel then
-					dispelAura = aura   -- first (soonest-expiring) dispellable wins the border color
-				end
-				if wantCenter then
-					-- An aura can match several categories at once (e.g. RAID-flagged AND dispellable), so
-					-- score every match and let the configured `order` pick the winner -- don't stop at the
-					-- first. Strict > keeps the soonest-expiring within a tier (list is Expiration-sorted).
-					local rank, cat
-					if passes(unit, id, "HARMFUL|RAID") or passes(unit, id, "HARMFUL|RAID_IN_COMBAT") then
-						rank, cat = order.raid, "raid"
-					end
-					if isDispel and order.dispel > (rank or 0) then
-						rank, cat = order.dispel, "dispel"
-					end
-					if wantCC and order.cc > (rank or 0) and passes(unit, id, "HARMFUL|CROWD_CONTROL") then
-						rank, cat = order.cc, "cc"
-					end
-					if rank and rank > (centerRank or 0) then
-						centerAura, centerRank, centerCat = aura, rank, cat
-					end
-				end
-			end
-		end
-	end
+	bundle.dispel = NewRecord(button, unit, baseLevel + 9)
+	AddSlot(bundle.dispel, "dispel", CENTER_FILTERS.dispel,
+		CreateDispelOverlayInitializer(bundle.dispel))
 
-	if centerAura then
-		if centerCat == "raid" then
-			Assign(b.auraCenter, unit, centerAura, false,
-				CENTER_IMPORTANT[1], CENTER_IMPORTANT[2], CENTER_IMPORTANT[3], CENTER_IMPORTANT[4])
-		elseif centerCat == "cc" then
-			Assign(b.auraCenter, unit, centerAura, false,
-				CENTER_CC[1], CENTER_CC[2], CENTER_CC[3], CENTER_CC[4])
-		else   -- dispel: color the icon border by school too
-			local col = GetDispelColor and GetDispelColor(unit, centerAura.auraInstanceID, DISPEL_CURVE)
-			if col then
-				Assign(b.auraCenter, unit, centerAura, false, col.r, col.g, col.b, col.a)
-			else
-				Assign(b.auraCenter, unit, centerAura, false,
-					DISPEL_FALLBACK[1], DISPEL_FALLBACK[2], DISPEL_FALLBACK[3], DISPEL_FALLBACK[4])
-			end
-		end
-	else
-		b.auraCenter:Hide()
-	end
-
-	if dispelAura then
-		local col = GetDispelColor and GetDispelColor(unit, dispelAura.auraInstanceID, DISPEL_CURVE)
-		if col then
-			b.dispelBorder:SetBackdropBorderColor(col.r, col.g, col.b, col.a)
-		else
-			b.dispelBorder:SetBackdropBorderColor(
-				DISPEL_FALLBACK[1], DISPEL_FALLBACK[2], DISPEL_FALLBACK[3], DISPEL_FALLBACK[4])
-		end
-		b.dispelBorder:Show()
-	else
-		b.dispelBorder:Hide()
-	end
 end
 
-function Auras.Clear(b)
-	if not b.auraMine then return end
-	for i = 1, MINE_MAX do b.auraMine.icons[i]:Hide() end
-	b.auraMine:Hide()
-	b.auraCenter:Hide()
-	b.dispelBorder:Hide()
+----------------------------------------------------------------------------------------------------
+-- Runtime configuration. Container inbound methods remain the only path used while auras are secret.
+----------------------------------------------------------------------------------------------------
+local function ApplyGeometry(bundle, a)
+	local mine = a.mine or {}
+
+	bundle.mine.container:ClearAllPoints()
+	bundle.mine.container:SetPoint("BOTTOMLEFT", bundle.button, "BOTTOMLEFT",
+		2 + (mine.xOff or 0), 2 + (mine.yOff or 0))
+	bundle.geometryKey = ConfigKey(mine.xOff or 0, mine.yOff or 0)
+	bundle.needsGeometry = false
+end
+
+local function RestyleButtons(bundle, a)
+	for _, button in ipairs(bundle.mine.buttons) do ApplyIconAppearance(button, a) end
+	for _, button in ipairs(bundle.center.buttons) do
+		ApplyIconAppearance(button, a)
+		ApplyCenterSlotGeometry(bundle.center, button, a)
+	end
+	for _, button in ipairs(bundle.dispel.buttons) do ApplyDispelOverlayAppearance(button, a) end
+	local mine = a.mine or {}
+	local important = a.important or {}
+	local dispel = a.dispel or {}
+	bundle.restyleKey = ConfigKey(a.showTimer ~= false, a.showStacks ~= false,
+		mine.size or 13, important.size or 20, important.xOff or 0, important.yOff or 0,
+		important.centerPriority or "raid", dispel.thickness or 2,
+		(ns.db and ns.db.width) or 72, (ns.db and ns.db.height) or 36)
+	bundle.needsRestyle = false
+end
+
+local function ConfigureMine(bundle, a)
+	local mine = a.mine or {}
+	local size = mine.size or 13
+	local maxCount = math.max(1, math.min(mine.max or 3, MINE_MAX))
+	local candidates = mine.hidePermanent ~= false and { maxDuration = math.huge } or nil
+	local configKey = ConfigKey(a.enabled ~= false, mine.enabled ~= false, size, maxCount,
+		mine.hidePermanent ~= false)
+	if bundle.mineConfigKey == configKey then return end
+	local c = bundle.mine.container
+	c:SetAuraGroupCandidateFilters("mine", candidates)
+	c:SetAuraGroupMaxFrameCount("mine", maxCount)
+	c:SetAuraGroupSortMethod("mine", AuraContainerSortMethod.Expiration, AuraContainerSortDirection.Normal)
+	c:SetAuraGroupLayout("mine", GroupLayout(1, size, size))
+	c:SetEnabled(a.enabled ~= false and mine.enabled ~= false)
+	bundle.mineConfigKey = configKey
+end
+
+local function ConfigureCenter(bundle, a)
+	local important = a.important or {}
+	local configKey = ConfigKey(a.enabled ~= false, important.enabled ~= false,
+		important.showCC ~= false)
+	if bundle.centerConfigKey == configKey then return end
+
+	local c = bundle.center.container
+	for key in pairs(CENTER_FILTERS) do
+		local candidates = key == "cc" and important.showCC == false and { maxDuration = 0 } or nil
+		c:SetAuraSlotCandidateFilters(key, candidates)
+		c:SetAuraSlotSortMethod(key, AuraContainerSortMethod.Expiration, AuraContainerSortDirection.Normal)
+	end
+	c:SetEnabled(a.enabled ~= false and important.enabled ~= false)
+	bundle.centerConfigKey = configKey
+end
+
+local function ConfigureDispel(bundle, a)
+	local dispel = a.dispel or {}
+	local configKey = ConfigKey(a.enabled ~= false, dispel.enabled ~= false)
+	if bundle.dispelConfigKey == configKey then return end
+	local c = bundle.dispel.container
+	c:SetAuraSlotSortMethod("dispel", AuraContainerSortMethod.Expiration, AuraContainerSortDirection.Normal)
+	c:SetEnabled(a.enabled ~= false and dispel.enabled ~= false)
+	bundle.dispelConfigKey = configKey
+end
+
+local function ApplyLayout(bundle)
+	local a = AuraConfig()
+	local mine = a.mine or {}
+	local geometryKey = ConfigKey(mine.xOff or 0, mine.yOff or 0)
+	if bundle.geometryKey ~= geometryKey and CanChangeProtectedGeometry() then
+		ApplyGeometry(bundle, a)
+	elseif bundle.geometryKey ~= geometryKey then
+		bundle.needsGeometry = true
+	end
+
+	local important = a.important or {}
+	local dispel = a.dispel or {}
+	local restyleKey = ConfigKey(a.showTimer ~= false, a.showStacks ~= false,
+		mine.size or 13, important.size or 20, important.xOff or 0, important.yOff or 0,
+		important.centerPriority or "raid", dispel.thickness or 2,
+		(ns.db and ns.db.width) or 72, (ns.db and ns.db.height) or 36)
+	if bundle.restyleKey ~= restyleKey and CanTouchAuraButtons() then
+		RestyleButtons(bundle, a)
+	elseif bundle.restyleKey ~= restyleKey then
+		bundle.needsRestyle = true
+	end
+
+	ConfigureMine(bundle, a)
+	ConfigureCenter(bundle, a)
+	ConfigureDispel(bundle, a)
+	bundle.needsConfigRetry = false
+	bundle.cleared = false
+end
+
+local function UpdateAllContainers(bundle)
+	bundle.mine.container:UpdateAllAuras()
+	bundle.center.container:UpdateAllAuras()
+	bundle.dispel.container:UpdateAllAuras()
+end
+
+----------------------------------------------------------------------------------------------------
+-- Public API used by Core.lua
+----------------------------------------------------------------------------------------------------
+function Auras.Create(button, unit)
+	if not button or not HasAuraContainerTemplate() then return false end
+	local existing = bundles[button]
+	if existing then return not existing.failed end
+	if InCombatLockdown and InCombatLockdown() then return false end
+
+	if type(unit) ~= "string" then
+		local ok, value = pcall(button.GetAttribute, button, "unit")
+		if ok then unit = value end
+	end
+	if type(unit) ~= "string" or unit == "" then return false end
+
+	local bundle = { button = button, unit = unit }
+	bundles[button] = bundle
+	local ok = ProtectedCall(bundle, function()
+		BuildBundle(bundle, button, unit)
+	end, true)
+	return ok
+end
+
+function Auras.Layout(button)
+	local bundle = bundles[button]
+	if not bundle or bundle.failed then return false end
+	return ProtectedCall(bundle, function() ApplyLayout(bundle) end)
+end
+
+function Auras.Refresh(button)
+	if not button then return false end
+	local bundle = bundles[button]
+	local created = false
+	if not bundle then
+		local unit
+		local ok, value = pcall(button.GetAttribute, button, "unit")
+		if ok then unit = value end
+		if not Auras.Create(button, unit) then return false end
+		bundle = bundles[button]
+		created = true
+	end
+	if not bundle or bundle.failed then return false end
+	return ProtectedCall(bundle, function()
+		-- Normal callers use Layout then Refresh. Only a newly created or explicitly cleared bundle
+		-- needs Refresh itself to restore its current configuration first.
+		if created or bundle.cleared then ApplyLayout(bundle) end
+		UpdateAllContainers(bundle)
+		bundle.needsRefreshRetry = false
+	end)
+end
+
+function Auras.Clear(button)
+	local bundle = bundles[button]
+	if not bundle then return end
+	DisableRecord(bundle.mine)
+	DisableRecord(bundle.center)
+	DisableRecord(bundle.dispel)
+	bundle.mineConfigKey = nil
+	bundle.centerConfigKey = nil
+	bundle.dispelConfigKey = nil
+	bundle.cleared = true
+end
+
+function Auras.FlushDeferred()
+	local canGeometry = CanChangeProtectedGeometry()
+	local canRestyle = CanTouchAuraButtons()
+	if not canGeometry and not canRestyle then return false end
+
+	local refreshed = false
+	for _, bundle in pairs(bundles) do
+		if not bundle.failed and (bundle.needsGeometry or bundle.needsRestyle
+			or bundle.needsConfigRetry or bundle.needsRefreshRetry) then
+			local ok = ProtectedCall(bundle, function()
+				-- ApplyLayout also retries filter/enable changes whose first inbound call was rejected.
+				-- Its own guards leave button geometry/style deferred until both restrictions are clear.
+				ApplyLayout(bundle)
+				if bundle.needsRefreshRetry then
+					UpdateAllContainers(bundle)
+					bundle.needsRefreshRetry = false
+				end
+			end)
+			refreshed = ok or refreshed
+		end
+	end
+	return refreshed
+end
+
+function Auras.IsSupported()
+	return HasAuraContainerTemplate()
 end

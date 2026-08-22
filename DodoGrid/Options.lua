@@ -75,6 +75,23 @@ local function MakeSlider(parent, label, x, y, minV, maxV, step, get, set, apply
 	return s
 end
 
+-- Sliders can fire once per rendered frame while dragging. Aura-container reconfiguration touches
+-- every static unit cell, so coalesce a drag into one final apply instead of rebuilding 45 previews.
+local function Debounce(delay, fn)
+	local generation = 0
+	return function()
+		generation = generation + 1
+		local ticket = generation
+		if C_Timer and C_Timer.After then
+			C_Timer.After(delay, function()
+				if ticket == generation then fn() end
+			end)
+		else
+			fn()
+		end
+	end
+end
+
 -- A button that cycles through an ordered list of { value=, label= } choices. The face reads
 -- "<label>: <current choice>". No Blizzard dropdown dependency -- matches the hand-rolled toolkit.
 local function MakeCycle(parent, label, x, y, choices, get, set, apply)
@@ -144,13 +161,16 @@ end
 local function BuildLayoutPage()
 	local f = CreateFrame("Frame")
 	f.name = "布局"
+	local applyLayout = Debounce(0.08, function()
+		if ns.RefreshLayout then ns.RefreshLayout() end
+	end)
 	Header(f, "单元格尺寸", 10, -16)
 	MakeSlider(f, "宽度", 20, -56, 40, 160, 1,
 		function() return ns.db.width end, function(v) ns.db.width = v end,
-		function() if ns.RefreshLayout then ns.RefreshLayout() end end)
+		applyLayout)
 	MakeSlider(f, "高度", 20, -100, 16, 60, 1,
 		function() return ns.db.height end, function(v) ns.db.height = v end,
-		function() if ns.RefreshLayout then ns.RefreshLayout() end end)
+		applyLayout)
 
 	Header(f, "位置(相对屏幕中心)", 10, -140)
 	MakeSlider(f, "X 偏移", 20, -180, -1200, 1200, 1,
@@ -186,7 +206,9 @@ local function BuildAuraPage()
 	local f = CreateFrame("Frame")
 	f.name = "光环"
 	local a = ns.db.auras
-	local function apply() if ns.ApplyAuras then ns.ApplyAuras() end end
+	local apply = Debounce(0.08, function()
+		if ns.ApplyAuras then ns.ApplyAuras() end
+	end)
 
 	Note(f, "三类光环指示器。副本内只能按暴雪固定分类过滤,无法按法术 ID 自定义白名单。", 10, -10)
 

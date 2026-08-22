@@ -20,7 +20,7 @@ local ADDON, ns = ...
 local IsSecret = issecretvalue or function() return false end
 
 local function Bool(v)
-	if v == nil or IsSecret(v) then return false end
+	if IsSecret(v) or v == nil then return false end
 	return v and true or false
 end
 
@@ -109,12 +109,66 @@ local groupTitle = {}    -- subgroup 1..8 -> FontString
 local anchor, partyContainer, raidContainer, mover, moving, dirty, posDirty
 
 ----------------------------------------------------------------------------------------------------
+-- Aura-container boundary. Every call is isolated so a 12.1 API/protection failure can disable an
+-- indicator without aborting construction or refresh of the underlying unit frame.
+----------------------------------------------------------------------------------------------------
+local function AuraErrorHandler(err)
+	local handler = geterrorhandler and geterrorhandler()
+	if handler then handler(err) end
+	return err
+end
+
+local function TryAuraCall(method, b, unit)
+	local auras = ns.Auras
+	local fn = auras and auras[method]
+	if type(fn) ~= "function" then return false end
+
+	return xpcall(function()
+		if unit ~= nil then
+			fn(b, unit)
+		else
+			fn(b)
+		end
+	end, AuraErrorHandler)
+end
+
+local function LayoutButtonAuras(b)
+	TryAuraCall("Layout", b)
+	TryAuraCall("Refresh", b)
+end
+
+local function RefreshButtonAuras(b)
+	TryAuraCall("Refresh", b)
+end
+
+local function RefreshAllAuras()
+	if not ns.Auras then return end
+	for _, b in pairs(buttons) do RefreshButtonAuras(b) end
+end
+
+local function LayoutAllAuras()
+	if not ns.Auras then return end
+	for _, b in pairs(buttons) do LayoutButtonAuras(b) end
+end
+
+local function FlushDeferredAuras()
+	local auras = ns.Auras
+	local fn = auras and auras.FlushDeferred
+	if type(fn) ~= "function" then return end
+	xpcall(fn, AuraErrorHandler)
+end
+
+----------------------------------------------------------------------------------------------------
 -- Per-unit paint (all insecure; safe in combat). Health reads go to widget SINKS.
 ----------------------------------------------------------------------------------------------------
 local function ClassColor(unit)
 	local token = UnitClassBase and UnitClassBase(unit)
-	if token and not IsSecret(token) and RAID_CLASS_COLORS and RAID_CLASS_COLORS[token] then
-		local c = RAID_CLASS_COLORS[token]
+	if IsSecret(token) or token == nil then
+		return DEFAULT_BAR_COLOR[1], DEFAULT_BAR_COLOR[2], DEFAULT_BAR_COLOR[3]
+	end
+	local colors = RAID_CLASS_COLORS
+	local c = colors and colors[token]
+	if c then
 		return c.r, c.g, c.b
 	end
 	return DEFAULT_BAR_COLOR[1], DEFAULT_BAR_COLOR[2], DEFAULT_BAR_COLOR[3]
@@ -125,12 +179,18 @@ local function UpdateColor(b, unit)
 end
 
 local function UpdateName(b, unit)
-	b.nameFS:SetText(UnitName(unit) or "")
+	local name = UnitName(unit)
+	if IsSecret(name) then
+		b.nameFS:SetText(name)
+	else
+		b.nameFS:SetText(name or "")
+	end
 end
 
 local function UpdateRole(b, unit)
 	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
-	local tc = (role and not IsSecret(role)) and ROLE_TCOORDS[role] or nil
+	local tc
+	if not IsSecret(role) and role ~= nil then tc = ROLE_TCOORDS[role] end
 	if tc then
 		b.roleIcon:SetTexCoord(tc[1], tc[2], tc[3], tc[4]); b.roleIcon:Show()
 	else
@@ -166,10 +226,10 @@ local function UpdateHealth(b, unit)
 		b.hpPct:SetText(("%.0f"):format(100 * h / hmax)); b.hpPctSign:Show()
 	elseif SCALE100 and UnitHealthPercent then
 		local p = UnitHealthPercent(unit, true, SCALE100)
-		if p == nil then
-			b.hpPct:SetText(""); b.hpPctSign:Hide()
-		elseif IsSecret(p) then
+		if IsSecret(p) then
 			b.hpPct:SetText(p); b.hpPctSign:Show()
+		elseif p == nil then
+			b.hpPct:SetText(""); b.hpPctSign:Hide()
 		else
 			b.hpPct:SetText(("%.0f"):format(p)); b.hpPctSign:Show()
 		end
@@ -202,7 +262,6 @@ local function UpdateAll(b, unit)
 	UpdateRole(b, unit)
 	UpdateHealth(b, unit)
 	UpdateAlpha(b, unit)
-	if ns.Auras then ns.Auras.Update(b, unit) end
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -277,23 +336,24 @@ local function BuildButton(unit, parent)
 	RegisterUnitWatch(b)                      -- secure Show/Hide on UnitExists("unit"), even in combat
 
 	StyleButton(b)
-	if ns.Auras then ns.Auras.Create(b); ns.Auras.Layout(b) end   -- aura widgets are button children (combat-safe)
+	if ns.Auras then
+		TryAuraCall("Create", b, unit)
+		LayoutButtonAuras(b)
+	end
 
 	b:RegisterUnitEvent("UNIT_HEALTH", unit)
 	b:RegisterUnitEvent("UNIT_MAXHEALTH", unit)
 	b:RegisterUnitEvent("UNIT_CONNECTION", unit)
 	b:RegisterUnitEvent("UNIT_NAME_UPDATE", unit)
-	b:RegisterUnitEvent("UNIT_AURA", unit)
 	b:RegisterEvent("PLAYER_ENTERING_WORLD")
 	b:SetScript("OnEvent", function(self, event)
 		if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
 			UpdateHealth(self, unit)
 		elseif event == "UNIT_NAME_UPDATE" then
 			UpdateName(self, unit); UpdateColor(self, unit)
-		elseif event == "UNIT_AURA" then
-			if ns.Auras then ns.Auras.Update(self, unit) end
 		else
 			UpdateAll(self, unit)
+			if event == "PLAYER_ENTERING_WORLD" then RefreshButtonAuras(self) end
 		end
 	end)
 
@@ -456,21 +516,16 @@ ns.Layout     = Layout
 ns.RefreshAll = RefreshAll
 ns.RestorePos = RestorePos
 ns.ApplyLock  = ApplyLock
-function ns.RefreshLayout() Layout(); RefreshAll() end
+function ns.RefreshLayout() Layout(); RefreshAll(); LayoutAllAuras() end
 
 -- Generic per-button iterator for sibling modules (Dispel.lua re-applies click-cast attributes via this).
 function ns.ForEachButton(fn)
 	for _, b in pairs(buttons) do fn(b) end
 end
 
--- Re-apply aura layout + state to every cell (called from Options after an aura setting changes).
+-- Re-apply aura-container layout + state to every cell (called after an aura setting changes).
 function ns.ApplyAuras()
-	if not ns.Auras then return end
-	for _, b in pairs(buttons) do
-		ns.Auras.Layout(b)
-		local u = b:GetAttribute("unit")
-		if u and UnitExists(u) then ns.Auras.Update(b, u) else ns.Auras.Clear(b) end
-	end
+	LayoutAllAuras()
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -508,6 +563,7 @@ boot:RegisterEvent("GROUP_ROSTER_UPDATE")
 boot:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 boot:RegisterEvent("PLAYER_REGEN_DISABLED")
 boot:RegisterEvent("PLAYER_REGEN_ENABLED")
+boot:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 boot:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_LOGIN" then
 		DodoGridDB = CopyDefaults(DodoGridDB, defaults)
@@ -530,10 +586,18 @@ boot:SetScript("OnEvent", function(_, event)
 			end
 		end)
 
-		Print("已加载 (v0.5.0)。/dg 解锁移动,/dg config 打开设置。")
+		Print("已加载 (v0.6.0)。/dg 解锁移动,/dg config 打开设置。")
 
 	elseif event == "GROUP_ROSTER_UPDATE" then
-		if ns.db then Layout(); RefreshAll() end          -- Layout() self-gates combat via dirty
+		if ns.db then
+			Layout(); RefreshAll()                          -- Layout() self-gates combat via dirty
+			RefreshAllAuras()
+		end
+
+	elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
+		if ns.db then
+			FlushDeferredAuras()
+		end
 
 	elseif event == "PLAYER_ROLES_ASSIGNED" then
 		if ns.db then
@@ -549,10 +613,12 @@ boot:SetScript("OnEvent", function(_, event)
 		if ns.db then ns.db.locked = true; ApplyLock() end
 
 	elseif event == "PLAYER_REGEN_ENABLED" then
-		-- combat ended: flush any deferred reposition / re-layout.
+		-- Combat ended: flush deferred core layout and aura-container appearance. Aura containers
+		-- already process aura events internally, so do not force 135 full rebuilds after every pull.
 		if ns.db then
 			if posDirty then RestorePos() end
 			if dirty then Layout() end
+			FlushDeferredAuras()
 			RefreshAll()
 		end
 	end
