@@ -955,3 +955,10 @@ CLAUDE.md / test。PS 5.1 提交用 `git commit -F <文件>`(`-m` 带引号会�
    **验法**(不用翻本地 tag):`git ls-remote --tags origin 'DodoInspect-*'` ——
    annotated tag 会**多一行 `refs/tags/X^{}`**(peel 行);**没有那行 = lightweight**。
    实测 v1.6.1 / v1.7.0 有,**v1.8.0 没有**。打完 tag 推上去后用这条自查一遍。
+   🔴 **pattern 千万别收窄成那一个 tag 名**(2026-08-22 实撞):`'DodoInspect-v1.13.1'`
+   **匹配不到 `DodoInspect-v1.13.1^{}`** ⇒ 只回一行 ⇒ 读起来正好像「这是个 lightweight tag」,
+   而下一步(重打)会覆盖一个其实完全正确的 tag。**要么保留 `DodoInspect-*`,要么写
+   `DodoInspect-v1.13.1*`(带尾 `*`)。** 判据本身也要有负对照:拿一个**已知 annotated**
+   的旧 tag 跑同一条命令,它要是也只回一行,那就是 pattern 的问题不是 tag 的问题。
+   ✅ **更省事的独立判据**:`git cat-file -t <tag 的 sha>` —— annotated 回 `tag`,
+   lightweight 回 `commit`。它不吃 pattern。
