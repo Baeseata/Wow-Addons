@@ -6,6 +6,10 @@
 #
 #   python tools/gen_loot.py            # writes ../Data/Loot.lua
 #   python tools/gen_loot.py --dry-run  # prints a summary, writes nothing
+#   python tools/gen_loot.py --build 12.1.0.69299   # pin to one client build
+#
+# It also writes two fixtures under tools/ for the offline test. Those are
+# not shipped (the packaging step excludes tools/ and asserts it did).
 #
 # Pure stdlib, no third-party packages, no absolute paths. Output is ASCII
 # only: item, boss and instance names are resolved in-game from the IDs, so
@@ -24,6 +28,15 @@ csv.field_size_limit(10 ** 7)
 BASE = "https://wago.tools/db2/%s/csv"
 UA = {"User-Agent": "DodoInspect-gen_loot/1.0"}
 
+# Set by --build. None means "whatever wago.tools currently serves as
+# live". Pinning matters when the point of a run is to see what a change
+# to THIS FILE did: an unpinned regeneration folds in whatever Blizzard
+# shipped since the last run, and in the diff the two are
+# indistinguishable. Pin to the build stamped in the existing
+# Data/Loot.lua, confirm the only change is the one you made, then rerun
+# unpinned to take the refresh deliberately.
+PINNED_BUILD = None
+
 # Season 2 content. Raids show "#N BossName", dungeons show the instance
 # name only, so the two groups are kept apart.
 RAIDS = {
@@ -40,6 +53,17 @@ DUNGEONS = {
     1030: "Temple of Sethraliss",
     1202: "Ruby Life Pools",
 }
+
+# The Mythic+ season this DUNGEONS roster is meant to be. PINNED, never
+# max(DisplaySeasonID): wago.tools serves PTR builds too, so the next
+# season appears in MythicPlusSeasonTrackedMap before it is live, and a
+# max() would swap the whole panel over to unreleased dungeons on a
+# routine rerun. Pinned, a season roll fails loudly instead, and whoever
+# bumps DUNGEONS bumps this in the same edit.
+#   37 = "Midnight Season 2" (verified 2026-08-22 on build 12.1.0.69299:
+#   season 37 lists exactly the eight ids above and 37 is the highest
+#   season present, so there is no next-season data to confuse it with).
+MPLUS_DISPLAY_SEASON = 37
 
 # ItemSparse.StatModifier_bonusStat_N values we care about. The secondary
 # keys match Data/StatPriority.lua exactly so the sort can compare them
@@ -250,10 +274,167 @@ def build_spec_weapons(spec_gear):
     return weapons, shields, problems
 
 
-def fetch(table):
-    req = urllib.request.Request(BASE % table, headers=UA)
-    raw = urllib.request.urlopen(req).read().decode("utf-8")
+def table_url(table, locale=None):
+    query = []
+    if PINNED_BUILD:
+        query.append("build=" + PINNED_BUILD)
+    if locale:
+        query.append("locale=" + locale)
+    return BASE % table + ("?" + "&".join(query) if query else "")
+
+
+def open_table(table, locale=None):
+    return urllib.request.urlopen(
+        urllib.request.Request(table_url(table, locale), headers=UA))
+
+
+def fetch(table, locale=None):
+    """Rows of one DB2 table. `locale` swaps every *_lang column to that
+    language (zhCN, frFR, ...); the default is enUS."""
+    raw = open_table(table, locale).read().decode("utf-8")
     return list(csv.DictReader(io.StringIO(raw)))
+
+
+def build_challenge_maps(instance_ids):
+    """journalInstanceID -> challengeMapID, joined on the MapID that both
+    JournalInstance and MapChallengeMode carry.
+
+    Hand-writing this table is the obvious alternative and the wrong one:
+    it would be a second copy of something the client already states, free
+    to drift the first time the pool changes, with nothing able to say
+    which copy was right.
+
+    The join is NOT guaranteed unique. Five MapIDs in the live table carry
+    two challenge modes each (split wings like Return to Karazhan). None
+    of them is in this season's pool, which is exactly why ambiguity has
+    to raise rather than take the first match: the run that hits one is by
+    definition the run where nobody is expecting it.
+
+    Returns (mapping, problems, names) where names is
+    journalInstanceID -> (journal name, challenge mode name) for the
+    summary -- a join that is unique but WRONG shows up there as two
+    unrelated names, which a bare number cannot.
+    """
+    instances = {int(row["ID"]): row for row in fetch("JournalInstance")}
+    modes = collections.defaultdict(list)
+    for row in fetch("MapChallengeMode"):
+        modes[row["MapID"]].append(row)
+
+    # The roster itself -- WHICH eight dungeons -- stays hand-written in
+    # DUNGEONS, because it also drives the loot tables and has to agree
+    # with RAIDS. But the client does state it, so check the hand-written
+    # list against the stated one rather than trusting it. Without this,
+    # a season roll where someone updates DUNGEONS but misses a dungeon
+    # produces a panel with seven cards and no complaint from anything.
+    tracked = set()
+    try:
+        for row in fetch("MythicPlusSeasonTrackedMap"):
+            if int(row["DisplaySeasonID"]) == MPLUS_DISPLAY_SEASON:
+                tracked.add(int(row["MapChallengeModeID"]))
+    except Exception as error:      # table renamed, removed, or unreachable
+        return {}, ["could not read MythicPlusSeasonTrackedMap (%s). This "
+                    "is the only cross-check on the hand-written dungeon "
+                    "roster, so the run stops rather than emitting an "
+                    "unchecked one." % error], {}
+    if not tracked:
+        return {}, ["MythicPlusSeasonTrackedMap has no rows for display "
+                    "season %d. Either the season rolled and "
+                    "MPLUS_DISPLAY_SEASON needs bumping with DUNGEONS, or "
+                    "the column changed." % MPLUS_DISPLAY_SEASON], {}
+
+    mapping, problems, names = {}, [], {}
+    for instance_id in instance_ids:
+        row = instances.get(instance_id)
+        if not row:
+            problems.append("journal instance %d is not in JournalInstance"
+                            % instance_id)
+            continue
+        found = modes.get(row["MapID"], [])
+        if not found:
+            problems.append(
+                "journal instance %d (%s, MapID %s) has no MapChallengeMode "
+                "row: either it is not a Mythic+ dungeon or its map id moved"
+                % (instance_id, row["Name_lang"], row["MapID"]))
+            continue
+        if len(found) > 1:
+            problems.append(
+                "journal instance %d (%s, MapID %s) matches %d challenge "
+                "modes (%s): pick one by hand, do not let this default"
+                % (instance_id, row["Name_lang"], row["MapID"], len(found),
+                   ", ".join("%s=%s" % (m["ID"], m["Name_lang"])
+                             for m in found)))
+            continue
+        mapping[instance_id] = int(found[0]["ID"])
+        names[instance_id] = (row["Name_lang"], found[0]["Name_lang"])
+
+    # Set equality, both directions named separately: "we list one the
+    # season does not" and "the season lists one we missed" are different
+    # mistakes with different fixes, and a single count would hide both.
+    derived = set(mapping.values())
+    stale = derived - tracked
+    missed = tracked - derived
+    if stale:
+        problems.append(
+            "these challenge maps are in DUNGEONS but NOT in display "
+            "season %d: %s -- last season's pool, or a typo"
+            % (MPLUS_DISPLAY_SEASON, sorted(stale)))
+    if missed:
+        problems.append(
+            "display season %d includes challenge maps missing from "
+            "DUNGEONS: %s -- add the journal instance for each"
+            % (MPLUS_DISPLAY_SEASON, sorted(missed)))
+    return mapping, problems, names
+
+
+# Locales the dungeon name fixture carries. zhCN is the one that has to be
+# there: Locales.lua's Chinese card labels are each supposed to be a real
+# substring of the official name, and only a name pulled from the client
+# data can check that. enUS rides along so a failure prints something a
+# non-Chinese reader can act on.
+FIXTURE_LOCALES = ("enUS", "zhCN")
+
+NEWLINE = chr(10)
+
+FIXTURE_NAMES_HEADER = """-- DodoInspect - tools/fixture_dungeonnames.lua
+-- Generated by tools/gen_loot.py. Test fixture only: NOT part of the
+-- addon, not in the TOC, excluded from the packaged zip.
+--
+-- UTF-8, unlike every other file this generator writes. That is the
+-- point: it holds the official dungeon names as the client states them,
+-- so tools/test_gearrank.lua can check that each hand-written Chinese
+-- card label in Locales.lua really is a substring of one. Keyed by
+-- journalInstanceID.
+
+return {"""
+
+
+def emit_dungeon_names(instance_ids):
+    """Official localised dungeon names, for the offline label test.
+
+    UTF-8, unlike everything else this script writes. It has to be: the
+    whole point is to hold the names in the client's own words. Typing
+    them out a second time inside the test would only prove the two
+    typings agree with each other.
+    """
+    per_locale = {}
+    for locale in FIXTURE_LOCALES:
+        rows = {int(r["ID"]): r["Name_lang"]
+                for r in fetch("JournalInstance",
+                               None if locale == "enUS" else locale)}
+        per_locale[locale] = {i: rows.get(i) for i in instance_ids}
+
+    out = [FIXTURE_NAMES_HEADER]
+    for locale in FIXTURE_LOCALES:
+        out.append("    %s = {" % locale)
+        for instance_id in sorted(per_locale[locale]):
+            name = per_locale[locale][instance_id]
+            if name is None:
+                continue
+            out.append('        [%d] = "%s",' % (instance_id, name))
+        out.append("    },")
+    out.append("}")
+    out.append("")
+    return NEWLINE.join(out)
 
 
 def build_index():
@@ -311,8 +492,7 @@ def build_index():
 
 def read_stats(item_ids):
     """Stream ItemSparse (about 50 MB) and pull stats for item_ids only."""
-    req = urllib.request.Request(BASE % "ItemSparse", headers=UA)
-    stream = io.TextIOWrapper(urllib.request.urlopen(req), encoding="utf-8")
+    stream = io.TextIOWrapper(open_table("ItemSparse"), encoding="utf-8")
     reader = csv.DictReader(stream)
     out, multi_primary, unfoldable = {}, {}, {}
     for row in reader:
@@ -391,8 +571,32 @@ local _, ns = ...
 '''
 
 
+CHALLENGE_MAP_HEADER = """-- journalInstanceID -> challengeMapID for this season's Mythic+
+-- pool. Joined on the MapID that JournalInstance and
+-- MapChallengeMode both carry, never hand-written: it restates
+-- something the client already knows, so a second copy could only
+-- ever drift away from it.
+--
+-- The challenge map id is the key the Mythic+ side panel needs.
+-- C_ChallengeMode.GetMapUIInfo takes it and answers with the icon
+-- and the localised name (four languages for free), and
+-- C_ChallengeMode.GetMapTable answers WITH these ids -- which makes
+-- that API something this table can be checked against at runtime
+-- rather than a rival source of the same fact.
+--
+-- Card labels are NOT here. They are the one hand-written thing in
+-- this feature and they are language-shaped, so they live in
+-- Locales.lua (ns.DungeonShort, with a cn override). This file
+-- stays ids-only and ASCII-only.
+--
+-- Iterate by SORTED key: pairs() order is unspecified, and eight
+-- cards that reshuffle between openings would be a bug nobody could
+-- reproduce on demand.
+ns.ChallengeMap = {"""
+
+
 def emit(source, stats, effects, build, today, spec_gear,
-         spec_weapons, spec_shields):
+         spec_weapons, spec_shields, challenge_maps):
     lines = [LUA_HEADER]
 
     lines.append("-- specID -> armor type and primary stat, derived from\n")
@@ -435,6 +639,13 @@ def emit(source, stats, effects, build, today, spec_gear,
         lines.append("    [%d] = true, -- %s\n"
                      % (spec_id, spec_gear[spec_id][2]))
     lines.append("}\n\n")
+
+    lines.append(CHALLENGE_MAP_HEADER + NEWLINE)
+    for instance_id in sorted(challenge_maps):
+        lines.append("    [%d] = %d, -- %s%s"
+                     % (instance_id, challenge_maps[instance_id],
+                        DUNGEONS.get(instance_id, "?"), NEWLINE))
+    lines.append("}" + NEWLINE + NEWLINE)
 
     lines.append("ns.LootMeta = {\n")
     lines.append('    build = "%s",\n' % build)
@@ -481,10 +692,19 @@ def main():
     parser = argparse.ArgumentParser(description="Regenerate Data/Loot.lua")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the summary without writing the file")
+    parser.add_argument("--build", metavar="X.Y.Z.NNNNN",
+                        help="pin every table to this client build instead "
+                             "of whatever is live. Use the build already "
+                             "stamped in Data/Loot.lua to see what a change "
+                             "to this script did, without Blizzard's latest "
+                             "patch mixed into the same diff.")
     args = parser.parse_args()
 
-    build = live_build()
-    print("live client build: %s" % build)
+    global PINNED_BUILD
+    PINNED_BUILD = args.build
+    build = args.build or live_build()
+    print("client build: %s (%s)"
+          % (build, "pinned" if args.build else "live"))
 
     source, effects, multi, items = build_index()
     print("gear items: %d" % len(source))
@@ -573,9 +793,27 @@ def main():
     print("weapon proficiency derived for %d specs, %d can use shields"
           % (len(spec_weapons), len(spec_shields)))
 
+    # Mythic+ side panel data. The dungeon pool is the hand-written
+    # constant at the top of this file; everything below is derived from
+    # it, so adding next season's dungeons there is the whole edit.
+    challenge_maps, map_problems, map_names = build_challenge_maps(DUNGEONS)
+    for problem in map_problems:
+        print("ERROR: %s" % problem, file=sys.stderr)
+    if map_problems:
+        return 1
+    # Printed as a table on purpose: a join that is unique but WRONG is
+    # invisible in a number and obvious in a pair of names.
+    print("challenge maps resolved for %d of %d dungeons"
+          % (len(challenge_maps), len(DUNGEONS)))
+    for instance_id in sorted(challenge_maps):
+        journal, mode = map_names[instance_id]
+        match = "" if journal == mode else "   <- NAMES DIFFER, check the join"
+        print("  %5d -> %4d  %s%s"
+              % (instance_id, challenge_maps[instance_id], journal, match))
+
     today = datetime.date.today().isoformat()
     text = emit(source, stats, effects, build, today, spec_gear,
-                spec_weapons, spec_shields)
+                spec_weapons, spec_shields, challenge_maps)
 
     here = os.path.dirname(os.path.abspath(__file__))
     target = os.path.join(here, os.pardir, "Data", "Loot.lua")
@@ -595,6 +833,15 @@ def main():
     with open(fixture, "w", encoding="ascii", newline="\n") as handle:
         handle.write(fixture_text)
     print("wrote %s (test fixture, not shipped)" % os.path.normpath(fixture))
+
+    # UTF-8, and encoded BEFORE the file is opened: open(..., "w")
+    # truncates first and writes second, so an encoding failure there
+    # would leave nothing behind at all.
+    names = os.path.join(here, "fixture_dungeonnames.lua")
+    names_bytes = emit_dungeon_names(DUNGEONS).encode("utf-8")
+    with open(names, "wb") as handle:
+        handle.write(names_bytes)
+    print("wrote %s (test fixture, not shipped)" % os.path.normpath(names))
 
 
 if __name__ == "__main__":

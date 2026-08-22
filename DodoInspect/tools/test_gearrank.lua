@@ -664,5 +664,124 @@ do
                .. "as before -- the trinket split changed nothing here")
 end
 
+--------------------------------------------------------------------
+-- Mythic+ side panel data: ns.ChallengeMap + the card labels
+--
+-- Two tables that have to agree without either being able to see the
+-- other. ns.ChallengeMap is DERIVED (gen_loot.py joins JournalInstance
+-- to MapChallengeMode); the labels are the one HAND-WRITTEN thing in
+-- this feature and they live in Locales.lua. Nothing else in the addon
+-- reads both, so this is the only place the two ever meet.
+--
+-- The Chinese labels are checked against the names the CLIENT ships,
+-- not against names typed out a second time here -- that would only
+-- prove the two typings agree with each other. gen_loot.py writes them
+-- to tools/fixture_dungeonnames.lua on every run.
+--------------------------------------------------------------------
+
+loadAddonFile("Locales.lua")
+local officialNames = assert(loadfile("tools/fixture_dungeonnames.lua"))()
+
+do
+    local dungeons = {}
+    for instanceID in pairs(ns.LootMeta.dungeons) do
+        dungeons[#dungeons + 1] = instanceID
+    end
+    table.sort(dungeons)
+
+    -- Reverse assertion first: every loop below runs over this list, so
+    -- an empty one would let the whole section pass while proving
+    -- nothing at all.
+    checkEqual(#dungeons, 8,
+               "the season has 8 Mythic+ dungeons to build cards from")
+
+    -- Coverage, both directions. A dungeon with no challenge map id gets
+    -- no card; a challenge map id with no dungeon is a stale row the
+    -- generator should have dropped when the pool changed.
+    local mapped, seenMapID = 0, {}
+    for _, instanceID in ipairs(dungeons) do
+        local mapID = ns.ChallengeMap and ns.ChallengeMap[instanceID]
+        check(type(mapID) == "number",
+              "dungeon " .. instanceID .. " has a challengeMapID")
+        if type(mapID) == "number" then
+            mapped = mapped + 1
+            check(seenMapID[mapID] == nil,
+                  "challengeMapID " .. mapID .. " is claimed by only one "
+                  .. "dungeon (two cards on one map would render twice)")
+            seenMapID[mapID] = instanceID
+        end
+    end
+    checkEqual(mapped, #dungeons, "every dungeon resolved a challenge map")
+
+    local extra = {}
+    for instanceID in pairs(ns.ChallengeMap or {}) do
+        if not ns.LootMeta.dungeons[instanceID] then
+            extra[#extra + 1] = instanceID
+        end
+    end
+    checkEqual(#extra, 0,
+               "ChallengeMap carries no instance outside the dungeon pool "
+               .. "(stale: " .. table.concat(extra, ",") .. ")")
+
+    -- Labels. The budget is the one already stated at the top of
+    -- Locales.lua for bag tags: 4 Latin characters, 2 CJK. Counted in
+    -- CODE POINTS, not bytes -- one Chinese character is three bytes, so
+    -- a byte count would wave through a six-character Chinese label.
+    local function labelBudget(label)
+        local codepoints = utf8.len(label)
+        if not codepoints then return nil end -- not valid UTF-8
+        return codepoints, (#label > codepoints) and 2 or 4
+    end
+
+    local seenLabel = {}
+    for _, instanceID in ipairs(dungeons) do
+        local label = ns.DungeonShort and ns.DungeonShort[instanceID]
+        check(type(label) == "string" and #label > 0,
+              "dungeon " .. instanceID .. " has a default card label")
+        if type(label) == "string" then
+            local size, budget = labelBudget(label)
+            check(size ~= nil and size <= budget,
+                  string.format("label %q for %d fits the card (%s of %d)",
+                                label, instanceID, tostring(size), budget))
+            check(seenLabel[label] == nil,
+                  string.format("label %q belongs to one dungeon only -- "
+                                .. "two cards reading the same word cannot "
+                                .. "be told apart", label))
+            seenLabel[label] = instanceID
+        end
+    end
+
+    -- The Chinese override is the half with a checkable rule: every
+    -- label must be a real substring of the dungeon official name, so a
+    -- player reads a shortening rather than something we invented.
+    -- (UTF-8 is self-synchronising, so a byte-level find between two
+    -- valid strings can only land on a character boundary.)
+    local cn = ns.Locales and ns.Locales.cn and ns.Locales.cn.dungeonShort
+    check(cn ~= nil, "the cn locale carries its own card labels")
+
+    local checkedCN = 0
+    for _, instanceID in ipairs(dungeons) do
+        local label = cn and cn[instanceID]
+        local official = officialNames.zhCN[instanceID]
+        check(type(label) == "string" and #label > 0,
+              "dungeon " .. instanceID .. " has a Chinese card label")
+        check(type(official) == "string" and #official > 0,
+              "dungeon " .. instanceID .. " has an official Chinese name in "
+              .. "the fixture (rerun tools/gen_loot.py)")
+        if type(label) == "string" and type(official) == "string" then
+            checkedCN = checkedCN + 1
+            local size, budget = labelBudget(label)
+            check(size ~= nil and size <= budget,
+                  string.format("cn label %q for %d fits the card",
+                                label, instanceID))
+            check(string.find(official, label, 1, true) ~= nil,
+                  string.format("cn label %q really is part of the official "
+                                .. "name %q", label, official))
+        end
+    end
+    checkEqual(checkedCN, #dungeons,
+               "the substring rule was actually applied to every dungeon")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

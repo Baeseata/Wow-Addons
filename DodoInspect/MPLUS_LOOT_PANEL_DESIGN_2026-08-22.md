@@ -48,13 +48,42 @@
 ### challengeMapID ↔ journalInstanceID:**要生成，不要手写**
 
 `JournalInstance` 有一个 `MapID` 字段，跟 `MapChallengeMode.MapID` 能直接 join
-(三本老本 `2859 / 1762 / 2521` 两边逐个对上)。⇒ `gen_loot.py` 顺手生成这张表，
+(八本逐个对上;老本三个的 MapID 是 `1762 / 1877 / 2521` —— 原文这里写的 `2859` 是**新本**夺目谷,不是老本)。⇒ `gen_loot.py` 顺手生成这张表，
 换赛季时它跟着 `DUNGEONS` 常量自动更新。**手写的那份必然会漂**
 (canon `rules/engineering.md`「同一个不变式两份手写实现 = 静默分歧发生器」)。
 
+🎁 **2026-08-22 补:连「哪八本」本身都有权威源** —— `MythicPlusSeasonTrackedMap`
+(`DisplaySeasonID` → `MapChallengeModeID`)。`DisplaySeason 37` 实测**正好**是我们这 8 个,
+而且 37 是表里最大的季 ⇒ 这个 build 上没有下季数据可混。生成器已挂上这条交叉核对。
+- ⚠ **必须钉死季号,不许 `max(DisplaySeasonID)`** —— wago 同时供 PTR build,
+  下个季会在**上线前**就出现在这张表里,`max()` 会在一次例行重跑里把整个面板换成未发布的副本。
+  钉死 ⇒ 换季那天**吵着报错**,谁改 `DUNGEONS` 就同一笔改季号。
+- ⚠ 三个「看起来能判季」的字段**别用**:`Flags` / `ExpansionLevel` 在这 8 本上区分不出来
+  (`ExpansionLevel` 实为 `{11:5, 7:2, 9:1}`,诸王和神庙都是 7);
+  `RequiredWorldStateID == 0` 在**这个 build 上**恰好是完美判据(8/8),
+  但它显然会随季变 —— **一个今天成立的判据不等于一个可以依赖的判据**。
+- 🔴 **join 不是天然唯一的**:全表有 **5 个 MapID 各带两条** challenge mode
+  (卡拉赞上下 / 麦卡贡两半 / 塔扎维什两半 / 时光之末两半 / **1753 三巨头之座**)。
+  最后那个**两条的 `Name_lang` 一模一样** ⇒ **靠比名字发现不了**,必须断言候选数 == 1。
+  五个全都进过往季的 M+ 池,所以这是活的风险不是假想。A/B 已验:喂 945 进去精确报出 `239/583`。
+
 ### 装等:M+ 掉的是 311，不是 334
 
-**地下城内掉落上限 = ilvl 311**(Hero 3/6，+10 就封顶)。参考:M+ 宝箱 321、大宝库 337。
+**地下城内掉落上限 = ilvl 311**(group 617 序列 3,+10 就封顶)。
+
+> 🔴 **2026-08-22 复核:原文这里的「M+ 宝箱 321、大宝库 337」两个数都是错的。**
+> 客户端 `MythicPlusSeasonRewardLevels`(season 120 / ActivityTier 256 = M+ 那一档)
+> 直接读出 +2..+10 的大宝库是 `305 305 308 308 311 315 315 315 **318**` ——
+> **大宝库 +10 = 318**(= Myth 1/9,所以 M+ **确实**产 Myth 轨道的装备,只走宝库);
+> 337 是 Myth 7/9,M+ 任何渠道都够不到。**宝箱不是 321**:`ItemBonusTreeNode` 里
+> 副本内掉落(ItemContext 16)和结算宝箱(33)两条通道映射**逐字节相同**,
+> ⇒ 宝箱 = 掉落 = 311(此条是推出来的,没有直接读到宝箱那一列)。
+> ⚠ **「3/6」这个分母未经证实**:group 617 有 **8** 条,末两条带一个 Flags 位,
+> 被读作「超出显示上限」⇒ 显示成 6 档 —— **没有人拿真 tooltip 核过**。
+> 真机点一次 12843 就同时答了分母和轨道名。
+>
+> 🔑 **元教训**:这两个错数跟当初「Myth 顶是 337」是**同一批 pre-season 来源**。
+> 参考数字也要有出处,不然它会被下一个人当依据用。
 **334 是 Myth 6/6 = 团本档，M+ 打死掉不到** —— 现有 `GearPanel` 用 334/344 是对的，
 因为它排的是**全部来源含团本**；这个面板只排 M+，用 334 会让玩家系统性高估。
 
@@ -121,9 +150,21 @@
   (⚠ `string.rep(":", 11)` 那个坑:冒号数是**声明的**不是数出来的)。
 
 **下拉栏(切职业/专精)**
-- 🔴 **开工前必须先探**:截图里那个是老式 `UIDropDownMenu`，而 12.x 暴雪在往
-  `WowStyle1DropdownTemplate` 迁。**照哪套写要在真机上确认哪个还活着**，别照老文档手搓
-  (canon:「这个写法依赖一个我永远验不了的行为吗」—— 这个验得了，那就先验)。
+- ✅ **已定案(2026-08-22,不必再探)**:用**新** API ——
+  `CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")`
+  + `:SetupMenu(function(_, root) ... end)` + `root:CreateRadio(text, isSelected, setSelected)`
+  + `:SetDefaultText(...)`;要在外部状态变了之后刷新按钮文字就再调一次 `:GenerateMenu()`。
+  老的 `UIDropDownMenu_*` 是 **deprecated-but-alive**(`Blizzard_SharedXML.toc` 仍在加载它,
+  文件里也没有任何弃用告警 ⇒ **照老写法写不会报错,只是没人再该这么写**)。
+- **三条互不依赖的证据**:① 12.1.0(69404)的暴雪源码里模板真实存在;
+  ② RaiderIO 按能力分支(`Menu and MenuUtil and AnchorUtil` 有就走新的,老那支是给 Classic 的死代码);
+  ③ **本机四个自家插件已经在产跑着这个写法** —— `DodoGuanzhu/Options.lua:513,550`
+  是最贴近本需求的现成范例(`CreateRadio` + `SetDefaultText` + `GenerateMenu`)。
+- 🔴 **心智模型别搞错**:**没有「从控件读回选中项」这回事。** 状态归你自己存,
+  `isSelected` 是一个**对你自己状态求值的谓词**,按钮文字是从「谁报告自己被选中」派生出来的。
+- 🔴 **取专精名用 `C_SpecializationInfo.GetSpecializationInfoByID`**
+  (照本插件 `TargetInfo.lua:102-105` 已有的写法,带全局回落)。
+  `GetSpecializationInfoForSpecID` **不存在** —— 本机 687 个 lua 文件零调用,照着写必报 nil。
 
 **自检**
 - `C_ChallengeMode.GetMapTable()` 是游戏自己的本赛季 M+ 池，**是权威源**。
@@ -134,8 +175,10 @@
 
 1. **数据层**:`gen_loot.py` 生成 challengeMap 映射表 + 简称表进 `Data/Loot.lua`；
    `Config` 加 `GEAR_HERO_BONUS_ID = 12843`。跑 `lua tools/test_gearrank.lua` 保持绿。
-2. **真机点两件事**(都很便宜，且都会改后面的写法):`12843` 是不是真给 311；
-   下拉栏该用哪套模板。
+2. ~~**真机点两件事**~~ —— **下拉栏那条已定案**(见上面「下拉栏」节,零代码结论)。
+   **只剩一件真机的活**:`12843` 是不是真给 311。三条离线推导已经互相对上
+   (见 `Config.lua` 的 `GEAR_HERO_BONUS_ID` 注释),但**三条推导对上不等于量过**。
+   顺带同一枪还能答分母(3/6 还是 3/8)和轨道名(是不是真叫 Hero)。
 3. **侧栏一**:卡片 + 挂载 + 跟随隐藏。先不接侧栏二，单独能开能关。
 4. **侧栏二**:列表 + 四列 + tooltip。
 5. **下拉栏**:切职业/专精。

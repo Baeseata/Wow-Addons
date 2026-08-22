@@ -147,9 +147,41 @@ ns.SpecShield = {
     [264] = true, -- Restoration
 }
 
+-- journalInstanceID -> challengeMapID for this season's Mythic+
+-- pool. Joined on the MapID that JournalInstance and
+-- MapChallengeMode both carry, never hand-written: it restates
+-- something the client already knows, so a second copy could only
+-- ever drift away from it.
+--
+-- The challenge map id is the key the Mythic+ side panel needs.
+-- C_ChallengeMode.GetMapUIInfo takes it and answers with the icon
+-- and the localised name (four languages for free), and
+-- C_ChallengeMode.GetMapTable answers WITH these ids -- which makes
+-- that API something this table can be checked against at runtime
+-- rather than a rival source of the same fact.
+--
+-- Card labels are NOT here. They are the one hand-written thing in
+-- this feature and they are language-shaped, so they live in
+-- Locales.lua (ns.DungeonShort, with a cn override). This file
+-- stays ids-only and ASCII-only.
+--
+-- Iterate by SORTED key: pairs() order is unspecified, and eight
+-- cards that reshuffle between openings would be a bug nobody could
+-- reproduce on demand.
+ns.ChallengeMap = {
+    [1030] = 250, -- Temple of Sethraliss
+    [1041] = 249, -- Kings' Rest
+    [1202] = 399, -- Ruby Life Pools
+    [1304] = 587, -- Murder Row
+    [1309] = 584, -- The Blinding Vale
+    [1311] = 586, -- Den of Nalorakk
+    [1313] = 585, -- Voidscar Arena
+    [1322] = 588, -- Altar of Fangs
+}
+
 ns.LootMeta = {
     build = "12.1.0.69299",
-    date = "2026-08-14",
+    date = "2026-08-22",
     raids = { [1317] = true, [1320] = true },
     dungeons = { [1030] = true, [1041] = true, [1202] = true, [1304] = true, [1309] = true, [1311] = true, [1313] = true, [1322] = true },
 }

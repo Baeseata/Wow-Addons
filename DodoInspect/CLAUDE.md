@@ -536,7 +536,7 @@ lua tools/test_gearrank.lua               # 必须 0 failures
 而这个 bug 恰恰住在那段接缝上。改这三个字段的**消费方**时,自动化测试不会替你兜底,只能真机点。
 🔑 判据:**改一个字段的含义之前,先 grep 它的全部读取点** —— 我第一次只 grep 了 `GearRank`。
 
-## 🚧 待施工:大秘境掉落查询侧栏(设计已定稿,零代码)
+## 🚧 施工中:大秘境掉落查询侧栏(数据层已落地)
 
 打开史诗钥石地下城界面时挂两级侧栏:8 张大秘境卡片 → 该本 + 该专精可拾取的装备列表。
 **设计稿 = [`MPLUS_LOOT_PANEL_DESIGN_2026-08-22.md`](MPLUS_LOOT_PANEL_DESIGN_2026-08-22.md)**,
@@ -547,6 +547,26 @@ lua tools/test_gearrank.lua               # 必须 0 failures
   而 `appearanceModID` 在 M+ 装备上只有一个值(团本才有四个)。落地口径改成**只扫实物**。
 - 🔴 **M+ 掉落上限是 311 不是 334** —— 334 是团本档。现有 `GearPanel` 用 334/344 没错,
   因为它排的是全部来源;这个新面板只排 M+,照抄会让玩家系统性高估。
+
+**2026-08-22 数据层(施工顺序第 1 步)已落地**,进度以 `git log` 为准,这里只留不会漂的:
+- `Data/Loot.lua` 多了 `ns.ChallengeMap`(journalInstanceID -> challengeMapID,**生成的**)。
+  卡片简称是这个功能里**唯一手写**的东西,住 `Locales.lua`:`ns.DungeonShort`(中性缩写)
+  + `cn` 块的 `dungeonShort` 覆盖 —— **不进 `Data/Loot.lua`**,那份是 ids-only / ASCII-only。
+  别把简称抄进三个语言块:缩写不是翻译,复制三份就是三份会各自漂的同一个事实。
+- `gen_loot.py` 加了 `--build`(钉客户端 build)。**改这个脚本本身时先钉住 build 跑一次** ——
+  不钉,你的改动会跟暴雪同期发的数据混在同一份 diff 里,分不开。
+  (实测:69299 → 69404 会顺带改 2 件团本装备的副属性 + 2 把武器的 equipLoc。)
+- `tools/test_gearrank.lua` 多了一节 guard,`tools/fixture_dungeonnames.lua` 是它的夹具
+  (**UTF-8**,本仓唯一一个;装客户端原文的副本名,好让中文简称跟**客户端说的**比,
+  而不是跟这里再打一遍的名字比)。A/B 验过 7 种真实坏法,每种精确红。
+- 🔴 **`GEAR_HERO_BONUS_ID = 12843`(311)三条离线推导互相对上,但仍未在游戏里量过。**
+  Config 里那段注释写了怎么量、以及同一枪能顺带答的两个未知(分母 3/6 还是 3/8、
+  轨道是不是真叫 Hero)。**别把「三条推导对上」读成「已实测」** —— 设计稿原话就是这条。
+- ✅ **下拉栏定案:新 API**(`WowStyle1DropdownTemplate` + `SetupMenu` + `CreateRadio`),
+  老 `UIDropDownMenu_*` 是 deprecated-but-alive(照老写法写**不会报错**,所以没有信号会拦你)。
+  **最省事的参照是本机自家插件**:`DodoGuanzhu/Options.lua` 的 513 / 550 行就是整套写法。
+  取专精名走 `C_SpecializationInfo.GetSpecializationInfoByID`(本插件 `TargetInfo.lua:102-105`
+  已有带回落的写法);`GetSpecializationInfoForSpecID` **不存在**。
 
 ## 版本历史 —— ⚠ **「当前是哪版」别在这儿读**
 

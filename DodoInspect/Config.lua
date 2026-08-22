@@ -216,6 +216,42 @@ ns.Config = {
     -- read that group's SequenceValue rows.
     GEAR_MYTH_BONUS_ID = 12854,
     GEAR_TOP_BONUS_ID  = 13848,
+    -- Ceiling for gear that DROPS INSIDE a Mythic+ dungeon: Hero 3 of 6,
+    -- bonus list 12843, item level 311. Used by the Mythic+ loot panel,
+    -- which lists only dungeon drops -- so it must NOT reuse the two ids
+    -- above. Those are the Myth track, which is raid gear; rendering a
+    -- dungeon drop at 334 would overstate every row in that panel by an
+    -- upgrade tier and a half.
+    --
+    -- Provenance, stated apart because these are not equally strong:
+    --   MEASURED in game: 12841 -> 305, which is sequence 1 of the same
+    --     group 617 that 12843 sits in at sequence 3.
+    --   DERIVED (2026-08-22, three independent routes, no measurement):
+    --     a. ItemBonus(12843) Type=49 -> ItemScalingConfig 316 -> 311.
+    --        The same chain reproduces all five in-game measurements on
+    --        record (285/292/305/334/344) exactly, and reading Value_0
+    --        as the item level directly fails all five -- so the chain
+    --        discriminates rather than agreeing with anything.
+    --     b. Group 617's ladder is 305 308 311 315 318 321 324 328,
+    --        anchored on the measured 305 at sequence 1.
+    --     c. MythicPlusSeasonRewardLevels, season 120 tier 256 (the M+
+    --        tier) walks 305 305 308 308 311 315 315 315 318 for keys
+    --        +2..+10, i.e. 311 is a level this season really hands out.
+    -- Three derivations agreeing is still not a measurement, and this
+    -- project has been burned by exactly that before. Confirm with the
+    -- recipe in CLAUDE.md ("tooltip rendered at 6/6 / 9/6") -- one /run
+    -- -- and delete this paragraph once it has been seen in game.
+    --
+    -- Two things the same /run settles for free, both currently unknown:
+    --   * whether the tooltip reads "3/6" or "3/8". Group 617 has eight
+    --     entries; the last two carry a Flags bit that is believed to
+    --     mean "past the displayed cap", which would make it 3/6. Nobody
+    --     has checked that belief against an actual tooltip.
+    --   * whether the tooltip names the track "Hero". No DB2 table
+    --     carries a track name; "Hero" is read off the track's position.
+    --
+    -- SEASONAL, like the two above: re-derive all three together.
+    GEAR_HERO_BONUS_ID = 12843,
     -- Ceiling for max-quality crafted gear, shown on the wrist and back
     -- rows. Wrist and back cannot be pushed further: Ascendant Venomstones
     -- only apply to weapons, trinkets and necklaces. (^ Unverified, and

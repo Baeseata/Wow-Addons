@@ -223,6 +223,22 @@ ns.Locales = {
         priCfgMax      = "上限",
         priCfgReset    = "恢复默认",
         priCfgCopy     = "复制到其它天赋",
+        -- Mythic+ dungeon card labels, keyed by journalInstanceID. This
+        -- is the ONLY locale that overrides ns.DungeonShort below: every
+        -- one of these is a genuine substring of the dungeon's official
+        -- Simplified Chinese name, which tools/test_gearrank.lua checks
+        -- against the names tools/gen_loot.py pulls from the live client
+        -- data. Invent one and the test goes red.
+        dungeonShort = {
+            [1322] = "毒牙", -- 毒牙祭坛
+            [1304] = "密谋", -- 密谋小径
+            [1311] = "洞穴", -- 纳洛拉克的洞穴
+            [1309] = "夺目", -- 夺目谷
+            [1313] = "虚空", -- 虚空之痕竞技场
+            [1041] = "诸王", -- 诸王之眠
+            [1030] = "神庙", -- 塞塔里斯神庙
+            [1202] = "红玉", -- 红玉新生法池
+        },
     },
 
     fr = {
@@ -422,6 +438,42 @@ ns.Locales = {
         priCfgReset    = "Valores por defecto",
         priCfgCopy     = "Copiar a los otros",
     },
+}
+
+-- Mythic+ dungeon card labels, keyed by journalInstanceID.
+--
+-- Deliberately NOT inside the per-language blocks the way every other
+-- string family in this file is. These are not translations: they are
+-- the acronyms the Mythic+ community actually says, English-derived and
+-- used unchanged by French and Spanish players (the Raider.IO
+-- convention -- initials of the meaningful words, articles skipped,
+-- "of" kept, as in POS = Pit of Saron). Copying them into three locale
+-- blocks would be three copies of one fact, free to drift apart with
+-- nothing able to say which copy was right.
+--
+-- A locale that genuinely says something different overrides this table
+-- with its own `dungeonShort` (only `cn` does, above); every other
+-- locale falls through to here.
+--
+-- HARD RULE, same as the tags at the top of this file: 4 Latin
+-- characters max, 2 CJK characters max. Enforced by
+-- tools/test_gearrank.lua, together with "no two dungeons share a
+-- label" -- two cards reading the same word is worse than a long word.
+--
+-- !! The three returning dungeons carry the community's established
+-- acronyms. The five new ones were coined here on 2026-08-22, when the
+-- season was young enough that no convention had formed yet. If the
+-- community settles on something else, the community wins: these are
+-- meant to be recognised, not to be ours.
+ns.DungeonShort = {
+    [1322] = "AOF", -- Altar of Fangs        (coined)
+    [1304] = "MR",  -- Murder Row            (coined)
+    [1311] = "DON", -- Den of Nalorakk       (coined)
+    [1309] = "BV",  -- The Blinding Vale     (coined)
+    [1313] = "VA",  -- Voidscar Arena        (coined)
+    [1041] = "KR",  -- Kings' Rest           (established)
+    [1030] = "TOS", -- Temple of Sethraliss  (established)
+    [1202] = "RLP", -- Ruby Life Pools       (established)
 }
 
 -- Stable order for the options dropdown.
