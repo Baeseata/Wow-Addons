@@ -198,6 +198,7 @@ BigWigs packager workflow、有效的 `CF_API_KEY`，以及**跟单仓里同一�
 | DodoShield | 进战定时文字/声音提醒（多方案；如放罩子） | — |
 | DodoStatHUD | 实时属性 HUD（套装名、副属性、趋势箭头） | — |
 | DodoUnholy | 邪 DK 食尸鬼提醒（专精检测、宠物追踪） | — |
+| DodoXuefei | 血 DK「沸点」监视一格：15 秒 proc 显绿 / 3 秒 echo 显红，都发光。**DodoCombatHUD `Boiling.lua` 抄出来的独立版，给不用整套 HUD 的人** —— 两份实现，改一边要看另一边 | `CLAUDE.md` |
 
 **外部插件**：Plater（第三方姓名版，CurseForge 安装，不进本仓库）。
 
@@ -328,6 +329,9 @@ BigWigs packager workflow、有效的 `CF_API_KEY`，以及**跟单仓里同一�
 - 所有 Dodo 插件为个人自用，按需迭代；上了 CurseForge 的那几个另受发版纪律约束（见上）。
 - 新插件：名字以 `Dodo` 开头，TOC 抄现有的一份（`## Author: Doodo` + `## Group: Dodo` +
   `## OptionalDeps: Dodo` + `## IconTexture` 指向父包图标），然后**回来给「插件总览」补一行**。
+  - ⚠ **要送出门给外人的插件是个例外**：那两行都指向 `Dodo` 那个父包文件夹，而对方**不会有它**
+    —— 指过去只是个空图标。这类插件把 `OptionalDeps` 和 `IconTexture` **去掉**，让它能独立站住。
+    （**DodoXuefei 是第一个**；下次看到某个 TOC 少这两行，先想想是不是这个原因，别当漏写补回去。）
 - **新增插件文件夹后要完整重启客户端**（`/reload` 不发现新目录）。
 - Plater 为外部第三方插件，不做修改。
 - **重命名 / 合并史**: DodoItemLevelOverlay → **DodoInspect**（装等覆盖层主体）；
