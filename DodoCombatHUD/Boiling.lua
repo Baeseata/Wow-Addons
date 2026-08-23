@@ -11,6 +11,14 @@
 -- 量出来的答案是**后者**(战斗中光环被扣值),所以绿色那半交给暴雪画、
 -- 红色那 3 秒(恒定长度、起点是明文事件)才是我们自己算的。
 
+-- 🔴 **这一格还有第二份实现**:独立插件 `DodoXuefei`(2026-08-23,给不用整套 HUD 的人)。
+--    canon 那条「同一不变式两份手写实现 = 静默分歧发生器」成立 ——
+--    下面那四个 spellID、glow 的三个熄灭原因、echo 的时长与连锁,**改了两边都要改**。
+--    对面:D:\...\AddOns\DodoXuefei\Core.lua + 它的 CLAUDE.md(有"故意不一样的六处"那张表)。
+--    ⚠ 那边多做了一件这边没做的事:改尺寸时**连已经建出来的 aura button 一起 resize**
+--      (`SetAuraGroupLayout` + 手动 SetSize + CanTouchButtons 闸)。这边改 cdWidth/cdHeight
+--      只 resize 外框、图标不跟 —— 在这儿是潜伏 bug,哪天要修就去抄那边。
+
 local ADDON, ns = ...
 ns = ns or {}
 

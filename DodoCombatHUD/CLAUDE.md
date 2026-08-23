@@ -267,6 +267,12 @@ A/B 验过(把 `SetCdRowPad(0)` 那句删掉,三条红、正对照仍绿)。
 
 ## 沸点那一格(0.12,血 DK)—— 全靠事件自绘,一个光环都不读
 
+🔴 **它有第二份实现**:独立插件 `DodoXuefei`(2026-08-23 抽出去,给不用整套 HUD 的人)。
+**四个 spellID / glow 三个熄灭原因 / echo 时长与连锁,改了两边都要改。**
+那边还多做了一件这边没做的:改尺寸时连**已经建出来的 aura button** 一起 resize
+(`SetAuraGroupLayout` + 手动 SetSize + `CanTouchButtons` 闸)——
+这边改 `cdWidth/cdHeight` 只 resize 外框、图标不跟,是**潜伏 bug**,要修就去抄那边。
+
 `Boiling.lua`。它钉在**自身增益排最左**那一格,自动出现(血 DK + 点了沸点天赋 + 那排开着)。
 `/dch bp why` 一条命令把判据每一环单独打出来 ——「它没出现」有七八个断点,屏幕上长得全一样。
 
