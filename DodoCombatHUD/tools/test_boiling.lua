@@ -576,9 +576,22 @@ specID = 250
 run(nsJ.BoilingEvaluate)
 check("换回血 DK ⇒ 又出来", shown(), true)
 
+-- 正对照:有这格的时候,大招排**确实**被推开了一格。
+-- 🔴 少了这条,下面那个"pad 归零"就是空转 —— pad 一直是 0 也能全绿。
+check("有这格时大招排被推开(pad > 0)", (nsJ.cdPad or 0) > 0, true)
+
 hasTalent = false                              -- 血 DK 但没点沸点
 run(nsJ.BoilingEvaluate)
 check("|cff33ff99负对照|r:没点沸点天赋 ⇒ 不该有这格", not shown(), true)
+-- 🔑 Jerry 要的「没点天赋就把它隐藏掉、其他的顺延到前面」——
+--    实现方式就是这个 pad 回 0(大招排整体左移一格)。这条断言就是那句需求。
+check("没点天赋 ⇒ 大招排顺延回最左(pad = 0)", (nsJ.cdPad or -1) == 0, true)
+-- 面板那条路:它拿 ns.BoilingEligible 决定那一行画不画,并且要**说出为什么**。
+do
+    local ok, why = nsJ.BoilingEligible()
+    check("面板:没点天赋 ⇒ 不合格", ok == false, true)
+    check("面板:而且给得出原因", type(why) == "string" and #why > 0, true)
+end
 
 hasTalent = true
 _G.DodoCombatHUDDB.cdsOn = false               -- 大招排整排关掉了

@@ -403,11 +403,21 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows, pinned)
 
     -- 行的**纵向位置每次刷新时才定**:固定格在不在会让整列上下挪一行,
     -- 而它跟着专精变。建的时候钉死的话,换到血 DK 就会有两行叠在一起。
+    -- 名字列的右边界:有 ^ v 时按钮从 216 起,没有时 x 从 260 起 —— 各留 6px 缝。
+    local NAME_RIGHT = reorder and 210 or 254
+    local ID_W = 44
+
     local function placeRow(r, vis)
         local top = -(vis - 1) * ROW_H
         r.icon:ClearAllPoints();  r.icon:SetPoint("TOPLEFT", 0, top - 2)
         r.check:ClearAllPoints(); r.check:SetPoint("TOPLEFT", 20, top)
         r.text:ClearAllPoints();  r.text:SetPoint("TOPLEFT", 44, top - 4)
+        r.text:SetWidth(NAME_RIGHT - 44 - ID_W - 4)
+        if r.id then
+            r.id:ClearAllPoints()
+            r.id:SetPoint("TOPRIGHT", child, "TOPLEFT", NAME_RIGHT, top - 4)
+            r.id:SetWidth(ID_W)
+        end
         if r.up then
             r.up:ClearAllPoints();   r.up:SetPoint("TOPLEFT", 216, top)
             r.down:ClearAllPoints(); r.down:SetPoint("TOPLEFT", 238, top)
@@ -426,10 +436,17 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows, pinned)
         r.check = CreateFrame("CheckButton", nil, child, "UICheckButtonTemplate")
         r.check:SetSize(22, 22)
 
+        -- 名字和 spellID **分成两个** FontString:ID 右对齐单独一列。
+        -- 🔴 挤在一起写的话,名字一长就把 ID 顶出去被截掉(`SetWordWrap(false)` 是静默截断)
+        --    ——「鲜血女王的精华 (43...」。而 ID 正是「填错了要改哪个」的唯一线索,
+        --    名字反而是查不到时会变红字的那个信号,截掉一半也还认得出。
+        --    ⇒ 会被牺牲的那个必须是名字,不是 ID。顺带 ID 对齐成一列,好扫。
         r.text = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         r.text:SetJustifyH("LEFT")
         r.text:SetWordWrap(false)                     -- 名字太长就截断,绝不换行(会撑破行高)
-        r.text:SetWidth((withButtons and reorder) and 168 or 236)
+        r.id = child:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        r.id:SetJustifyH("RIGHT")
+        r.id:SetWordWrap(false)
 
         if withButtons then
             local function tinyBtn(label)
@@ -565,6 +582,7 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows, pinned)
     local function hideRow(r)
         if not r then return end
         r.icon:Hide(); r.check:Hide(); r.text:Hide()
+        if r.id then r.id:Hide() end
         if r.del then r.del:Hide() end
         if r.up then r.up:Hide(); r.down:Hide() end
     end
@@ -594,9 +612,10 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows, pinned)
             pinRow.check:Show(); pinRow.icon:Show()
             -- 🔴 明写「固定」两个字。它不能移不能删,而屏幕上跟别的行长得一样 ——
             --    不写的话人会去找它的 ^ v,找不到就以为是 bug。
-            pinRow.text:SetFormattedText("%s1. %s  |cff808080(固定,不能移动)|r",
-                on and "" or "|cff707070", pinned.label)
+            pinRow.text:SetFormattedText("%s1. %s", on and "" or "|cff707070", pinned.label)
             pinRow.text:Show()
+            -- 固定格没有 spellID 那一列(它不是列表里的项)⇒ 那一列写「固定」。
+            pinRow.id:SetText("固定"); pinRow.id:Show()
         else
             hideRow(pinRow)
         end
@@ -645,9 +664,10 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows, pinned)
                 -- 🔴 序号 = **屏幕上的格号**(算上固定格)。不加 offset 的话血 DK 的
                 --    「1.」指的是屏幕上第 2 格 —— 而那正是 0.13.1 那个撒谎的形状。
                 --    名字查不到就红字 —— 那是填错 ID 唯一看得见的地方。
-                r.text:SetFormattedText("%s%d. %s  |cff808080(%d)|r",
-                    hidden and "|cff707070" or "", i + offset, ns.SpellLabel(id), id)
+                r.text:SetFormattedText("%s%d. %s",
+                    hidden and "|cff707070" or "", i + offset, ns.SpellLabel(id))
                 r.text:Show()
+                r.id:SetText(tostring(id)); r.id:Show()
                 if r.up then
                     -- 🔴 第一格的 ^ 和最后一格的 v 必须**点不动**,不是点了没反应。
                     --    ⚠ 有固定格时,列表第 1 项的 ^ 仍然是灰的 —— 它换不到固定格前面去。
@@ -880,7 +900,10 @@ local function BuildSelfPage()
     --    (它存的是 db.bpSlot.manualOff,缺席 = 开)—— 两份手写的判据必然会漂。
     c:AuraEditor("cds", ns.CD_SLOTS or 8, ns.CD_SLOTS or 8, true, nil, {
         icon  = 50842,        -- 血液沸腾:那一格画的就是它的图标
-        label = "沸点(15 秒 proc / 3 秒 echo)",
+        -- ⚠ 这一行的宽度是固定的、而且**不换行**(换行会撑破行高)⇒ 长了就被静默截断。
+        --    详细说明放 tooltip 里,行里只留名字 —— 第一版写成
+        --    「沸点(15 秒 proc / 3 秒 echo)」,后面那个「(固定)」直接被切掉了。
+        label = "沸点",
         tip   = "15 秒 proc 显绿、3 秒 echo 显红,都发光。它钉死在最左那格,其余图标顺次右移;取消勾选就把那一格收起来,其余图标左移一格。",
         eligible = function()
             if not ns.BoilingEligible then return false, "Boiling.lua 没加载" end
