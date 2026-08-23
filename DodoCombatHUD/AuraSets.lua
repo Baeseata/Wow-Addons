@@ -135,7 +135,10 @@ ns.SPEC_CDS = {
     --    ⚠ 这是文件头那条「填光环 ID 不是技能 ID」的第二个实例,而且这次**名字完全不能当判据**
     --      (五个全叫「熵能裂隙」)⇒ /dch cd 列出来名字对,只证明 ID 存在,不证明选对了那一个。
     [SPEC.PRI_SHAD]  = { 194249, 47585, 15286, 450193 },  -- Voidform(光环 ID!)/ Dispersion / Vampiric Embrace / 熵能裂隙
-    [SPEC.DK_BLOOD]  = { 55233, 49028, 48792, 48707 },    -- Vampiric Blood / Dancing Rune Weapon / Icebound / AMS
+    -- 血 DK:骨盾常驻 + 血裔精华 + 四个保命大招。沸点(15+3)不在这儿 ——
+    -- 它要变色 / 换图 / 优先级,那三样容器给不了,走 Boiling.lua 钉死的那一格。
+    [SPEC.DK_BLOOD]  = { 195181, 433925, 55233, 49028, 48792, 48707 },
+    -- 骨盾 / 鲜血女王的精华 / 吸血鬼之血 / 舞动符文武器 / 冰封之韧 / 反魔法护罩
     [SPEC.DK_FROST]  = { 51271, 48792, 48707 },           -- Pillar of Frost / Icebound / AMS
     [SPEC.DK_UNH]    = { 1233448, 42650, 48792, 48707 },  -- Dark Transformation / Army of the Dead / …
     [SPEC.SHA_ELE]   = { 191634, 108271 },                -- Stormkeeper / Astral Shift

@@ -103,8 +103,8 @@ function ns.RegisterOptions()
             "血条左上角那排,我打在目标身上的 DoT + 倒计时。位置是固定的 —— 掉了哪个就空哪一格,后面的不会左移。",
             ns.ApplyLayout)
 
-        AddCheckbox(category, "DCH_CDS_ON", "cdsOn", "大招存续图标",
-            "施法条**下方**那排,自己开的大招还剩多久。流式排列(有几个画几个)—— 跟上面那排 DoT 不一样,它不留空位。⚠ 位置不跟着施法条显隐动:不施法时中间会恒定空着一条施法条的高度,那是拿它换「位置全稳」买的。",
+        AddCheckbox(category, "DCH_CDS_ON", "cdsOn", "自身增益图标",
+            "资源条**下方**那排,自己身上的重要 buff 还剩多久(骨盾这种常驻的也在里面)。流式排列(有几个画几个)—— 跟上面那排 DoT 不一样,它不留空位。0.12 起施法条挪到了整叠最下:它是唯一「框体一直在、内容时有时无」的东西,夹在中间会白占一条地。",
             ns.ApplyLayout)
 
         AddCheckbox(category, "DCH_RAID_ON", "raidOn", "别人给我的增益",
@@ -188,7 +188,7 @@ function ns.RegisterOptions()
         AddSlider(ui, "DCH_DOT_YOFF", "dotYOffset", "DoT 离血条的距离",
             "那排图标底边离血条上沿多高。", -50, 50, ns.ApplyLayout)
 
-        AddHeader(uiLayout, "大招存续图标(施法条下方)")
+        AddHeader(uiLayout, "自身增益图标(资源条下方)")
 
         AddSlider(ui, "DCH_CD_W", "cdWidth", "大招图标 宽", "", 8, 120, ns.ApplyLayout)
         AddSlider(ui, "DCH_CD_H", "cdHeight", "大招图标 高",

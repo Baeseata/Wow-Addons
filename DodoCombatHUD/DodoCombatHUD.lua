@@ -117,7 +117,11 @@ local DEFAULTS = {
     --    ⚠ 别在这儿写默认 ID:那会让 CopyDefaults 把它填进**每一个**存档,
     --      于是"没配过"和"配成这几个"永远分不开,而 /dch dot reset 也就没了意义。
     dots         = {},
-    -- ── 大招存续(施法条**下方**,左对齐往右排,流式)──────────────
+    -- ── 自身增益(资源条**下方**,左对齐往右排,流式)──────────────
+    -- 0.12 改名:原来叫「大招存续」,而它装的其实是**自己身上的重要 buff**
+    -- (骨盾这种常驻的也在里面)⇒ 跟右边那排「团队增益」(别人给的)正好成对。
+    -- ⚠ DB 里的键仍是 cdsOn / cdWidth… **故意不改** —— 改了等于把你存的设置作废,
+    --   而这只是个显示名。键名和显示名不一致这件事,写在这儿就够了。
     -- 流式 = 有几个画几个、没挂就不占位。它放弃了 DoT 那排的"该在的不在一眼看出来" ——
     -- 但大招没挂是你自己没按,你本来就知道;这排的价值在"还剩几秒"。
     -- ⚠ 锚在 cast.frame 的**左下角**,而且**不跟着施法条显隐动**:施法条藏起来时那段
@@ -184,6 +188,22 @@ local function PlainNumber(v)
     if issecretvalue and issecretvalue(v) then return nil end
     if type(v) ~= "number" then return nil end
     return v
+end
+
+-- ---------------------------------------------------------------- 角色私有存档
+-- 0.12:**位置按角色存**,别的(颜色 / 尺寸 / 法术表 / 开关)仍按账号存。
+-- 理由:同一账号不同职业的这一叠本来就不一样高(次要资源条根数不同、开不开),
+-- 而颜色和图标大小是审美,换个号不该重设一遍。
+-- 🔴 只搬 x/y 这两个键,不整体搬库 —— 整体搬等于**把你现有的设置全作废**,
+--   而那是个不可逆的代价,换来的只是"存得更整齐"。
+local CharDB
+local function InitCharDB()
+    DodoCombatHUDCharDB = DodoCombatHUDCharDB or {}
+    CharDB = DodoCombatHUDCharDB
+    -- 一次性继承:这个角色第一次加载新版时,从账号库那份把位置抄过来。
+    -- 少了这一步,所有老角色升级当天会**一起跳回屏幕中央**,而没人会想到是存档层换了。
+    if CharDB.x == nil then CharDB.x = (DB and DB.x) or DEFAULTS.x end
+    if CharDB.y == nil then CharDB.y = (DB and DB.y) or DEFAULTS.y end
 end
 
 local function Print(msg)
@@ -318,6 +338,9 @@ local cdBox, lustBox, raidBox = nil, nil, nil   -- { container=, buttons={}, ids
 -- 0.11:右侧那两排合成**一个**容器(两个 group)。rightBox 持有真容器;
 -- lustBox / raidBox 退化成指向它的两个"视图"(带各自的 group 名),下游不用全改。
 local rightBox = nil
+-- 大招那排左侧要留出多少像素给别人钉一个固定格(沸点)。
+-- 由 Boiling.lua 通过 ns.SetCdRowPad 推进来 —— 只有它知道那个格现在在不在。
+local cdRowPad = 0
 local curSpec = nil                             -- 当前专精 ID(ChrSpecialization),nil = 问不出来
 
 -- 当前专精。⚠ 两套 API 都探一下:12.x 把不少 `GetXxx` 挪进了 `C_SpecializationInfo`,
@@ -355,6 +378,18 @@ end
 -- 不再吃 size 参数:字号是**它自己的**配置项了,不从图标边长推(见 DEFAULTS.dotFontSize)。
 -- ⚠ 0.10 起吃一个 `fontKey`:三排各有**自己**的字号(dotFontSize / cdFontSize / raidFontSize)。
 -- 共用一个的话"DoT 字号"这个名字就骗人了 —— 调它会把另外两排一起改。
+-- 层数用的字体模板。**必须带字体建出来** —— 见下面 SetApplicationCount 那段。
+local COUNT_TEMPLATE = _G.NumberFontNormalSmall and "NumberFontNormalSmall" or nil
+
+local function StyleCount(fs, iconH)
+    if not fs then return end
+    pcall(function()
+        local path = fs:GetFont()
+        fs:SetFont(path or STANDARD_TEXT_FONT or "Fonts/FRIZQT__.TTF",
+            math.max(8, math.floor((tonumber(iconH) or 32) * 0.42)), "OUTLINE")
+    end)
+end
+
 local function StyleCountdown(cd, fontKey)
     if not (cd and cd.GetCountdownFontString) then return end
     pcall(function()
@@ -391,9 +426,25 @@ local function MakeAuraInit(bucket, keys)
     border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
     border:SetBackdropBorderColor(0, 0, 0, 1)
     border:SetFrameLevel(cd:GetFrameLevel() + 1)
-    -- 故意不接 SetApplicationCount:那个 sink 会在同一次调用里同步写进 FontString,
-    -- 字体没设好就是 "FontString:SetText(): Font not set",而它会把整个初始化掀掉。
-    -- 层数对这三个 DoT 没用,不值得为它冒这个险。
+    -- 层数:右下角。骨盾 / 鲜血女王的精华 这种叠层 buff 全靠它。
+    -- 🔴 顺序是**硬要求**:`SetApplicationCount` 会在**同一次调用里同步**写进这个 FontString
+    --    (CustomAuraButton → UpdateAuraDisplay → ApplyApplicationCount → SetText),
+    --    所以交出去之前它必须**已经带着字体**。裸着递过去、事后再设字体 =
+    --    "FontString:SetText(): Font not set",而它会把 AddAuraGroup 整个掀掉
+    --    ⇒ 症状是「这一排整个建不出来」,完全看不出是字体的事。
+    --    配方抄 `DodoNameplate/Auras.lua:88`(那儿是真机跑通的),register last。
+    -- ⚠ 层数是 secret,我们**读不到也比不了** ⇒ 「1 层就别画」这种过滤自己做不了,
+    --    只能是暴雪那边什么行为就什么行为。
+    local count = button:CreateFontString(nil, "OVERLAY", COUNT_TEMPLATE)
+    count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
+    count:SetJustifyH("RIGHT")
+    button.dchCount = count
+    StyleCount(count, DB[keys.h])
+    -- 最后一道保险:字体真没设上就**别交**给它 —— 宁可这一格没层数,
+    -- 也不能把整排掀掉。(StyleCount 是 pcall 的,失败时静默,所以这里要自己确认。)
+    if select(1, count:GetFont()) then
+        button:SetApplicationCount(count)
+    end
     button.dchCD = cd          -- 留个引用:改大小/字号时要回头找它
     button.dchKeys = keys      -- 同上:resize 时要知道这颗按钮归哪一排管
     button:SetSize(DB[keys.w], DB[keys.h])
@@ -564,7 +615,7 @@ local function BuildDots()
     --   而"给错理由比不给更坏":它会引着人去查一个根本不是根因的东西。
     local e1, e2, e3
     if right and down then
-        -- 大招:施法条下方,左对齐往右排(跟 DoT 那排同一个形状,上下对称)
+        -- 自身增益:资源条下方,左对齐往右排(跟 DoT 那排同一个形状,上下对称)
         cdBox, e1 = MakeAuraBox(root, "DodoCombatHUDCds", "player", "HELPFUL",
             6, CD_KEYS, "TOPLEFT", right, down)
         -- 嗜血 + 其余团队增益:**同一个容器的两个 group**(为什么见 MakeRightBox 上面那段)。
@@ -606,7 +657,7 @@ local function BuildHUD()
     local function stopDrag()
         root:StopMovingOrSizing()
         local _, _, _, x, y = root:GetPoint()
-        DB.x, DB.y = math.floor(x + 0.5), math.floor(y + 0.5)
+        CharDB.x, CharDB.y = math.floor(x + 0.5), math.floor(y + 0.5)
     end
     root:RegisterForDrag("LeftButton")
     root:SetScript("OnDragStart", startDrag)
@@ -661,6 +712,7 @@ local function LayoutDots()
         for _, b in ipairs(slot.buttons) do
             pcall(function() b:SetSize(w, h) end)
             StyleCountdown(b.dchCD, "dotFontSize")
+            StyleCount(b.dchCount, h)
         end
     end
 
@@ -683,14 +735,16 @@ local function LayoutDots()
         for _, btn in ipairs(b.buttons) do
             pcall(function() btn:SetSize(bw, bh) end)
             StyleCountdown(btn.dchCD, b.keys.font)
+            StyleCount(btn.dchCount, bh)
         end
     end
 
-    -- 大招:锚 cast.frame 的**左下角**,而且**不管施法条显不显示** ——
-    -- 施法条一藏,它的框体仍在原位(LayoutBar 无条件跑过),所以这个锚点是稳的。
-    -- 代价:不施法时中间恒定空着一条 castHeight,这是明确买的,不是漏了。
+    -- 大招:0.12 起锚**资源条底**(次要资源;它关掉时回落 root),不再锚施法条 ——
+    -- 施法条已经挪到最下了。左边 cdRowPad 像素留给沸点那个固定格(Boiling.lua 推进来的),
+    -- 它没启用时 pad = 0,别的专精一个像素都不受影响。
+    local cdAnchor = segHost:IsShown() and segHost or root
     box(cdBox, DB.cdWidth, DB.cdHeight, DB.cdSpacing,
-        cast.frame, "TOPLEFT", "BOTTOMLEFT", 0, -(DB.cdYOffset or 4), 6)
+        cdAnchor, "TOPLEFT", "BOTTOMLEFT", cdRowPad, -(DB.cdYOffset or 4), 6)
 
     -- 右侧两格:**都锚 health.frame,不互相锚** ——
     -- 「我们的对象锚到容器」是被禁的(UntrustedLayoutScriptExecution),容器锚容器也别赌。
@@ -722,6 +776,7 @@ local function LayoutDots()
         for _, btn in ipairs(rightBox.buttons) do
             pcall(function() btn:SetSize(rw, rh) end)
             StyleCountdown(btn.dchCD, "raidFontSize")
+            StyleCount(btn.dchCount, rh)
         end
     end
 end
@@ -970,7 +1025,7 @@ local function ApplyLayout()
     -- 用 1 不用 0:高度 0 的框体行为不一致,1px 肉眼已经看不出来。
     root:SetSize(DB.width, (DB.powerOn ~= false) and DB.powerHeight or 1)
     root:ClearAllPoints()
-    root:SetPoint("CENTER", UIParent, "CENTER", DB.x, DB.y)
+    root:SetPoint("CENTER", UIParent, "CENTER", CharDB.x, CharDB.y)
     root:EnableMouse(not DB.locked)
 
     -- 颜色跟着**当前主资源**走(暗牧紫 / 骑士法力蓝 / 猫德能量黄…),不再是写死那个紫。
@@ -992,9 +1047,17 @@ local function ApplyLayout()
     segHost:SetPoint("TOPLEFT", root, "BOTTOMLEFT", 0, -DB.gap)
     LayoutSegs()
 
+    -- 0.12:施法条挪到**最下**,大招那排提到资源条正下方。
+    -- 理由:施法条是整叠里唯一"框体一直在、内容时有时无"的东西 ——
+    -- 夹在中间时它那条地平时是空的,却把下面所有东西往下推一整条。
+    -- 🔴 位置**用算的**,不锚到 cdBox.container:「我们的框体锚到光环容器」是被禁的
+    --    (Anchoring disallowed ... UntrustedLayoutScriptExecution),而它在 pcall 里抛,
+    --    症状会是"施法条整个不见了",完全看不出是锚点的事。
     local castAnchor = segHost:IsShown() and segHost or root
+    local cdReserve = (DB.cdsOn ~= false)
+                      and ((DB.cdYOffset or 4) + DB.cdHeight + DB.gap) or 0
     cast.frame:ClearAllPoints()
-    cast.frame:SetPoint("TOPLEFT", castAnchor, "BOTTOMLEFT", 0, -DB.gap)
+    cast.frame:SetPoint("TOPLEFT", castAnchor, "BOTTOMLEFT", 0, -(DB.gap + cdReserve))
     cast.frame:EnableMouse(not DB.locked)
 
     BuildDots()
@@ -1269,7 +1332,7 @@ local function Help()
     Print("  /dch dots                   血条左上角的目标 DoT 图标 开/关")
     Print("  /dch dot                    列出各格的 spellID 和法术名(核对用)")
     Print("  /dch dot 1 34914            改第 1 格盯哪个法术  |  /dch dot reset 回内置")
-    Print("  ── 施法条下方:大招存续(流式)──")
+    Print("  ── 资源条下方:自身增益(流式;施法条已挪到最下)──")
     Print("  /dch cds                    这排 开/关")
     Print("  /dch cd                     列出来 | cd add 31884 | cd del 31884 | cd reset")
     Print("  /dch cdw|cdh|cdfont|cdsp|cdy  宽 / 高 / 字号 / 间距 / 离施法条多远")
@@ -1293,6 +1356,8 @@ local function Help()
     Print("  /dch hcolor|ccolor|ncolor 1 0 0   血 / 施法 / 引导 颜色")
     Print("  /dch bgcolor 0.03 0.02 0.05 1   条背景(第四个 = 不透明度,调到 1 隔断场景)")
     Print("  /dch blizzcast              藏掉/放回**暴雪自己**那根施法条")
+    Print("  /dch bp [秒|now|stop|expire] 血 DK 沸点探针(只读只打印)")
+    Print("  /dch bp row [off|reset]     血 DK 自身 buff 排(骨盾/沸点…,可拖,存盘)")
     Print("  /dch reset                  回默认位置和尺寸")
     Print("  开关和尺寸也在 ESC → 选项 → 插件 → DodoCombatHUD(拖滑条实时预览)。")
     Print("  ⚠ DoT 法术 / 刻度 / 引导跳数只能在这儿改 —— 那个面板给不了输入框。")
@@ -1583,6 +1648,7 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         RefreshAvailability()
         Print(testMode and "演示模式开(血 35% / 疯狂 65%)" or "演示模式关")
     elseif cmd == "probe"   then ProbeAuraFilters()
+    elseif cmd == "bp"      then if ns.BoilingProbe then ns.BoilingProbe(arg) else Print("Boiling.lua 没加载") end
     elseif cmd == "health"  then Toggle("healthOn", "目标血条")
     elseif cmd == "cast"    then Toggle("castOn", "施法条")
     elseif cmd == "power"   then
@@ -1654,7 +1720,7 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         Toggle("hideBlizzCast", "藏掉暴雪施法条")
         ApplyBlizzCastBar(true)   -- true = 如果是刚关掉这个开关,把条恢复一次
     elseif cmd == "dot"  then AuraCmd("dots", "目标 DoT",   arg, true)
-    elseif cmd == "cd"   then AuraCmd("cds",  "大招存续",   arg, false)
+    elseif cmd == "cd" or cmd == "self" then AuraCmd("cds", "自身增益", arg, false)
     elseif cmd == "lust" then AuraCmd("lust", "嗜血那一格", arg, false)
     elseif cmd == "buff" then AuraCmd("raid", "团队增益",   arg, false)
     elseif cmd == "cds"    then Toggle("cdsOn",  "大招那排")
@@ -1688,7 +1754,8 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
     elseif cmd == "pticks"  then SetTicks("powerTicks", arg)
     elseif cmd == "hticks"  then SetTicks("healthTicks", arg)
     elseif cmd == "reset" then
-        DB.x, DB.y, DB.width, DB.gap = DEFAULTS.x, DEFAULTS.y, DEFAULTS.width, DEFAULTS.gap
+        CharDB.x, CharDB.y = DEFAULTS.x, DEFAULTS.y     -- 位置是角色私有的
+        DB.width, DB.gap = DEFAULTS.width, DEFAULTS.gap
         DB.powerHeight, DB.healthHeight = DEFAULTS.powerHeight, DEFAULTS.healthHeight
         ApplyLayout(); Print("位置和尺寸已还原")
     else
@@ -1703,11 +1770,37 @@ end
 -- 和 slash 改的值天生是一份,不需要任何同步。
 -- ⚠ 每个都挡一下 DB:面板理论上不可能在 PLAYER_LOGIN 之前被点开,但这层挡极便宜,
 -- 而没有它的失败形态是 nil index —— 那会把**整个** Settings 面板掀掉,不只是我们这一页。
-ns.ApplyLayout         = function()        if DB then ApplyLayout() end end
+ns.ApplyLayout         = function()        if DB and CharDB then ApplyLayout() end end
 ns.RefreshAvailability = function()        if DB then RefreshAvailability() end end
 ns.ApplyBlizzCastBar   = function(restore) if DB then ApplyBlizzCastBar(restore) end end
 ns.LayoutDots          = function()        if DB then LayoutDots() end end
 ns.DEFAULTS            = DEFAULTS
+-- 给 Boiling.lua 当锚:自身 buff 排要跟着 HUD 走,HUD 一挪它就跟着挪。
+-- 返回的是**主资源条那个 root**(条堆的锚点),不是某一根条 —— 那几根条会开关,
+-- 认某一根当锚的话,关掉它整排就飞了。
+ns.GetHudRoot          = function() return root end
+-- 条堆**真正的底**。⚠ 不是 root —— root 只是主资源那一格,它下面还挂着
+-- 次要资源(segHost)和施法条。施法条是**瞬态的**(只在施法时 Show),
+-- 拿它当锚会让下面的东西一施法就跳,所以只认到 segHost 为止,
+-- 施法条那块空间由调用方自己按 castHeight 让开。
+-- 大招那排的锚点与几何,给 Boiling.lua 在它左边钉固定格用。
+-- 返回:锚框体, y 偏移(相对该框体 BOTTOMLEFT)
+ns.GetCdRowAnchor      = function()
+    if not DB then return nil end
+    local a = (segHost and segHost:IsShown()) and segHost or root
+    return a, -(DB.cdYOffset or 4)
+end
+-- 推左侧留白并立刻重排。⚠ 只改几何,不碰 filter —— 两件事分开,
+-- 免得"挪个位置"顺手把某一排的筛选也重置了。
+ns.SetCdRowPad         = function(px)
+    if not DB then return end
+    cdRowPad = tonumber(px) or 0
+    LayoutDots()
+end
+ns.GetHudBottom        = function()
+    if segHost and segHost:IsShown() then return segHost end
+    return root
+end
 
 -- ---------------------------------------------------------------- 生命周期
 
@@ -1853,6 +1946,7 @@ f:SetScript("OnEvent", function(_, event, unit)
         --    (那个"变长数组要单独拎"的规矩只对**有非空默认值**的键成立,两个 ticks 就是。)
         DodoCombatHUDDB = CopyDefaults(DEFAULTS, saved or {})
         DB = DodoCombatHUDDB
+        InitCharDB()          -- ⚠ 必须在 DB 就位**之后**:它要从账号库继承一次位置
         if type(savedPT) == "table" and #savedPT > 0 then DB.powerTicks  = savedPT end
         if type(savedHT) == "table" and #savedHT > 0 then DB.healthTicks = savedHT end
 
