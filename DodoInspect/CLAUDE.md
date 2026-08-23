@@ -559,6 +559,21 @@ lua tools/test_gearrank.lua               # 必须 0 failures
 - `tools/test_gearrank.lua` 多了一节 guard,`tools/fixture_dungeonnames.lua` 是它的夹具
   (**UTF-8**,本仓唯一一个;装客户端原文的副本名,好让中文简称跟**客户端说的**比,
   而不是跟这里再打一遍的名字比)。A/B 验过 7 种真实坏法,每种精确红。
+### 🎯 待量:`12843` 是不是真给 311(一枪的事,谁在游戏边上谁跑)
+
+游戏里贴这一条。**前两个是已经量过的对照组** —— 它俩对了才说明命令本身没问题;
+第一次可能全 `nil`,那是物品缓存没到,**再跑一次**就有(这两种原因症状一模一样,
+所以对照组不能省)。
+
+```
+/run local id=250243 local E=string.rep(":",11) for _,b in ipairs({12854,13848,12843}) do local n,_,q,i=C_Item.GetItemInfo("item:"..id..E..":1:"..b) print(b,n,"ilvl",i,"quality",q) end
+```
+
+期望 `12854 -> 334` · `13848 -> 344` · **`12843 -> 311`**。
+顺带看一眼 tooltip 里轨道叫不叫 "Hero" —— DB2 里没有轨道名这个字段,那是按位置推的。
+⚠ 链接的冒号数用 `string.rep` **声明**而不是数出来的,跟 `GearPanel.LINK_EMPTY_FIELDS`
+同一个写法;多一个冒号会让每个字段错位一格,而 `GetItemInfo` 只回 `nil` 不给任何提示。
+
 - 🔴 **`GEAR_HERO_BONUS_ID = 12843`(311)三条离线推导互相对上,但仍未在游戏里量过。**
   Config 里那段注释写了怎么量、以及同一枪能顺带答的两个未知(分母 3/6 还是 3/8、
   轨道是不是真叫 Hero)。**别把「三条推导对上」读成「已实测」** —— 设计稿原话就是这条。
