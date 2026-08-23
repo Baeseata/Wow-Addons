@@ -674,6 +674,17 @@ happy path 天然绕开只在某个状态下才生效的分支):
   会不会随目标血量翻面(它是**明文**布尔,已实测)。
   **验法:对满血目标和残血目标各跑一次 `/dp`,比 `U=` 那一列。**
 
+### 血 DK「再加两个监视」的候选(2026-08-23 调研过,可行性已定,**还没动手**)
+
+Jerry 说「以后再说」,所以这不是欠着的活 —— 但**可行性是查过的**,别下次再查一遍。
+
+| 候选 | 结论 | 依据 |
+|---|---|---|
+| **死亡打击阈值线**(符文能量够不够开 DS) | ✅ 能做,而且能**自动算** | `C_Spell.GetSpellPowerCost` **零 secret 标注** ⇒ 消耗是明文。⚠ 但 `powerTicks` 是全账号一份、按百分比 ⇒ 要顺手做成按专精存 |
+| **绯红祸害 proc**(免费死亡与衰败) | ✅ 能做,代码 ≈ 沸点格砍掉 echo 那半 | SimC 确认血 DK 天赋仍在(buff `81141`);走沸点那条**已经跑通**的 glow 信道 |
+| **血液沸腾充能数** | ⚠ 动手前必须先 `/dp` 探一次 | `C_Spell.GetSpellCharges` 标的是 `SecretWhenCooldownsRestricted` ⇒ 战斗中是 secret。数字**画得出来**(FontString 吃 secret),回充转圈**画不出来**(SetCooldown 不吃)。而「返回 secret」跟「返回 nil」在契约上分不开 |
+| ⛔ **任何法术的冷却转圈** | 死路 | `SetCooldown` 不吃 secret + `GetSpellCooldown` 战斗中 secret。要看 CD 只能用暴雪自带的冷却管理器 |
+
 ## 相关
 
 - `DodoProbe/` —— secret value 探针,`/dp`。上面每一条「实测」都出自它,补丁后重量一次。
