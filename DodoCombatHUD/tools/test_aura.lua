@@ -150,5 +150,156 @@ local unmigrated = { dots = { 34914, 589, 335467 } }
 local asPal = unmigrated.dots[SPEC_PAL] or unmigrated.dots[70]
 check("不迁时骑士桶读出来是 nil(⇒ 得靠迁移兜住)", asPal, nil)
 
+print("== 内置表:自身增益不许超过 CD_SLOTS(0.13 起固定格位)==")
+-- 跟 DoT 那条同族:超出的格子**画不出来,而且不报错**
+local overCd = 0
+for spec, list in pairs(ns.SPEC_CDS) do
+    if #list > ns.CD_SLOTS then
+        overCd = overCd + 1
+        print(("     spec %d 有 %d 个自身增益,超过 CD_SLOTS=%d"):format(spec, #list, ns.CD_SLOTS))
+    end
+end
+check("没有专精的自身增益数超过 CD_SLOTS", overCd, 0)
+
+print("== 隐藏:默认全显示 ==")
+local SH = 258        -- 暗牧
+local db = {}
+check("没配过 -> 不隐藏", ns.IsAuraHidden(db, "cds", SH, 34914), false)
+check("空存档也不该建出桶来", db.hidden, nil)
+
+print("== 隐藏:设了才隐藏,清掉要**把键删掉**(不是写 false)==")
+check("设成功", ns.SetAuraHidden(db, "cds", SH, 34914, true), true)
+check("读回来是隐藏的", ns.IsAuraHidden(db, "cds", SH, 34914), true)
+check("别的 ID 不受影响", ns.IsAuraHidden(db, "cds", SH, 589), false)
+check("清成功", ns.SetAuraHidden(db, "cds", SH, 34914, false), true)
+check("读回来不隐藏", ns.IsAuraHidden(db, "cds", SH, 34914), false)
+-- 🔴 这条才是重点:存 false 等于把**默认值写进存档**,而 0.12 那个坑正是这么来的 ——
+--    默认值一旦落盘,后来改默认对他一点用没有。所以必须是 nil,不是 false。
+check("存档里那个键是 nil(不是 false)", db.hidden.cds[SH][34914], nil)
+
+print("== 隐藏:两种分桶各走一次(判据只在 PER_SPEC 声明一次)==")
+local db2 = {}
+ns.SetAuraHidden(db2, "cds",  SH, 111, true)     -- per-spec
+ns.SetAuraHidden(db2, "lust", nil, 222, true)    -- global
+check("per-spec 桶按专精分", ns.IsAuraHidden(db2, "cds", SH, 111), true)
+check("per-spec 换个专精就不隐藏", ns.IsAuraHidden(db2, "cds", 250, 111), false)
+check("global 桶不吃 specID", ns.IsAuraHidden(db2, "lust", nil, 222), true)
+check("global 传个 specID 也一样", ns.IsAuraHidden(db2, "lust", 999, 222), true)
+check("不认识的 kind 不建桶", ns.SetAuraHidden(db2, "nosuch", SH, 1, true), false)
+
+print("== 隐藏:问不出专精时不许崩(t[nil]=v 是硬错误)==")
+local db3 = {}
+local okNil, resNil = pcall(ns.SetAuraHidden, db3, "cds", nil, 1, true)
+check("SetAuraHidden(specID=nil) 不抛", okNil, true)
+check("而且如实返回 false", resNil, false)
+check("IsAuraHidden(specID=nil) fail-open", ns.IsAuraHidden(db3, "cds", nil, 1), false)
+
+print("== VisibleAuraList:HUD 看可见的,面板看全部 ==")
+local db4 = {}
+ns.SetAuraList(db4, "cds", SH, { 10, 20, 30, 40 })
+check("面板拿到全部", #(ns.AuraList(db4, "cds", SH)), 4)
+check("HUD 也是全部(还没隐藏)", #(ns.VisibleAuraList(db4, "cds", SH)), 4)
+ns.SetAuraHidden(db4, "cds", SH, 20, true)
+check("面板仍拿到全部(不然勾不回来)", #(ns.AuraList(db4, "cds", SH)), 4)
+local vis = ns.VisibleAuraList(db4, "cds", SH)
+check("HUD 少一个", #vis, 3)
+check("保序:第 1 个还是 10", vis[1], 10)
+check("保序:第 2 个变成 30", vis[2], 30)
+check("保序:第 3 个是 40",   vis[3], 40)
+check("custom 标记照旧透传", select(2, ns.VisibleAuraList(db4, "cds", SH)), true)
+
+print("== ListMove:上移 / 下移 / 越界 ==")
+local l = { 1, 2, 3 }
+check("下移第 1 个", ns.ListMove(l, 1, 1), true)
+check("  换过去了", l[1], 2)
+check("  换回来了", l[2], 1)
+check("上移第 1 个 = 越界", ns.ListMove(l, 1, -1), false)
+check("  越界后原样", l[1], 2)
+check("下移最后一个 = 越界", ns.ListMove(l, 3, 1), false)
+check("索引本身越界", ns.ListMove(l, 9, -1), false)
+
+print("== 隐藏的项仍占**配置**里的名次(隐藏->移动->勾回来,顺序要对)==")
+local db5 = {}
+ns.SetAuraList(db5, "cds", SH, { 10, 20, 30 })
+ns.SetAuraHidden(db5, "cds", SH, 20, true)
+local cfg = ns.AuraList(db5, "cds", SH)
+ns.ListMove(cfg, 1, 1)                 -- 把 10 跟(隐藏着的)20 换位
+ns.SetAuraList(db5, "cds", SH, cfg)
+check("可见表现在只剩 10 和 30", #(ns.VisibleAuraList(db5, "cds", SH)), 2)
+ns.SetAuraHidden(db5, "cds", SH, 20, false)
+local back = ns.VisibleAuraList(db5, "cds", SH)
+check("勾回来之后 20 在第 1 位", back[1], 20)
+check("10 在第 2 位", back[2], 10)
+
+print("== A/B(种回缺陷,下面四条必须都报 caught)==")
+-- 从**真文件**重新 load 一份改过的,不手抄 —— 手抄的那份会跟 bug 共享同一个误解。
+local rawsrc = assert(io.open("AuraSets.lua", "rb")):read("a")
+local function sub(from, to)
+    return function(t)
+        local out, n = t:gsub(from, to)
+        assert(n > 0, "gsub 没命中:" .. from .. " —— 源码改了,这条 A/B 是空转的")
+        return out
+    end
+end
+local function mutated(mutate)
+    local ns2 = {}
+    assert(load(mutate(rawsrc), "AuraSets(mut)"))("DodoCombatHUD", ns2)
+    return ns2
+end
+-- caught = 种回缺陷之后结果**变了**(变成那个错答案)
+local function ab(label, mutate, fn, wrongWant)
+    local ok, got = pcall(function() return fn(mutated(mutate)) end)
+    if ok and got == wrongWant then print("  caught  " .. label); pass = pass + 1
+    else fail = fail + 1
+        print(("  FAIL %s: 种回缺陷后没变成预期的错答案(ok=%s got=%s)—— 这条 A/B 是空转的")
+              :format(label, tostring(ok), tostring(got))) end
+end
+-- caught = 种回缺陷之后**抛错**了
+local function abError(label, mutate, fn)
+    local ok = pcall(function() return fn(mutated(mutate)) end)
+    if not ok then print("  caught  " .. label); pass = pass + 1
+    else fail = fail + 1
+        print(("  FAIL %s: 种回缺陷后居然没抛 —— 这条 A/B 是空转的"):format(label)) end
+end
+
+-- ① 清隐藏时写 false 而不是删键。⚠ 行为上看不出来(IsAuraHidden 比的是 == true),
+--    坏的是**存档里留下了一个默认值** —— 0.12 那个坑就是这么长出来的。
+--    所以断言必须去看存档本身,不能只看函数返回值。
+ab("清隐藏时写 false 而不是删键",
+   sub("if b then b%[id%] = nil end", "if b then b[id] = false end"),
+   function(m)
+       local d = {}
+       m.SetAuraHidden(d, "cds", 258, 7, true)
+       m.SetAuraHidden(d, "cds", 258, 7, false)
+       return d.hidden.cds[258][7]
+   end, false)
+
+-- ② VisibleAuraList 不过滤 ⇒ 隐藏完全失效(而面板上那个勾看起来是勾上的)
+ab("VisibleAuraList 不过滤隐藏",
+   sub("if b%[full%[i%]%] ~= true then out%[#out %+ 1%] = full%[i%] end",
+       "out[#out + 1] = full[i]"),
+   function(m)
+       local d = {}
+       m.SetAuraList(d, "cds", 258, { 1, 2, 3 })
+       m.SetAuraHidden(d, "cds", 258, 2, true)
+       return #(m.VisibleAuraList(d, "cds", 258))
+   end, 3)
+
+-- ③ ListMove 不查越界 ⇒ 第一格上移会跟 list[0] 换位,把 list[1] 换成 nil
+--    ⇒ 那一格**静默消失**,而玩家只是点了个画灰的按钮
+ab("ListMove 不检查越界",
+   sub("if index < 1 or index > #list or j < 1 or j > #list then return false end", ""),
+   function(m)
+       local d = { 1, 2, 3 }
+       m.ListMove(d, 1, -1)
+       return d[1]
+   end, nil)
+
+-- ④ hiddenBucket 在 specID=nil 时不早退 ⇒ `t[nil] = v` 硬错误,
+--    而它从面板的点击回调里冒出来 = 一串红字堆栈,读不出"是因为问不出专精"
+abError("specID=nil 时不早退(t[nil]=v)",
+   sub("        if specID == nil then return nil end\n", ""),
+   function(m) return m.SetAuraHidden({}, "cds", nil, 1, true) end)
+
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

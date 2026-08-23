@@ -334,7 +334,16 @@ local dots = { slots = {}, built = false, dead = false }
 -- 🔴 这四个必须在这儿前向声明(跟 segHost 同一条规矩)——
 -- 写在下面某个函数体后面的话,那些函数里的赋值会赋成**全局**,而读的人拿到恒 nil。
 -- 守它的是 tools/test_scope.lua,新增模块级变量都要加进它的 NAMES 清单。
-local cdBox, lustBox, raidBox = nil, nil, nil   -- { container=, buttons={}, ids={} }
+local lustBox, raidBox = nil, nil               -- { container=, buttons={}, ids={} }
+-- 自身增益排:0.13 起是**固定格位**,一格一个独立容器(跟 dots 完全同形)。
+-- 🔴 为什么不是"一个容器 + 一个 group":那样图标的左右顺序归**暴雪**按 Expiration 算
+--    (扒过 AuraUtil.ExpirationAuraCompare 的原文),我们连递都递不进去 ——
+--    而玩家要能在面板里排顺序。**你没法给一个顺序会自己变的东西排序。**
+-- 🔴 也不是"一个容器 + N 个 group 用 layoutIndex 排":那押在「空组会不会塌陷」上,
+--    而那个行为至今没定案;DoT 那排当初做成一格一容器正是为了躲它。
+--    多几个框体换"结构上保证",便宜(DodoNameplate 建 120 个)。
+local cdRow = { slots = {} }                    -- slots[i] = { container=, spellID=, buttons={} }
+local cdOverflowSig = nil                       -- 上次报过的"配得比格子多"签名,防重复吵
 -- 0.11:右侧那两排合成**一个**容器(两个 group)。rightBox 持有真容器;
 -- lustBox / raidBox 退化成指向它的两个"视图"(带各自的 group 名),下游不用全改。
 local rightBox = nil
@@ -362,6 +371,15 @@ end
 -- 这里不再判第二遍 —— 两份手写的判据必然会漂。
 local function ListFor(kind)
     local list = ns.AuraList(DB, kind, curSpec)
+    return list
+end
+
+-- **HUD 用这个**(隐藏的不占格);`ListFor` 是**配置**表,给面板和 /dch 用。
+-- 🔴 两个函数而不是给 ListFor 加个开关:面板必须看得见隐藏的那几行(不然勾不回来),
+--    HUD 必须只看见可见的。一个函数两种语义,调用处迟早传错那个参数,
+--    而症状是"隐藏了还在显示"或者"面板里那行没了"—— 两个都不像同一个 bug。
+local function VisibleFor(kind)
+    local list = ns.VisibleAuraList(DB, kind, curSpec)
     return list
 end
 
@@ -453,34 +471,17 @@ local function MakeAuraInit(bucket, keys)
     end
 end
 
--- 三排都用同一个形状建:一个容器 + 一个 group。
--- ⚠ `parent` 跟 `SetPoint` 的目标**故意分开**:parent 决定"跟谁一起消失",
---   SetPoint 只决定"在哪儿"。大招那排要锚 cast.frame(会 Hide),团队增益要锚 health.frame
---   (healthOn 能关)—— 认它们当 parent 的话,那两排会跟着一起消失,
---   而症状是「只有正在施法时才看得见大招」,完全像 bug、想不到是 parent。
---   DoT 那排是另一回事:它**本来就该**跟血条一起消失,所以它继续 parent 到 health.frame。
-local function MakeAuraBox(parent, name, unit, filter, maxCount, keys, anchorPoint, dir1, dir2)
-    local bucket = {}
-    local ok, c = pcall(function()
-        local cc = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
-        cc:SetFlowLayoutAnchorPoint(anchorPoint)
-        cc:SetFlowLayoutGrowthDirection(dir1, dir2)
-        cc:SetFlowLayoutMaximumLineSize(math.huge)
-        cc:SetUnit(unit)
-        cc:AddAuraGroup("g", filter, {
-            maxFrameCount = maxCount,
-            sortMethod = AuraContainerSortMethod.Expiration,
-            sortDirection = AuraContainerSortDirection.Normal,
-            candidateFilters = { includeSpellIDs = {} },   -- 开局先空着,ApplyAuraFilters 立刻推真的进去
-            initializeFrame = MakeAuraInit(bucket, keys),
-            layout = { elementSpacing = 0, elementWidth = DB[keys.w],
-                       elementHeight = DB[keys.h], layoutIndex = 1 },
-        })
-        return cc
-    end)
-    if not ok then return nil, c end
-    return { container = c, buttons = bucket, keys = keys }
-end
+-- 🔴 `parent` 跟 `SetPoint` 的目标**故意分开**:parent 决定"跟谁一起消失",
+--   SetPoint 只决定"在哪儿"。自身增益和团队增益都 parent 到 `root`,只**锚**别的框体 ——
+--   认被锚的那个当 parent 的话,它一 Hide 这排就跟着全没,
+--   而症状是「只有正在施法时才看得见」,完全像 bug、想不到是 parent。
+--   DoT 那排是另一回事:它**本来就该**跟血条一起消失,所以它 parent 到 health.frame。
+--
+-- 0.13 起四排的形状是:DoT / 自身增益 = **一格一个独立容器**(顺序由我们定);
+-- 嗜血 + 团队增益 = 一个共享容器两个 group(见 MakeRightBox)。
+-- 原来那个通用的 `MakeAuraBox`(一个容器一个 group)最后一个调用方是自身增益排,
+-- 它改成逐格之后就没人用了 ⇒ **已删**。别照着这段注释把它加回来:
+-- 一个零调用方的构造函数会让下一个人以为"还有第三种形状可选"。
 
 local DOT_KEYS  = { w = "dotWidth",  h = "dotHeight",  font = "dotFontSize"  }
 local CD_KEYS   = { w = "cdWidth",   h = "cdHeight",   font = "cdFontSize"   }
@@ -518,7 +519,7 @@ end
 --      顺序反的;加上 Axis 从没设过(吃默认 Horizontal)+ lineSize=huge ⇒ 实际行为是
 --      **「横着一排、永不换行」**。CLAUDE.md 症状表把它记成「FlowDirection.Down 不存在」——
 --      **那条根因是错的**,Down 一直都在,所以 ResolveFlowDown 那句橙字从没触发过,
---      真原因一直零信号。cdBox 传的 `(right, down)` 是对的,不受影响。
+--      真原因一直零信号。自身增益那排传的 `(right, down)` 是对的,不受影响。
 local function MakeRightBox(parent, cols)
     local bucket = {}
     local rw, rh, rsp = DB.raidWidth, DB.raidHeight, DB.raidSpacing
@@ -611,13 +612,43 @@ local function BuildDots()
     FLOW_DOWN = ResolveFlowDown()
     local right = AnchorUtil and AnchorUtil.FlowDirection and AnchorUtil.FlowDirection.Right
     local down = FLOW_DOWN
-    -- ⚠ 三个各接各的错误。只留一个 `err` 的话,cdBox 成功而 lust 失败时会打出 `nil` ——
+    -- ⚠ 三个各接各的错误。只留一个 `err` 的话,自身增益成功而 lust 失败时会打出 `nil` ——
     --   而"给错理由比不给更坏":它会引着人去查一个根本不是根因的东西。
     local e1, e2, e3
     if right and down then
-        -- 自身增益:资源条下方,左对齐往右排(跟 DoT 那排同一个形状,上下对称)
-        cdBox, e1 = MakeAuraBox(root, "DodoCombatHUDCds", "player", "HELPFUL",
-            6, CD_KEYS, "TOPLEFT", right, down)
+        -- 自身增益:资源条下方,**一格一个独立容器**(跟上面 DoT 那排逐字同形)。
+        -- 按 ns.CD_SLOTS 预建固定数量,不按列表长度建 —— 格数随专精变,而**换专精不许重建
+        -- 框体**(战斗中建受保护框体大概率被拒,症状是"换了专精那排就没了")。
+        -- 用不上的格子 SetEnabled(false) 收起来,换专精只改 filter。
+        --
+        -- ⚠ 这排**不需要** DoT 那道准入闸(DotUnitEligible)。暴雪的
+        --   CanApplyIdentityCandidateFilters 只禁两格:友方身上的 debuff、敌方身上的 buff;
+        --   我们这排是「**友方(自己)身上的 buff**」= 永远在准许区。
+        for i = 1, (ns.CD_SLOTS or 8) do
+            local bucket = {}
+            local okc, cc = pcall(function()
+                local c = CreateFrame("AuraContainer", "DodoCombatHUDCd" .. i,
+                    root, "CustomAuraContainerTemplate")
+                c:SetFlowLayoutAnchorPoint("TOPLEFT")
+                c:SetFlowLayoutGrowthDirection(right, down)
+                c:SetFlowLayoutMaximumLineSize(math.huge)
+                c:SetUnit("player")
+                -- filter 里**故意不带 PLAYER**:自身增益里有些是别人给的(外部保命),
+                -- 带上就永远筛不到,而症状是"那格永远空着"—— 跟 ID 填错分不开。
+                c:AddAuraGroup("g", "HELPFUL", {
+                    maxFrameCount = 6,                 -- 6 是探针实测跑通过的值(理由同 DoT 那排)
+                    sortMethod = AuraContainerSortMethod.Expiration,
+                    sortDirection = AuraContainerSortDirection.Normal,
+                    candidateFilters = { includeSpellIDs = {} },
+                    initializeFrame = MakeAuraInit(bucket, CD_KEYS),
+                    layout = { elementSpacing = 0, elementWidth = DB.cdWidth,
+                               elementHeight = DB.cdHeight, layoutIndex = 1 },
+                })
+                return c
+            end)
+            if not okc then e1 = cc break end
+            cdRow.slots[i] = { container = cc, spellID = nil, buttons = bucket }
+        end
         -- 嗜血 + 其余团队增益:**同一个容器的两个 group**(为什么见 MakeRightBox 上面那段)。
         -- lustBox / raidBox 保留成两个"视图":共享同一个 container,只是 group 名不同 ⇒
         -- 下游(filter 推送 / probe / slash 命令)照旧按两排各管各的,不必全改一遍。
@@ -635,10 +666,10 @@ local function BuildDots()
         e1 = "AnchorUtil.FlowDirection 拿不到(Right=" .. tostring(right) ..
              " Down=" .. tostring(down) .. ")"
     end
-    if not (cdBox and lustBox and raidBox) then
+    if not (cdRow.slots[1] and lustBox and raidBox) then
         -- 只吵一次、只停这三排:DoT 那排已经建好了,不许被它们带走
         Print("|cffff3333右侧/下方那三排没全建起来|r(DoT 和三根条照常)")
-        Print("  大招:" .. (cdBox and "OK" or tostring(e1)))
+        Print("  自身增益:" .. (cdRow.slots[1] and ("OK(" .. #cdRow.slots .. " 格)") or tostring(e1)))
         Print("  嗜血:" .. (lustBox and "OK" or tostring(e2)))
         Print("  团队增益:" .. (raidBox and "OK" or tostring(e3)))
     end
@@ -719,32 +750,32 @@ local function LayoutDots()
     -- ── 另外三排的几何 ──────────────────────────────────────────
     -- ⚠ 显隐**不在这儿**管,统一归 ApplyAuraFilters —— 它同时知道"开关"和"这排有没有 ID",
     --   两处各判一次就是 canon 说的静默分歧发生器。这里只管"多大、在哪儿"。
-    -- 0.11 起**只剩大招那排**用它(右侧两排合并成 rightBox,几何在下面单独算)。
-    -- 原来的 `vertical` 参数已经没有调用方 ⇒ 删掉,不留恒为 false 的死分支:
-    -- 留着等于让下一个人以为"这函数支持竖排",而那条路从此没人走、也没人验。
-    local function box(b, bw, bh, bsp, anchorTo, myPt, itsPt, dx, dy, n)
-        if not b then return end
-        local c = b.container
-        c:SetSize(n * bw + (n - 1) * bsp, bh)
-        c:ClearAllPoints()
-        c:SetPoint(myPt, anchorTo, itsPt, dx, dy)
-        pcall(function()
-            c:SetAuraGroupLayout("g", { elementSpacing = bsp, elementWidth = bw,
-                                        elementHeight = bh, layoutIndex = 1 })
-        end)
-        for _, btn in ipairs(b.buttons) do
-            pcall(function() btn:SetSize(bw, bh) end)
-            StyleCountdown(btn.dchCD, b.keys.font)
-            StyleCount(btn.dchCount, bh)
-        end
-    end
 
-    -- 大招:0.12 起锚**资源条底**(次要资源;它关掉时回落 root),不再锚施法条 ——
+    -- 自身增益:0.12 起锚**资源条底**(次要资源;它关掉时回落 root),不再锚施法条 ——
     -- 施法条已经挪到最下了。左边 cdRowPad 像素留给沸点那个固定格(Boiling.lua 推进来的),
     -- 它没启用时 pad = 0,别的专精一个像素都不受影响。
     local cdAnchor = segHost:IsShown() and segHost or root
-    box(cdBox, DB.cdWidth, DB.cdHeight, DB.cdSpacing,
-        cdAnchor, "TOPLEFT", "BOTTOMLEFT", cdRowPad, -(DB.cdYOffset or 4), 6)
+    do
+        local cw, ch, csp = DB.cdWidth, DB.cdHeight, DB.cdSpacing
+        for i, slot in ipairs(cdRow.slots) do
+            local c = slot.container
+            c:SetSize(cw, ch)
+            c:ClearAllPoints()
+            -- ⚠ 横向铺开 ⇒ 步距只跟**宽**有关(照抄成 ch 的话"压扁图标"会连横向间距一起改)。
+            -- cdRowPad 是沸点那个固定格占掉的左侧留白,它没启用时是 0。
+            c:SetPoint("TOPLEFT", cdAnchor, "BOTTOMLEFT",
+                cdRowPad + (i - 1) * (cw + csp), -(DB.cdYOffset or 4))
+            pcall(function()
+                c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = cw,
+                                            elementHeight = ch, layoutIndex = 1 })
+            end)
+            for _, b in ipairs(slot.buttons) do
+                pcall(function() b:SetSize(cw, ch) end)
+                StyleCountdown(b.dchCD, "cdFontSize")
+                StyleCount(b.dchCount, ch)
+            end
+        end
+    end
 
     -- 右侧两格:**都锚 health.frame,不互相锚** ——
     -- 「我们的对象锚到容器」是被禁的(UntrustedLayoutScriptExecution),容器锚容器也别赌。
@@ -787,6 +818,12 @@ end
 local function RefreshDots()
     if not dots.built then return end
     for _, slot in ipairs(dots.slots) do
+        pcall(function() slot.container:UpdateAllAuras() end)
+    end
+    -- 自身增益那排也刷。换目标时它其实不需要(它绑的是 player),但**换专精 / 改列表**
+    -- 之后需要 —— 而那两条路都汇进这里。多刷 8 个容器的代价远小于
+    -- "改完设置得等下一次光环事件才看得见"那种查不出来的迟滞。
+    for _, slot in ipairs(cdRow.slots) do
         pcall(function() slot.container:UpdateAllAuras() end)
     end
 end
@@ -888,7 +925,7 @@ end
 --    ⇒ 记的语义也跟着改了:不再是「我打算推什么」,而是「**在一个合格的目标上**真推下去的是什么」。
 local function ApplyDotFilters()
     if not dots.built then return end
-    local dotList = ListFor("dots")
+    local dotList = VisibleFor("dots")
     local dotOn = DB.dotsOn ~= false and DB.healthOn ~= false
     local eligible = DotUnitEligible()
     for i, slot in ipairs(dots.slots) do
@@ -922,14 +959,59 @@ local function ApplyDotFilters()
     end
 end
 
+-- ② 自身增益:固定格位(0.13)。跟 ApplyDotFilters 逐条对称,**只差一样** ——
+--    没有那道准入闸。暴雪的 CanApplyIdentityCandidateFilters 只禁「友方身上的 debuff」
+--    和「敌方身上的 buff」;我们这排是"自己身上的 buff",永远在准许区。
+--    ⇒ 别照抄 DoT 那边的 eligible 判据过来,那会平白让这排在没目标时消失。
+--
+-- 🔴 `slot.spellID` 只在**推送成功之后**才记(跟 DoT / ApplyBoxFilter 同一个洞,修类不修例):
+--    写在 pcall 外面的话,一次偶发失败会被固化成永久故障 ——「推过了」⇒ 从此不重试
+--    ⇒ 容器停在建组时那份空 filter,而**空 candidateFilters 在暴雪那边是「全放行」**
+--    ⇒ 那一格显示你身上**所有**增益,且全程零报错。
+local function ApplyCdFilters()
+    if not dots.built then return end
+    local list = VisibleFor("cds")
+    local on = DB.cdsOn ~= false
+    -- 🔴 0.13 之前这排是**流式、无上限**的 ⇒ 老存档完全可能有超过 CD_SLOTS 个 ID,
+    --    而多出来的那些现在**没有容器可用 = 静默消失**。canon:静默截断读起来跟
+    --    "全都在" 一模一样,所以必须吵一句 —— 而且要说清是哪几个掉了。
+    --    只在签名变化时吵(换专精 / 改列表),不刷屏。
+    if #list > #cdRow.slots then
+        local sig = tostring(curSpec) .. ":" .. #list
+        if cdOverflowSig ~= sig then
+            cdOverflowSig = sig
+            Print(("|cffff8800自身增益配了 %d 个,但只有 %d 格|r —— 第 %d 个之后的**不会显示**。")
+                :format(#list, #cdRow.slots, #cdRow.slots))
+            Print("  /dch cd 看列表,del 或 hide 掉几个。")
+        end
+    end
+    for i, slot in ipairs(cdRow.slots) do
+        local sid = list[i]
+        if not sid then
+            slot.spellID = nil            -- 收起这格:没有推送动作,直接记
+        elseif sid ~= slot.spellID then
+            local ok, err = pcall(function()
+                slot.container:SetAuraGroupCandidateFilters("g", DotFilters(sid))
+            end)
+            if ok then
+                slot.spellID = sid
+            else
+                Print("|cffff3333自身增益第 " .. i .. " 格 filter 推送失败|r(下次刷新重试):"
+                    .. tostring(err))
+            end
+        end
+        pcall(function() slot.container:SetEnabled(on and sid ~= nil) end)
+    end
+end
+
 local function ApplyAuraFilters()
     if not dots.built then return end
 
     ApplyDotFilters()
 
     -- ② 大招 ③ 嗜血 ④ 其余团队增益
-    ApplyBoxFilter(cdBox, ListFor("cds"), DB.cdsOn ~= false)
-    local lustList, raidList = ListFor("lust"), ListFor("raid")
+    ApplyCdFilters()
+    local lustList, raidList = VisibleFor("lust"), VisibleFor("raid")
     ApplyBoxFilter(lustBox, lustList, DB.raidOn ~= false)
     ApplyBoxFilter(raidBox, raidList, DB.raidOn ~= false)
     -- 共享容器统一开关(见 ApplyBoxFilter 里那段):**两排任一有 ID 就留着**。
@@ -1050,7 +1132,7 @@ local function ApplyLayout()
     -- 0.12:施法条挪到**最下**,大招那排提到资源条正下方。
     -- 理由:施法条是整叠里唯一"框体一直在、内容时有时无"的东西 ——
     -- 夹在中间时它那条地平时是空的,却把下面所有东西往下推一整条。
-    -- 🔴 位置**用算的**,不锚到 cdBox.container:「我们的框体锚到光环容器」是被禁的
+    -- 🔴 位置**用算的**,不锚到自身增益那排的容器:「我们的框体锚到光环容器」是被禁的
     --    (Anchoring disallowed ... UntrustedLayoutScriptExecution),而它在 pcall 里抛,
     --    症状会是"施法条整个不见了",完全看不出是锚点的事。
     local castAnchor = segHost:IsShown() and segHost or root
@@ -1332,9 +1414,10 @@ local function Help()
     Print("  /dch dots                   血条左上角的目标 DoT 图标 开/关")
     Print("  /dch dot                    列出各格的 spellID 和法术名(核对用)")
     Print("  /dch dot 1 34914            改第 1 格盯哪个法术  |  /dch dot reset 回内置")
-    Print("  ── 资源条下方:自身增益(流式;施法条已挪到最下)──")
+    Print("  ── 资源条下方:自身增益(**固定格位**,顺序由你定;施法条已挪到最下)──")
     Print("  /dch cds                    这排 开/关")
-    Print("  /dch cd                     列出来 | cd add 31884 | cd del 31884 | cd reset")
+    Print("  /dch cd                     列出来 | cd 2 195181 改第 2 格 | cd add|del <id>")
+    Print("  /dch cd hide|show <id>      不占格 / 放回来(配置和名次都留着)| cd reset 回内置")
     Print("  /dch cdw|cdh|cdfont|cdsp|cdy  宽 / 高 / 字号 / 间距 / 离施法条多远")
     Print("  ── 血条右上角:别人给我的增益(上 1 格嗜血 + 下 2 格流式)──")
     Print("  /dch buffs                  这两格 开/关")
@@ -1448,9 +1531,17 @@ local function SpellLabel(id)
     return tostring(n or "|cffff3333<这个 ID 查不到法术>|r")
 end
 
+-- `slotted` 现在传的是**这一排的 slash 命令名**("dot" / "cd"),不是布尔 ——
+-- 0.13 起自身增益也是固定格位,两排都需要 `<格号> <spellID>` 那个形状,
+-- 而提示语里得说出正确的命令名。传布尔的话提示只能写死一个,那就会教错人。
+local SLOT_CAP = { dots = "DOT_SLOTS", cds = "CD_SLOTS" }
+
 local function AuraCmd(kind, label, arg, slotted)
+    -- 🔴 这里用**配置表**(ListFor),不是可见表 —— 面板和命令都必须看得见被隐藏的那几行,
+    --    否则隐藏一个之后它从列表里消失了,你再也勾不回来。HUD 那侧才用 VisibleFor。
     local list = ListFor(kind)
     local _, custom = ns.AuraList(DB, kind, curSpec)
+    local cap = SLOT_CAP[kind] and (ns[SLOT_CAP[kind]] or 4) or nil
     local sub, rest = string.match(arg or "", "^(%a*)%s*(%d*)$")
     local id = tonumber(rest)
 
@@ -1459,7 +1550,7 @@ local function AuraCmd(kind, label, arg, slotted)
     --    早退 + 说人话;读列表不受影响(那条路会回落到"这个专精没有内置表"= 空)。
     if ns.PER_SPEC[kind] and curSpec == nil and (arg or "") ~= "" then
         Print(label .. ":|cffff3333现在问不出当前专精|r,这一排改不了(先 /dch " ..
-              (slotted and "dot" or "cd") .. " 无参看一眼)")
+              tostring(slotted or "cd") .. " 无参看一眼)")
         return
     end
 
@@ -1468,7 +1559,30 @@ local function AuraCmd(kind, label, arg, slotted)
         ApplyAuraFilters(); ApplyLayout()
         Print(label .. ":回内置表(" .. #ListFor(kind) .. " 个)")
         return
+    elseif sub == "hide" and id then
+        -- 隐藏 ≠ 删除:配置留着、名次留着,勾回来还在原处。
+        ns.SetAuraHidden(DB, kind, curSpec, id, true)
+        ApplyAuraFilters(); ApplyLayout()
+        Print(label .. ":隐藏 " .. id .. "  " .. SpellLabel(id) .. "(`show " .. id .. "` 放回来)")
+        return
+    elseif sub == "show" and id then
+        ns.SetAuraHidden(DB, kind, curSpec, id, false)
+        ApplyAuraFilters(); ApplyLayout()
+        Print(label .. ":显示 " .. id .. "  " .. SpellLabel(id))
+        return
     elseif sub == "add" and id then
+        -- 🔴 固定格位那两排有硬上限:超出的格子**没有容器**,而多填的 ID 会静默消失 ——
+        --    "我明明加了却没出现"跟"ID 填错了"在屏幕上分不开。所以这里必须挡住并说清楚。
+        -- ⚠ 挡的是**配置表**的长度,不是可见表 —— 可见 <= 配置恒成立,
+        --    按可见表挡的话「隐藏两个 → 加两个 → 再取消隐藏」会当场溢出,
+        --    而溢出的那两格是**静默消失**的。
+        local dup = false
+        for i = 1, #list do if list[i] == id then dup = true end end
+        if not dup and cap and #list >= cap then
+            Print(label .. ":|cffff3333已经 " .. #list .. " 个,满了|r(上限 " .. cap ..
+                  " 格)—— 先 del 或 hide 掉一个")
+            return
+        end
         if ns.ListAdd(list, id) then
             ns.SetAuraList(DB, kind, curSpec, list)
             ApplyAuraFilters()
@@ -1493,13 +1607,13 @@ local function AuraCmd(kind, label, arg, slotted)
         local n, s = string.match(arg or "", "^(%d+)%s+(%d+)$")
         n, s = tonumber(n), tonumber(s)
         if n and s then
-            if n >= 1 and n <= (ns.DOT_SLOTS or 4) then
+            if n >= 1 and n <= (cap or 4) then
                 list[n] = s
                 ns.SetAuraList(DB, kind, curSpec, list)
                 ApplyAuraFilters()
                 Print(string.format("%s 第 %d 格 -> %d  %s", label, n, s, SpellLabel(s)))
             else
-                Print(label .. ":只有 1-" .. (ns.DOT_SLOTS or 4) .. " 格")
+                Print(label .. ":只有 1-" .. (cap or 4) .. " 格")
             end
             return
         end
@@ -1511,13 +1625,25 @@ local function AuraCmd(kind, label, arg, slotted)
     if #list == 0 then
         Print("  (空)")
     end
+    -- 序号 = **格号**(固定格位那两排),而且隐藏的那几行也要列出来 ——
+    -- 不列的话玩家再也 show 不回来,而且"我配的那个哪去了"跟"ID 填错了"分不开。
     for i, sid in ipairs(list) do
-        Print(string.format("  %d.  %-8d %s", i, sid, SpellLabel(sid)))
+        local hidden = ns.IsAuraHidden(DB, kind, curSpec, sid)
+        Print(string.format("  %d.  %-8d %s%s", i, sid, SpellLabel(sid),
+            hidden and "   |cff888888[已隐藏]|r" or ""))
+    end
+    if cap then
+        local vis = #VisibleFor(kind)
+        Print(("  占 %d / %d 格%s"):format(vis, cap,
+            vis < #list and ("(另有 " .. (#list - vis) .. " 个隐藏着,不占格)") or ""))
     end
     if slotted then
-        Print("  改:/dch dot <格号> <spellID>   回内置:/dch dot reset")
+        Print(("  改:/dch %s <格号> <spellID>   加/删:add|del <spellID>   回内置:/dch %s reset")
+            :format(slotted, slotted))
+        Print(("  显隐:/dch %s hide <spellID> | show <spellID>   ← 留着配置,只是不占格")
+            :format(slotted))
     else
-        Print("  改:add <spellID> / del <spellID> / reset")
+        Print("  改:add <spellID> / del <spellID> / hide <spellID> / show <spellID> / reset")
     end
 end
 
@@ -1604,12 +1730,30 @@ local function ProbeAuraFilters()
         emit(("  dot%d: 该盯=%s  已推=%s  重推=%s"):format(
             i, tostring(want), tostring(slot.spellID), how))
     end
-    for _, e in ipairs({ { "cds", cdBox }, { "lust", lustBox }, { "raid", raidBox } }) do
+    -- 自身增益:0.13 起跟 DoT 一样是固定格位 ⇒ 逐格报,不再当"一个容器一排"报。
+    -- ⚠ 这排的"该盯"取的是**可见表**(隐藏的不占格),跟真正推下去的是同一个来源;
+    --   拿配置表来报的话,隐藏一个之后 probe 会说"该盯 5 个"而实际推了 4 个,
+    --   那条读数会把人引去查 filter,而根本没有 filter 的事。
+    for i, slot in ipairs(cdRow.slots) do
+        local want = VisibleFor("cds")[i]
+        local how
+        if not want then
+            how = "跳过(这格没配 / 被隐藏)"
+        else
+            local ok, err = pcall(function()
+                slot.container:SetAuraGroupCandidateFilters("g", DotFilters(want))
+            end)
+            how = ok and "|cff33ff33OK|r" or ("|cffff3333FAILED|r " .. tostring(err))
+        end
+        emit(("  cd%d: 该盯=%s  已推=%s  重推=%s"):format(
+            i, tostring(want), tostring(slot.spellID), how))
+    end
+    for _, e in ipairs({ { "lust", lustBox }, { "raid", raidBox } }) do
         local name, b = e[1], e[2]
         if not b then
             emit("  " .. name .. ": |cffff3333容器不存在|r")
         else
-            local list = ListFor(name)
+            local list = VisibleFor(name)
             -- ② 绕开 sig 缓存重推一次,把错误原文打出来
             local ok, err = pcall(function()
                 b.container:SetAuraGroupCandidateFilters(b.group or "g", ListFilters(list))
@@ -1719,8 +1863,8 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
     elseif cmd == "blizzcast" then
         Toggle("hideBlizzCast", "藏掉暴雪施法条")
         ApplyBlizzCastBar(true)   -- true = 如果是刚关掉这个开关,把条恢复一次
-    elseif cmd == "dot"  then AuraCmd("dots", "目标 DoT",   arg, true)
-    elseif cmd == "cd" or cmd == "self" then AuraCmd("cds", "自身增益", arg, false)
+    elseif cmd == "dot"  then AuraCmd("dots", "目标 DoT",   arg, "dot")
+    elseif cmd == "cd" or cmd == "self" then AuraCmd("cds", "自身增益", arg, "cd")
     elseif cmd == "lust" then AuraCmd("lust", "嗜血那一格", arg, false)
     elseif cmd == "buff" then AuraCmd("raid", "团队增益",   arg, false)
     elseif cmd == "cds"    then Toggle("cdsOn",  "大招那排")
@@ -1774,6 +1918,40 @@ ns.ApplyLayout         = function()        if DB and CharDB then ApplyLayout() e
 ns.RefreshAvailability = function()        if DB then RefreshAvailability() end end
 ns.ApplyBlizzCastBar   = function(restore) if DB then ApplyBlizzCastBar(restore) end end
 ns.LayoutDots          = function()        if DB then LayoutDots() end end
+-- ── 0.13 面板要用的 ────────────────────────────────────────────
+-- 改完法术表要走这条:光改 DB 不推 filter 的话,屏幕上什么都不会变,
+-- 而那看起来像"面板没接上",是最费时间的一类误判。
+ns.ApplyAuraFilters    = function()        if DB then ApplyAuraFilters(); RefreshDots() end end
+-- 面板是**按当前专精**画的 ⇒ 它必须能问到专精。返回 nil = 问不出来,
+-- 那时按专精那两页要显示一句人话,而不是画一张空列表(空列表跟"这专精没有"分不开)。
+ns.CurrentSpec         = function()        return curSpec end
+-- 「最后见过的那个引导」——`/dch chan` 和面板都靠它定跳数。
+-- ⚠ 它**故意不在引导结束时清掉**:人手打字必然发生在引导结束之后,清了就永远用不上
+--   (0.11 栽过这条,而且当时提示语还写着「刚才那个」—— 提示语和行为对不上)。
+ns.LastChannel         = function()        return castCur.id, castCur.name end
+ns.SpellLabel          = SpellLabel
+-- 主资源 / 次要资源现在叫什么 —— 颜色是**按资源名**存的(DB.powerColors[名字]),
+-- 面板得先知道"这根条现在画的是哪个资源"才知道往哪一格写。nil = 没探测到。
+ns.MainResourceName    = function()        return POWER_NAME[mainPower] end
+ns.SecondaryName       = function()        return secondary and secondary.name end
+-- 三个按钮。演示模式返回新状态,好让按钮文字跟着变。
+ns.SetLocked           = function(v)       if DB then DB.locked = v and true or false; ApplyLayout() end end
+ns.ToggleTest          = function()
+    if not DB then return false end
+    testMode = not testMode
+    RefreshAvailability()
+    return testMode
+end
+ns.IsTestMode          = function()        return testMode end
+-- 「回默认位置和尺寸」= /dch reset 那一条,一个字都不多做 ——
+-- 按钮和命令走同一段代码,不许各写一份(canon:同一不变式两份实现 = 静默分歧发生器)。
+ns.ResetGeometry       = function()
+    if not DB then return end
+    CharDB.x, CharDB.y = DEFAULTS.x, DEFAULTS.y
+    DB.width, DB.gap = DEFAULTS.width, DEFAULTS.gap
+    DB.powerHeight, DB.healthHeight = DEFAULTS.powerHeight, DEFAULTS.healthHeight
+    ApplyLayout()
+end
 ns.DEFAULTS            = DEFAULTS
 -- 给 Boiling.lua 当锚:自身 buff 排要跟着 HUD 走,HUD 一挪它就跟着挪。
 -- 返回的是**主资源条那个 root**(条堆的锚点),不是某一根条 —— 那几根条会开关,

@@ -1,12 +1,15 @@
--- Boiling.lua - 血 DK「沸点」监视。**第一步只有探针,没有任何显示。**
+-- Boiling.lua - 血 DK「沸点」监视:**探针 + 显示层**(0.12 起有显示,0.13 起面板能开关它)。
 --
--- 为什么先探针:显示层怎么做,完全取决于一个还没量过的答案 ——
--- 那两个 buff 是不是 per-spell `Aura=Never`。是 ⇒ 明文读 expirationTime、自己算自己画;
--- 不是 ⇒ 只能把 spellID 递给暴雪的 AuraContainer,让它去取数据、去画倒计时。
--- 猜错的代价不是"改一改",是整层重写。
+-- ⚠ 这段文件头 0.12 之前写的是「第一步只有探针,没有任何显示 / 只读、只打印、
+--   不建受保护框体」—— **那是当时的施工阶段,不是现在的事实**,已经改过来了。
+--   下面 `沸点那一格` 那节才是显示层的正文。
 --
--- 本文件的纪律:**只读、只打印、不建受保护框体、不碰现有四排的任何状态。**
--- 唯一创建的框体是一个普通的事件监听 Frame(不是 AuraContainer),它连 UIParent 都不挂。
+-- 当初先做探针的理由留着(它解释了为什么显示层长这样):显示怎么做完全取决于
+-- 一个还没量过的答案 —— 那两个 buff 是不是 per-spell `Aura=Never`。
+-- 是 ⇒ 明文读 expirationTime、自己算自己画;不是 ⇒ 只能把 spellID 递给暴雪的
+-- AuraContainer,让它去取数据、去画倒计时。猜错的代价不是"改一改",是整层重写。
+-- 量出来的答案是**后者**(战斗中光环被扣值),所以绿色那半交给暴雪画、
+-- 红色那 3 秒(恒定长度、起点是明文事件)才是我们自己算的。
 
 local ADDON, ns = ...
 ns = ns or {}
@@ -1031,7 +1034,33 @@ for _, ev in ipairs({
     -- 不该让整个文件在加载期抛出去(那会让**整个插件**没加载,而症状是"HUD 全没了")。
     pcall(function() auto:RegisterEvent(ev) end)
 end
-ns.BoilingEvaluate = Evaluate   -- 给 Options / 大招排开关用
+ns.BoilingEvaluate = Evaluate   -- 给 Options / 自身增益排开关用
+
+-- ── 给 ESC 面板用(0.13)────────────────────────────────────────
+-- 🔴 面板**不许自己读写存档里那个键**。存的是 `manualOff`(缺席 = 开)而不是 `on`,
+--    理由见上面 slotDB 那段;面板那边要是照直觉写一个 `on`,两份判据当场分叉,
+--    而症状是「勾选框和屏幕上那格对不上」—— 谁也看不出来是两个键。
+--    ⇒ 只暴露动作,不暴露键名。
+ns.BoilingSlotOn  = function() return not slotDB().manualOff end
+ns.BoilingSetSlot = function(v)
+    -- 走的是跟 `/dch bp row` 完全同一段代码(手动路径:会吭声、会写盘)。
+    if v then ShowSlot(false) else HideSlot(false) end
+end
+-- 「这个角色现在够不够格显示它」—— 面板拿它决定那个勾选框画不画灰。
+-- 🔴 画灰必须**同时说出为什么**:一个点不动又不解释的控件读起来像"坏了"。
+ns.BoilingEligible = function()
+    local getSpec = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+    local getInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
+    if type(getSpec) ~= "function" or type(getInfo) ~= "function" then return false, "问不出专精" end
+    local ok, idx = pcall(getSpec)
+    if not ok or not idx then return false, "问不出专精" end
+    local ok2, id = pcall(getInfo, idx)
+    if not ok2 then return false, "问不出专精" end
+    if id ~= SPEC_BLOOD then return false, "只有血 DK 有这一格" end
+    local ok3, known = pcall(IsPlayerSpell, ID.talent)
+    if not (ok3 and known == true) then return false, "没点「沸点」天赋" end
+    return true
+end
 
 -- ---------------------------------------------------------------- 入口
 -- /dch bp why         沸点格为什么没出现:把每一环单独打出来

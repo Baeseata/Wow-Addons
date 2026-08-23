@@ -105,12 +105,23 @@ ns.SPEC_DOTS = {
     [SPEC.EVO_AUG]   = {},
 }
 
--- ── ② 大招存续(自己身上的 buff)────────────────────────────────────
--- ⚠ 这一排是**流式**(有几个画几个,没挂就不占位)⇒ 表可以随便长,不受格数限制。
---    代价:它放弃了"该在的不在一眼看出来" —— 但大招没挂是**你自己没按**,你本来就知道;
---    这一排的监控价值在"还剩几秒",不在"在不在"。
+-- ── ② 自身增益(自己身上的 buff)────────────────────────────────────
+-- 🔴 **0.13 起这一排是固定格位**(跟 DoT 那排同形),不再是流式。
+--    换的理由只有一个:**你没法给一个顺序会自己变的东西排序**。玩家要能在面板里
+--    调左右位置,前提就是"第 N 个 ID 永远在第 N 格" —— 而流式那版的顺序归暴雪
+--    按 Expiration 算,我们连递都递不进去(扒过 AuraUtil.ExpirationAuraCompare 原文)。
+--    ⇒ 表的长度 = 这个专精占几格,**每条不许超过 ns.CD_SLOTS**。
+--    代价照实记:没挂的大招会**空着占位**(空时透明、看不见,但占地方)。
+--    0.12 之前选流式的理由是"大招没挂是你自己没按、本来就知道" —— 那条**被推翻了**,
+--    别当退步改回去(canon:换了需求就要重判,别照搬结论)。
 -- ⚠ 能量灌注(10060)**故意不在这儿** —— 它进了下面的团队增益表。牧师自己开也从那儿显示,
 --    两边都放会在同一屏上画两个一模一样的图标。
+--
+-- 血 DK 那条 6 个是全表最长的(实查过),沸点专格另占一格 ⇒ 7 格 × (32+2) = 238px,
+-- 而条宽默认 260。**CD_SLOTS 给 8 是留给玩家 add 的余量,不是说 8 格一定放得下** ——
+-- 图标调大到 40 就会比条长(自绘不裁,只是探出去),面板里那行提示写的就是这个。
+ns.CD_SLOTS = 8
+
 ns.SPEC_CDS = {
     [SPEC.WAR_ARMS]  = { 107574, 260708, 227847 },        -- Avatar / Sweeping Strikes / Bladestorm
     [SPEC.WAR_FURY]  = { 107574, 1719, 227847 },          -- Avatar / Recklessness / Bladestorm
@@ -290,3 +301,97 @@ function ns.MigrateDotsToBuckets(saved, specID)
     return true
 end
 
+
+-- ── 「隐藏某一格」(0.13)──────────────────────────────────────────
+-- 面板上每个 aura 有个「显示」勾。它跟「删掉」是两件事:
+--   · 隐藏 = 我暂时不想看,**配置留着**,再勾回来还在原来的顺序里
+--   · 删掉 = 从表里移除(内置表的话,想找回来只能整张 reset)
+-- 分不清这两个的话,玩家为了"这次不看"会去删,然后再也排不回原样。
+--
+-- 🔴 存的是**反面**(`hidden[id] = true`,缺席 = 显示)。这不是风格,是 0.12 那个坑的通法:
+--    `db.x = db.x or {默认}` 里的 `or` **只在键不存在时生效** ⇒ 一旦某个版本把
+--    "显示 = false" 写进了存档,后来把默认改成 true 对他**一点用没有**,而自动路径是
+--    静默的 ⇒ 零报错、表现成"这功能就是不出现"。存反面 ⇒ 默认值根本不进存档,无从变旧。
+--
+-- 🔴 分桶方式**跟着 ns.PER_SPEC 走,这儿不判第二遍** —— 那张表是唯一的分界声明,
+--    两份手写的判据必然会漂(canon:同一不变式两份实现 = 静默分歧发生器)。
+local function hiddenBucket(saved, kind, specID, create)
+    if type(saved) ~= "table" then return nil end
+    if ns.PER_SPEC[kind] then
+        -- specID 问不出来时**不建桶**:`t[nil] = v` 在 Lua 里是硬错误,而它会从
+        -- 面板的点击回调里冒出来 —— 玩家看到的是一串红字堆栈,读不出"是因为问不出专精"。
+        if specID == nil then return nil end
+        if type(saved.hidden) ~= "table" then
+            if not create then return nil end
+            saved.hidden = {}
+        end
+        if type(saved.hidden[kind]) ~= "table" then
+            if not create then return nil end
+            saved.hidden[kind] = {}
+        end
+        if type(saved.hidden[kind][specID]) ~= "table" then
+            if not create then return nil end
+            saved.hidden[kind][specID] = {}
+        end
+        return saved.hidden[kind][specID]
+    elseif ns.GLOBAL_SET[kind] then
+        if type(saved.hidden) ~= "table" then
+            if not create then return nil end
+            saved.hidden = {}
+        end
+        if type(saved.hidden[kind]) ~= "table" then
+            if not create then return nil end
+            saved.hidden[kind] = {}
+        end
+        return saved.hidden[kind]
+    end
+    return nil
+end
+
+-- 读不到就当"没隐藏"(fail-open)。这一条是安全的:读不到专精时 AuraList 本来就返回
+-- 空表,整排是空的,隐藏判据无所谓;而反过来 fail-closed 会让"问不出专精"表现成
+-- "整排我配的东西全没了",那个症状要难查得多。
+function ns.IsAuraHidden(saved, kind, specID, id)
+    local b = hiddenBucket(saved, kind, specID, false)
+    return (b ~= nil) and (b[id] == true) or false
+end
+
+-- 返回成没成。hidden = false 时**把键删掉**而不是写 false ——
+-- 留一个 false 在存档里等于把默认值写进去了,正是上面那条要躲的东西。
+function ns.SetAuraHidden(saved, kind, specID, id, hidden)
+    if hidden then
+        local b = hiddenBucket(saved, kind, specID, true)
+        if not b then return false end
+        b[id] = true
+        return true
+    end
+    local b = hiddenBucket(saved, kind, specID, false)
+    if b then b[id] = nil end
+    return true
+end
+
+-- HUD 用这个,面板用 ns.AuraList。
+-- 两个函数而不是给 AuraList 加个开关:面板必须看见**全部**(含隐藏的,不然勾不回来),
+-- HUD 必须只看见**可见的**。一个函数两种语义,调用处迟早会传错那个参数,
+-- 而症状是"隐藏了还在显示"或者"面板里那行没了",两个都不像是同一个 bug。
+function ns.VisibleAuraList(saved, kind, specID)
+    local full, custom = ns.AuraList(saved, kind, specID)
+    local b = hiddenBucket(saved, kind, specID, false)
+    if not b then return full, custom end
+    local out = {}
+    for i = 1, #full do
+        if b[full[i]] ~= true then out[#out + 1] = full[i] end
+    end
+    return out, custom
+end
+
+-- 面板的「上移 / 下移」。就地换位,越界返回 false(调用方据此把按钮画灰)。
+-- ⚠ 换的是**配置表**的位置,不是可见表的 —— 隐藏的那些仍然占着它们在配置里的名次,
+--    否则"隐藏一个再勾回来"会把它扔到别的地方去。
+function ns.ListMove(list, index, delta)
+    local j = index + delta
+    if type(list) ~= "table" then return false end
+    if index < 1 or index > #list or j < 1 or j > #list then return false end
+    list[index], list[j] = list[j], list[index]
+    return true
+end
