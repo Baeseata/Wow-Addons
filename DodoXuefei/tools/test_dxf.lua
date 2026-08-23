@@ -32,51 +32,66 @@ local function ok_(label, cond, msg)
 end
 
 ---------------------------------------------------------------------------------------------------
-print("== ① ClampDim:尺寸的上下限只在一处声明,滑条/输入框/命令全走它 ==")
+print("== ① ClampNum:每个数值的上下限只在 SPEC 一处声明 ==")
 ---------------------------------------------------------------------------------------------------
 -- 从**真文件**里抠,不手抄第二份 —— 手抄的那份会跟 bug 共享同一个误解。
-local BOUNDS = assert(CORE:match("(local MIN_DIM, MAX_DIM = [^\n]+)"), "抠不到 MIN_DIM/MAX_DIM")
-local CLAMP  = assert(CORE:match("(local function ClampDim%(v%).-\nend)"), "抠不到 ClampDim")
-assert(CLAMP:find("MIN_DIM", 1, true), "ClampDim 片段里没有 MIN_DIM —— 抠错了")
+local SPECSRC = assert(CORE:match("(local SPEC = {.-\n})"), "抠不到 SPEC")
+local CLAMP   = assert(CORE:match("(local function ClampNum%(key, v%).-\nend)"), "抠不到 ClampNum")
+assert(SPECSRC:find("idleAlpha", 1, true), "SPEC 片段里没有 idleAlpha —— 抠错了")
+assert(CLAMP:find("sp.min", 1, true), "ClampNum 片段里没有 sp.min —— 抠错了")
 
 local function buildClamp(mutate)
-    local text = BOUNDS .. "\n" .. CLAMP
+    local text = SPECSRC .. "\n" .. CLAMP
     if mutate then text = mutate(text) end
-    return assert(load(text .. "\nreturn ClampDim, MIN_DIM, MAX_DIM", "clamp", "t",
+    return assert(load(text .. "\nreturn ClampNum, SPEC", "clamp", "t",
         { tonumber = tonumber, math = math }))()
 end
-local Clamp, LO, HI = buildClamp()
-check("下限是 16", LO, 16)
-check("上限是 128", HI, 128)
-check("正常值原样",        Clamp(48), 48)
-check("小于下限 -> 钳到下限", Clamp(1), LO)
-check("大于上限 -> 钳到上限", Clamp(9999), HI)
-check("负数 -> 钳到下限",     Clamp(-40), LO)
-check("0 -> 钳到下限(不是 0!)", Clamp(0), LO)
-check("小数四舍五入",       Clamp(47.6), 48)
-check("数字串也收",         Clamp("64"), 64)
+local Clamp, SPEC = buildClamp()
+check("宽的下限是 16", SPEC.width.min, 16)
+check("宽的上限是 128", SPEC.width.max, 128)
+check("正常值原样",           Clamp("width", 48), 48)
+check("小于下限 -> 钳到下限",  Clamp("width", 1), 16)
+check("大于上限 -> 钳到上限",  Clamp("width", 9999), 128)
+check("负数 -> 钳到下限",      Clamp("width", -40), 16)
+check("0 -> 钳到下限(不是 0!)", Clamp("width", 0), 16)
+check("小数四舍五入",          Clamp("width", 47.6), 48)
+check("数字串也收",            Clamp("width", "64"), 64)
 -- 🔴 空串必须**整条拒收**,不能当 0 收下:输入框一擦就提交的话,当 0 收 = 那一格直接消失,
 --    而面板里再也没有把它调回来的入口(canon:宽容的默认值会替 bug 遮丑)。
-check("空串 -> 拒收(nil)",   Clamp(""), nil)
-check("乱字 -> 拒收(nil)",   Clamp("abc"), nil)
-check("nil  -> 拒收(nil)",   Clamp(nil), nil)
+check("空串 -> 拒收(nil)",     Clamp("width", ""), nil)
+check("乱字 -> 拒收(nil)",     Clamp("width", "abc"), nil)
+check("nil  -> 拒收(nil)",     Clamp("width", nil), nil)
+check("不认识的键 -> 拒收",    Clamp("nope", 50), nil)
+
+-- 🔴 透明度的下限**故意是 0**,不能照抄尺寸那个 16 ——
+--    0 的语义是「不触发时干脆不画」,那是个合法选择(等于 1.0 的老行为),不是坏值。
+check("透明度 0 收得下(= 不画)", Clamp("idleAlpha", 0), 0)
+check("透明度 35 原样",           Clamp("idleAlpha", 35), 35)
+check("透明度 150 -> 钳到 100",   Clamp("idleAlpha", 150), 100)
+check("透明度 -5 -> 钳到 0",      Clamp("idleAlpha", -5), 0)
+check("透明度空串 -> 拒收",       Clamp("idleAlpha", ""), nil)
 
 print("== ①b A/B:种回三个真会有人写出来的 clamp 缺陷,每条都必须变红 ==")
-local function abClamp(label, mutate, arg, wrongAnswer)
-    local okc, got = pcall(function() return (buildClamp(mutate))(arg) end)
+local function abClamp(label, mutate, key, arg, wrongAnswer)
+    local okc, got = pcall(function() return (buildClamp(mutate))(key, arg) end)
     if okc and got == wrongAnswer then print("  caught  " .. label); pass = pass + 1
     else fail = fail + 1
         print(("  FAIL %s: 种回缺陷后结果没变(got %s)—— 这条 A/B 是空转的")
               :format(label, tostring(got))) end
 end
 abClamp("忘了钳下限        -> 0 会被收下",
-        function(t) return t:gsub("if v < MIN_DIM then v = MIN_DIM end", "") end, 0, 0)
+        function(t) return t:gsub("if v < sp%.min then v = sp%.min end", "") end, "width", 0, 0)
 abClamp("忘了钳上限        -> 9999 会被收下",
-        function(t) return t:gsub("if v > MAX_DIM then v = MAX_DIM end", "") end, 9999, 9999)
+        function(t) return t:gsub("if v > sp%.max then v = sp%.max end", "") end, "width", 9999, 9999)
+-- 🔴 这条防的是**照抄**:把尺寸那个 16 抄到透明度上,玩家就永远调不到「不画」了,
+--    而屏幕上的表现是"最淡也就这么淡",没人会想到是下限抄错。
+abClamp("透明度下限照抄成 16 -> 调不到 0",
+        function(t) return t:gsub("idleAlpha = { min =  0", "idleAlpha = { min = 16") end,
+        "idleAlpha", 0, 16)
 -- 🔴 这条是那三条里最值钱的:`tonumber("") == nil`,而 `(nil) or 0` 是很自然的写法。
 --    收下 0 的后果不是"值不对",是那一格从屏幕上消失且再也调不回来。
 abClamp("空串当 0 收下     -> 拒收变成了 16",
-        function(t) return t:gsub("if not v then return nil end", "v = v or 0") end, "", 16)
+        function(t) return t:gsub("if not v then return nil end", "v = v or 0") end, "width", "", 16)
 
 ---------------------------------------------------------------------------------------------------
 print("== ② consumedBy:「消耗了」必须用时间窗,不能用布尔 ==")
@@ -192,10 +207,10 @@ local function G(name, fn, abName, ab) guards[#guards + 1] =
 -- 读的人拿到恒 nil。`luac -p` 挑不出来(写全局是合法 Lua),纯函数测试也够不着。
 -- 🔑 **新增任何模块级 local 都要加进这张清单** —— 不加的话守卫对它完全失明。
 local NAMES = {
-    "slot", "container", "bg", "label", "buttons", "needsResize",
+    "slot", "container", "bg", "label", "idle", "buttons", "needsResize",
     "glowOn", "lookKey", "overrideID", "liveFrame", "autoFrame", "DB",
     "echo", "live",
-    "Reposition", "ApplyGeom", "BuildSlot", "ShowSlot", "HideSlot", "Evaluate", "Why",
+    "Reposition", "ApplyGeom", "ApplyIdle", "BuildSlot", "ShowSlot", "HideSlot", "Evaluate", "Why",
 }
 -- 🔴 两个真会咬人的锚点坑,下面各配了一条反向断言证明没踩:
 --    ① 注释里出现同名 ⇒ 先剥注释(不剥的话它扫的是一段说明文字)
@@ -287,14 +302,14 @@ end)
 G("BuildPage 里没有 SetPoint", function(_, opt)
     local body = opt:match("local function BuildPage%(%).-\nend")
     if not body then return false, "抠不到 BuildPage" end
-    if not body:find("c:Dim(", 1, true) then return false, "抠到的不是 BuildPage(里面没有 c:Dim)" end
+    if not body:find("c:Num(", 1, true) then return false, "抠到的不是 BuildPage(里面没有 c:Num)" end
     if stripComments(body):find("SetPoint", 1, true) then
         return false, "页面里出现了 SetPoint ⇒ 有人在手写坐标"
     end
     return true
 end, "在页面里手写一个 SetPoint", function(core, opt)
-    return core, must(replace(opt, '    c:Dim("宽", "width")',
-        '    local x = f:CreateFontString(nil, "OVERLAY")\n    x:SetPoint("TOPLEFT", 16, -300)\n    c:Dim("宽", "width")'))
+    return core, must(replace(opt, '    c:Num("宽", "width", "px")',
+        '    local x = f:CreateFontString(nil, "OVERLAY")\n    x:SetPoint("TOPLEFT", 16, -300)\n    c:Num("宽", "width", "px")'))
 end)
 
 -- ── ④.5 改尺寸的三个消费方,一个都不许漏 ───────────────────────────
@@ -309,7 +324,7 @@ G("ApplyGeom 同时碰外框 / 布局 / 已建按钮", function(core)
     end
     return true
 end, "把 ApplyGeom 里的 RestyleButtons() 删掉", function(core, opt)
-    return must(replace(core, "    RestyleButtons()\n    if echo.fs then", "    if echo.fs then")), opt
+    return must(replace(core, "    RestyleButtons()\n    ApplyIdle()", "    ApplyIdle()")), opt
 end)
 
 -- ── ④.6 碰 aura button 必须过闸,而且碰不得时要记账 ─────────────────
@@ -359,6 +374,40 @@ end, "把开关写回 `v and nil or true`", function(core, opt)
                               "DB.manualOff = v and nil or true")), opt
 end)
 
+-- ── ④.7c 透明度的下限必须是 0 ─────────────────────────────────────
+-- 0 的语义是「不触发时干脆不画」= 1.0 的老行为,是个**合法选择**。照抄尺寸那个 16 的话
+-- 玩家永远调不到它,而屏幕上只表现为"最淡也就这么淡" —— 没人会想到是下限抄错了。
+-- 「合法值被悄悄挡住」比报错难查得多。
+G("idleAlpha 的下限是 0", function(core)
+    local spec = core:match("idleAlpha%s*=%s*{[^}]*}")
+    if not spec then return false, "SPEC 里找不到 idleAlpha" end
+    local mn = spec:match("min%s*=%s*(%-?%d+)")
+    if mn ~= "0" then
+        return false, "idleAlpha 的 min 是 " .. tostring(mn) .. " 而不是 0 ⇒ 玩家调不到「不画」"
+    end
+    return true
+end, "把 idleAlpha 的下限照抄成尺寸那个 16", function(core, opt)
+    return must(replace(core, "idleAlpha = { min =  0", "idleAlpha = { min = 16")), opt
+end)
+
+-- ── ④.7d 灰图的显隐跟着 active 翻,且只在状态**真变了**那一帧动 ──────────
+-- ⚠ 如实标注:这是**结构**守卫,不是行为验证 —— 灰图正好被彩色那张盖住同一块矩形,
+--    真漏了在离线桩上也看不出差别(canon guard 家族 (f):度量对 bug 免疫)。
+--    它守的是"别忘了接上去"和"别每帧 SetShown"(这一格是常驻跑 OnUpdate 的)。
+G("RowUpdate 里灰图跟着 active 翻", function(core)
+    local body = core:match("local function RowUpdate%(_, dt%).-\nend")
+    if not body then return false, "抠不到 RowUpdate" end
+    if not body:find("idle:SetShown(not active)", 1, true) then
+        return false, "RowUpdate 没把灰图跟 active 接起来"
+    end
+    if not body:find("if lookKey ~= key then", 1, true) then
+        return false, "灰图的显隐没放进 lookKey 那个变化分支 ⇒ 每帧都在 SetShown"
+    end
+    return true
+end, "把 idle:SetShown 那句删掉", function(core, opt)
+    return must(replace(core, "        if idle then idle:SetShown(not active) end", "")), opt
+end)
+
 -- ── ④.8 ns.* 接口两边对得上 ──────────────────────────────────────
 -- 两个文件靠 `ns` 这一张桌子交接。少导出一个的症状是 `attempt to call a nil value`,
 -- 而它发生在**点开面板那一刻**,不是加载时 —— 平时跑一天都撞不到。
@@ -381,8 +430,8 @@ G("Options 用到的 ns.* 都有人导出(反之亦然)", function(core, opt)
         end
     end
     return true
-end, "把 Core 里的 ns.DimBounds 改个名 -> 面板那边就够不着了", function(core, opt)
-    return must(replace(core, "ns.DimBounds  = function()", "ns.DimBoundsX = function()")), opt
+end, "把 Core 里的 ns.NumBounds 改个名 -> 面板那边就够不着了", function(core, opt)
+    return must(replace(core, "ns.NumBounds = function(key)", "ns.NumBoundsX = function(key)")), opt
 end)
 
 -- ── ④.9 ⛔ 两条硬禁 ───────────────────────────────────────────────
@@ -545,11 +594,11 @@ do
             pcall(function() scripts[ev].OnEvent(ev, "ADDON_LOADED", "DodoXuefei") end), "加载处理炸了")
         ok_("面板真注册上了", nsX.OptionsRegistered == true, "RegisterOptions 走了失败分支")
         ok_("面板刷新不炸", pcall(function() nsX.RefreshOptions() end), "Refreshers 里有函数炸了")
-        ok_("ns.* 该有的都在", nsX.SetDim and nsX.GetDim and nsX.SetSlotShown and nsX.SetUnlocked
-            and nsX.WhyNotShown and nsX.RegisterOptions and true or false, "少了导出")
+        ok_("ns.* 该有的都在", nsX.SetNum and nsX.GetNum and nsX.NumBounds and nsX.SetSlotShown
+            and nsX.SetUnlocked and nsX.WhyNotShown and nsX.RegisterOptions and true or false, "少了导出")
         ok_("DB 未就位/框体没建时调导出的动作不炸", pcall(function()
-            nsX.GetDim("height"); nsX.WhyNotShown(); nsX.IsSlotShown()
-            nsX.IsUnlocked(); nsX.DimBounds()
+            nsX.GetNum("height"); nsX.WhyNotShown(); nsX.IsSlotShown()
+            nsX.IsUnlocked(); nsX.NumBounds("width")
         end), "有导出函数没做 nil 防护")
         -- 🔑 真把格子建出来 —— 这一步才让 BuildSlot / MakeContainer / BuildEcho / ApplyGeom 被执行到
         ok_("SetSlotShown(true) 能把格子建出来且不炸", pcall(function() nsX.SetSlotShown(true) end), "建格路径炸了")
@@ -578,8 +627,10 @@ do
             ok_("别人/别的单位的施法进来不炸", pcall(function()
                 fire("UNIT_SPELLCAST_SUCCEEDED", "target", nil, 50842) end), "unit 判断那段炸了")
         end
-        ok_("改尺寸不炸(含 SetAuraGroupLayout + 重刷按钮)", pcall(function() nsX.SetDim("width", 200) end), "改尺寸炸了")
-        ok_("改尺寸被钳到上限", nsX.GetDim("width"), 128)
+        ok_("改尺寸不炸(含 SetAuraGroupLayout + 重刷按钮)", pcall(function() nsX.SetNum("width", 200) end), "改尺寸炸了")
+        check("改尺寸被钳到上限", nsX.GetNum("width"), 128)
+        ok_("改透明度不炸", pcall(function() nsX.SetNum("idleAlpha", 0) end), "ApplyIdle 炸了")
+        check("透明度调得到 0(= 不画)", nsX.GetNum("idleAlpha"), 0)
         ok_("/dxf 无参不炸", pcall(function() G.SlashCmdList["DODOXUEFEI"]("") end), "斜杠命令炸了")
         ok_("/dxf why 不炸", pcall(function() G.SlashCmdList["DODOXUEFEI"]("why") end),
             "诊断命令自己炸了 —— 它恰恰是别人出事时唯一的抓手")

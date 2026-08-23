@@ -48,7 +48,7 @@ local ECHO_LEN   = 3.0
 --    于是**赋的是全局变量**,读的人拿到恒 nil ⇒ 登录即崩。
 --    `luac -p` 挑不出来(写全局是合法 Lua),纯函数测试也够不着框体装配。
 --    ⇒ `tools/test_dxf.lua` 有一条守卫盯着这件事:**新增任何模块级 local 都要加进那份清单**。
-local slot, container, bg, label          -- 框体
+local slot, container, bg, label, idle    -- 框体(idle = 不触发时那张常驻灰图)
 local buttons = {}                        -- 容器**已经建出来**的那些 aura button(改尺寸要挨个碰)
 local needsResize = false                 -- 想 resize 但当时碰不得(战斗中 / 光环被扣值)
 local glowOn      = false
@@ -62,7 +62,7 @@ local echo = { frame = nil, cd = nil, fs = nil, flashTex = nil,
 local live = { armed = false, glowOffAt = nil }
 
 -- 前向声明:下面互相调用,而 Lua 的 local 只对**声明之后**的代码可见。
-local Reposition, ApplyGeom, BuildSlot, ShowSlot, HideSlot, Evaluate, Why
+local Reposition, ApplyGeom, ApplyIdle, BuildSlot, ShowSlot, HideSlot, Evaluate, Why
 
 -- ---------------------------------------------------------------- secret 安全层
 -- 12.x 的 secret 值**用 type() 认不出来** —— 它伪装成它顶替的那个数,
@@ -110,40 +110,54 @@ end
 --    默认值根本不进存档,也就无从变旧。同一条的另一面:
 --    「缺省该是开」的开关一律存**反面**(`manualOff` 缺席 = 显示)。
 --
--- 键:  width / height    图标宽高(px)。缺席 = DEF_W / DEF_H
---       x / y            相对屏幕中心的偏移。缺席 = 默认位置
+-- 键:  width / height    图标宽高(px)
+--       idleAlpha        **不触发时**那张灰图的不透明度(%);0 = 干脆不画
+--       x / y            相对屏幕中心的偏移
 --       manualOff = true 玩家在面板里取消了「显示」。缺席 = 显示
 --       unlocked  = true 解锁移动中。缺席 = 锁着(默认就该是锁着,所以存正面没问题)
-local DEF_W, DEF_H = 48, 48
 local DEF_X, DEF_Y = 0, -140
 
--- 🔴 上下限是**结构性防线**,不是挑剔:0 或负数进 SetSize 当场炸,
---    而一个 3px 的格子在屏幕上等于消失了 —— 玩家再也点不着它,
---    面板里也就再没有把它调回来的入口。canon:能靠结构保证的别靠算式保证。
---    判据**只在这一处声明**,滑条、输入框、斜杠命令全走它。
-local MIN_DIM, MAX_DIM = 16, 128
+-- 🔴 每个数值设置的上下限和默认值**只在这张表里声明一次**。
+--    滑条 / 输入框 / 斜杠命令三个入口全从这儿取,谁都不许自己再钳一遍 ——
+--    各钳各的必然漂,而两个控件对同一个值给出不同答案是最难查的那种。
+--    上下限还是**结构性防线**:0 或负数进 SetSize 当场炸,而一个 3px 的格子
+--    在屏幕上等于消失了(玩家再也点不着它,面板里也没有把它调回来的入口)。
+--    ⚠ `idleAlpha` 的下限**故意是 0** —— 0 = 不触发时干脆不画,那正是 1.0 的行为,
+--      是个合法选择,不是"坏值"。所以下限不能照抄尺寸那个 16。
+local SPEC = {
+    width     = { min = 16, max = 128, def = 48, geom = true },
+    height    = { min = 16, max = 128, def = 48, geom = true },
+    idleAlpha = { min =  0, max = 100, def = 35 },
+}
 
-local function ClampDim(v)
+local function ClampNum(key, v)
+    local sp = SPEC[key]
+    if not sp then return nil end
     v = tonumber(v)
     if not v then return nil end            -- 不是数 ⇒ 整条拒收,别当 0 收下
     v = math.floor(v + 0.5)
-    if v < MIN_DIM then v = MIN_DIM end
-    if v > MAX_DIM then v = MAX_DIM end
+    if v < sp.min then v = sp.min end
+    if v > sp.max then v = sp.max end
     return v
 end
 
-local function Num(key, def)
+-- **现取**,不吃文件级常量。DodoCombatHUD 那边栽过:一个「另起一排」时代的
+-- 写死常量被删了而这儿还在用 ⇒ SetSize(nil, nil) 当场崩,还崩在 pcall 里,
+-- 表现成「容器建不出来」,完全看不出是个悬空的常量。
+local function Get(key)
+    local sp = SPEC[key]
+    if not sp then return nil end
+    local raw = type(DB) == "table" and DB[key] or nil
+    return ClampNum(key, raw) or sp.def
+end
+
+-- x/y 不在 SPEC 里:它们没有上下限(靠 SetClampedToScreen 兜),语义也不一样。
+local function Coord(key, def)
     local v = type(DB) == "table" and tonumber(DB[key])
     return v or def
 end
 
--- 尺寸**现取**,不吃文件级常量。DodoCombatHUD 那边栽过:一个「另起一排」时代的
--- 写死常量被删了而这儿还在用 ⇒ SetSize(nil, nil) 当场崩,还崩在 pcall 里,
--- 表现成「容器建不出来」,完全看不出是个悬空的常量。
-local function Geom()
-    return ClampDim(Num("width", DEF_W)) or DEF_W,
-           ClampDim(Num("height", DEF_H)) or DEF_H
-end
+local function Geom() return Get("width"), Get("height") end
 
 local function Hidden()   return type(DB) == "table" and DB.manualOff == true end
 local function Unlocked() return type(DB) == "table" and DB.unlocked  == true end
@@ -301,6 +315,12 @@ end
 --      ① 外框 slot 自己  ② 容器的 flow layout 格子  ③ **已经建出来的那些 button**
 --    ③ 最容易漏,因为它在暴雪那边、要单独去碰,而且**碰它有闸**(见 CanTouchButtons)。
 --    ⇒ 改尺寸只有这一个入口,滑条 / 输入框 / 斜杠命令全走它。
+-- 不触发时那张灰图的不透明度。**0 是合法值** = 干脆不画(1.0 的老行为),
+-- 所以这儿不许写"0 就回默认"之类的兜底 —— 那会让玩家永远调不到 0。
+ApplyIdle = function()
+    if idle then idle:SetAlpha(Get("idleAlpha") / 100) end
+end
+
 ApplyGeom = function()
     if not slot then return end
     local w, h = Geom()
@@ -315,6 +335,7 @@ ApplyGeom = function()
         end)
     end
     RestyleButtons()
+    ApplyIdle()
     if echo.fs then
         pcall(function()
             echo.fs:SetFont(select(1, echo.fs:GetFont()) or STANDARD_TEXT_FONT,
@@ -449,9 +470,9 @@ local function RowUpdate(_, dt)
     -- 有红显红、没红有绿显绿;两种情况**都发光**。
     local active = echoOn or ProcUp()
     SetGlow(active)
-    -- 空着的时候整格透明 ——「不占位」和「看不见」是两件事,而只有后者是零代价的
-    -- (位置钉死不动正是反应速度的来源)。解锁摆位置时留一点底色,好让人看得见它在哪。
-    -- 解锁时画出边框和「拖动」两个字。⚠ 四条边和那个字**必须一起翻** ——
+    -- ⚠ 「空着的时候整格透明」是 **1.0 的行为,已经不成立** —— 1.1 起没 proc 时画一张灰图
+    --   (透明度归 idleAlpha;调到 0 才回到那个老行为)。位置永远钉死不动,那正是反应速度的来源。
+    -- 解锁摆位置时:暗底 + 四条边 + 「拖动」两个字。⚠ 它们**必须一起翻** ——
     -- 只翻一半的话解锁了却看不见边界,而你正在调的就是宽和高。
     local unlocked = Unlocked()
     if bg then bg:SetAlpha(active and 0.55 or (unlocked and 0.45 or 0)) end
@@ -462,6 +483,9 @@ local function RowUpdate(_, dt)
             for _, t in ipairs(slot.dxfEdges) do t:SetShown(unlocked) end
         end
         if label then label:SetShown(unlocked and not active) end
+        -- 亮着的时候把灰图收起来,让彩色那张(容器画的绿 / echo 的红)露出来。
+        -- ⚠ 只在**状态真变了**那一帧动它,别每帧 SetShown —— 这一格是常驻跑 OnUpdate 的。
+        if idle then idle:SetShown(not active) end
     end
 end
 
@@ -471,7 +495,7 @@ end
 Reposition = function()
     if not slot then return end
     slot:ClearAllPoints()
-    slot:SetPoint("CENTER", UIParent, "CENTER", Num("x", DEF_X), Num("y", DEF_Y))
+    slot:SetPoint("CENTER", UIParent, "CENTER", Coord("x", DEF_X), Coord("y", DEF_Y))
 end
 
 -- 🔴 显隐和吃不吃鼠标**一起翻**。分开写早晚漏一个,而漏掉 EnableMouse 的症状是
@@ -500,6 +524,19 @@ BuildSlot = function()
     bg:SetAllPoints(sf)
     bg:SetColorTexture(0, 0, 0, 1)
     bg:SetAlpha(0)
+
+    -- 不触发时那张**常驻的灰图**(1.1 加的)。1.0 是"没 proc 就整格透明",
+    -- 而那样你只能靠记忆知道它在哪 —— 有个灰底在,一眼看得出"它在,只是还没亮"。
+    -- 🔑 它画在 slot 自己的 ARTWORK 层 ⇒ 天生在绿(容器 button)和红(echo 框)**底下**,
+    --    因为那两个是独立**框体**,框体层级高于父框体的贴图层。不用去调 SetDrawLayer。
+    idle = sf:CreateTexture(nil, "ARTWORK")
+    idle:SetPoint("TOPLEFT", 1, -1)
+    idle:SetPoint("BOTTOMRIGHT", -1, 1)
+    idle:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    pcall(function() idle:SetTexture(C_Spell.GetSpellTexture(ID.boil)) end)
+    -- 「灰掉」= 真·去色,不是调暗;暗到什么程度归 idleAlpha 那个滑条管,两件事别混。
+    pcall(function() idle:SetDesaturated(true) end)
+    idle:SetVertexColor(1, 1, 1)
 
     -- 解锁时才画的四条边 + 一个字:光靠 hover 变色**救不了发现性**
     -- (光标已经在上面才说话)。而且你正在调的就是宽和高 —— 得看得见边界。
@@ -638,8 +675,8 @@ Why = function()
     local w, h = Geom()
     emit(("  ⑦ 容器建了=%s 已建按钮=%d 待补尺寸=%s 现在能碰按钮=%s"):format(
         tostring(container ~= nil), #buttons, tostring(needsResize), tostring(CanTouchButtons())))
-    emit(("  ⑧ 宽x高 = %dx%d   位置 = %d, %d(相对屏幕中心)"):format(
-        w, h, Num("x", DEF_X), Num("y", DEF_Y)))
+    emit(("  ⑧ 宽x高 = %dx%d  不触发时 %d%%(0 = 不画)  位置 = %d, %d(相对屏幕中心)"):format(
+        w, h, Get("idleAlpha"), Coord("x", DEF_X), Coord("y", DEF_Y)))
     emit("  ⑨ 光环被扣值? = " .. call(C_Secrets and C_Secrets.ShouldAurasBeSecret)
          .. "   血沸正高亮? = " .. tostring(ProcUp()))
     emit("---- 完,整段发我 ----")
@@ -684,21 +721,20 @@ end
 -- 🔴 **面板不许自己读写存档里那个键。** 存的是 `manualOff`(缺席 = 显示)而不是 `on`,
 --    面板那边要是照直觉写一个 `on`,两份判据当场分叉,而症状是
 --    「勾选框和屏幕上那格对不上」—— 谁也看不出来是两个键。
---    ⇒ 只暴露**动作**,不暴露键名。尺寸同理:clamp 只在 ClampDim 一处声明,
+--    ⇒ 只暴露**动作**,不暴露键名。数值同理:上下限只在 SPEC 一处声明,
 --    滑条和输入框都得从这个门走,不然两个控件迟早各自钳出不同的值。
-ns.DimBounds  = function() return MIN_DIM, MAX_DIM end
-ns.GetDim     = function(key)
-    local w, h = Geom()
-    if key == "width" then return w end
-    if key == "height" then return h end
-end
-ns.SetDim     = function(key, v)
-    if key ~= "width" and key ~= "height" then return nil end
-    local n = ClampDim(v)
+ns.NumBounds = function(key) local sp = SPEC[key]; if sp then return sp.min, sp.max end end
+ns.GetNum    = function(key) return Get(key) end
+ns.SetNum    = function(key, v)
+    local sp = SPEC[key]
+    if not (sp and DB) then return nil end
+    local n = ClampNum(key, v)
     if not n then return nil end          -- 整条拒收(空串 / 不是数),别当 0 收下
-    if not DB then return nil end
     DB[key] = n
-    ApplyGeom()
+    -- 只有宽高要重算几何(它会去碰暴雪那些 button,有闸、有代价);
+    -- 透明度改一下没必要走那一整套 —— 拖滑条时每帧都触发一次 RestyleButtons 是纯浪费,
+    -- 而且战斗中会平白把 needsResize 置起来。
+    if sp.geom then ApplyGeom() else ApplyIdle() end
     return n
 end
 ns.IsSlotShown   = function() return not Hidden() end
@@ -757,13 +793,14 @@ SlashCmdList["DODOXUEFEI"] = function(msg)
         ns.SetUnlocked(true);  emit("解锁了 —— 直接拖那个蓝框换位置,摆好回来 `/dxf lock`。")
     elseif cmd == "lock" then
         ns.SetUnlocked(false); emit("锁上了(不再吃鼠标,不挡你点东西)。")
-    elseif cmd == "w" or cmd == "h" then
-        local key = (cmd == "w") and "width" or "height"
-        local got = ns.SetDim(key, arg)
-        if got then emit(("%s = %d"):format(cmd == "w" and "宽" or "高", got))
+    elseif cmd == "w" or cmd == "h" or cmd == "alpha" then
+        local key   = (cmd == "w") and "width" or (cmd == "h") and "height" or "idleAlpha"
+        local label = (cmd == "w") and "宽" or (cmd == "h") and "高" or "不触发时的透明度"
+        local got = ns.SetNum(key, arg)
+        if got then emit(("%s = %d%s"):format(label, got, (cmd == "alpha") and "%" or " px"))
         else
-            local lo, hi = ns.DimBounds()
-            emit(("要一个 %d–%d 之间的数。现在 %s = %d"):format(lo, hi, cmd, ns.GetDim(key)))
+            local lo, hi = ns.NumBounds(key)
+            emit(("要一个 %d–%d 之间的数。现在 %s = %d"):format(lo, hi, label, ns.GetNum(key)))
         end
     elseif cmd == "pos" then
         if DB then DB.x, DB.y = nil, nil end
@@ -771,15 +808,16 @@ SlashCmdList["DODOXUEFEI"] = function(msg)
         emit("位置回默认(屏幕中心偏下)。")
     else
         local w, h = Geom()
-        emit(("沸点格:%s | 宽x高 %dx%d | 位置 %d,%d | %s"):format(
+        emit(("沸点格:%s | 宽x高 %dx%d | 不触发时 %d%% | 位置 %d,%d | %s"):format(
             Hidden() and "|cffff5555关|r" or "|cff33ff33开|r",
-            w, h, Num("x", DEF_X), Num("y", DEF_Y),
+            w, h, Get("idleAlpha"), Coord("x", DEF_X), Coord("y", DEF_Y),
             Unlocked() and "|cffffff00解锁中|r" or "锁着"))
         local why = ns.WhyNotShown()
         if why then emit("  现在不显示,因为:" .. why) end
         Print("  /dxf on|off  显示 / 不显示")
         Print("  /dxf unlock|lock  解锁拖动 / 锁上")
         Print("  /dxf w <数>  /dxf h <数>  宽 / 高(也可以在 ESC → 选项 → 插件 → DodoXuefei 里拉滑条)")
+        Print("  /dxf alpha <0-100>  不触发时那张灰图的透明度;|cffffff000 = 干脆不画|r")
         Print("  /dxf pos     位置回默认(拖丢了用这个)")
         Print("  /dxf why     它为什么不出现 —— 把整段发给 Doodo")
     end

@@ -106,15 +106,15 @@ function Col:Check(label, get, set, tooltip)
     return c
 end
 
--- 一个尺寸 = 滑条 + px 输入框,**两个控件一个值**。
+-- 一个数值设置 = 滑条 + 数字输入框,**两个控件一个值**。宽 / 高 / 透明度共用这一份。
 --
--- 🔴 唯一的写入口是 `ns.SetDim`。两个控件各自写存档的话,它们会各自钳一遍范围、
---    各自决定"空串算什么" —— 两份单独看都对,漂了没人读得出来
---    (canon:同一不变式两份手写实现 = 静默分歧发生器)。
---    ⇒ 这儿谁都不写存档:改 → 交给 SetDim → **回读**刷新两个控件。
+-- 🔴 唯一的写入口是 `ns.SetNum`,上下限只在 Core 的 `SPEC` 里声明一次。
+--    两个控件各自写存档的话,它们会各自钳一遍范围、各自决定"空串算什么" ——
+--    两份单独看都对,漂了没人读得出来(canon:同一不变式两份手写实现 = 静默分歧发生器)。
+--    ⇒ 这儿谁都不写存档:改 → 交给 SetNum → **回读**刷新两个控件。
 --    回读那一步同时兜住"被钳住了"和"输入被拒":框里显示的永远是真正存进去的值。
-function Col:Dim(label, key)
-    local lo, hi = ns.DimBounds()
+function Col:Num(label, key, unit)
+    local lo, hi = ns.NumBounds(key)
     local top = self:take(44)
 
     local s = CreateFrame("Slider", nil, self.p)
@@ -140,16 +140,16 @@ function Col:Dim(label, key)
     e:SetAutoFocus(false)
     e:SetNumeric(true)                 -- 挡住非数字,少一整类脏输入
     e:SetMaxLetters(3)
-    local unit = self.p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    unit:SetPoint("LEFT", e, "RIGHT", 4, 0)
-    unit:SetText("px  (" .. lo .. "–" .. hi .. ")")
+    local unitFS = self.p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    unitFS:SetPoint("LEFT", e, "RIGHT", 4, 0)
+    unitFS:SetText((unit or "px") .. "  (" .. lo .. "–" .. hi .. ")")
 
     -- ⚠ `SetValue` 自己也会触发 OnValueChanged ⇒ 回读时必须挡住,否则
     --   刷新→写入→刷新 无限套娃(而且每一圈都重算一次布局)。
     local suppress = false
     local shown                        -- 上一次**我们**渲染出去的文本
     local function refresh()
-        local v = ns.GetDim(key) or lo
+        local v = ns.GetNum(key) or lo
         suppress = true
         s:SetValue(v)
         suppress = false
@@ -157,7 +157,7 @@ function Col:Dim(label, key)
         e:SetText(shown)
     end
     local function push(v)
-        ns.SetDim(key, v)              -- 拒收 / 钳住都由它决定
+        ns.SetNum(key, v)              -- 拒收 / 钳住都由它决定
         refresh()                      -- 回读:框里显示真正存进去的那个值
     end
     refresh()
@@ -215,10 +215,15 @@ local function BuildPage()
     c:Note("解锁期间它**无视专精和天赋**先显示出来,好让你在任何角色上都摆得了位置;" ..
            "取消勾选就按正常规矩来。锁着的时候那一格|cff33ff33不吃鼠标|r,不会挡住你点身后的东西。")
 
-    c:Dim("宽", "width")
-    c:Dim("高", "height")
+    c:Num("宽", "width", "px")
+    c:Num("高", "height", "px")
     c:Note("滑条和右边那个框是**同一个值**,改哪个都行,当场生效。" ..
            "⚠ 战斗中改的话外框会马上变、图标要等脱战才补上 —— 暴雪不让插件在战斗里碰光环图标。")
+
+    c:Num("不触发时的透明度", "idleAlpha", "%")
+    c:Note("没 proc 的时候那一格画一张|cff33ff33灰掉的|r血液沸腾图标,好让你一眼看出"
+           .. "「它在,只是还没亮」。这条调的就是那张灰图有多淡。"
+           .. "|cffffff00调到 0 = 不触发时干脆不画|r(就是 1.0 那个行为)。")
 
     c:Note("|cff808080拖丢了?/dxf pos 位置回默认。它怎么不出现?/dxf why 会把每一环都打出来。|r")
     return f

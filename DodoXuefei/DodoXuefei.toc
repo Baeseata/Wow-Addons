@@ -1,9 +1,9 @@
 ## Interface: 120005, 120007, 120100
 ## Group: Dodo
 ## Title: DodoXuefei
-## Notes: 血DK「沸点」监视:15秒 proc 显绿、3秒 echo 显红,都发光
+## Notes: 血DK「沸点」监视:平时灰、15秒 proc 显绿、3秒 echo 显红,都发光
 ## Author: Doodo
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: DodoXuefeiDB
 
 Core.lua
