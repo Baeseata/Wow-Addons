@@ -756,6 +756,8 @@ local function BuildSlot()
         boil.container:SetPoint("TOPLEFT", sf, "TOPLEFT", 0, 0)
     end
     BuildEcho(sf)
+    -- 配置模式下它也是拖拽把手 —— 走主文件那一套,别在这儿另写一份 StartMoving。
+    if ns.MakeDragHandle then pcall(ns.MakeDragHandle, sf) end
     Reposition()
 
     -- 驱动挂在格子自己身上:它启用时一直显示(空着也占位),所以 OnUpdate 一定在跑。
@@ -1051,6 +1053,11 @@ ns.BoilingEvaluate = Evaluate   -- 给 Options / 自身增益排开关用
 -- ⚠ 也不碰 boil.slot 的显隐:那归 Evaluate 管,多一条判据 = 退出配置模式那格可能就没了。
 ns.BoilingSetConfig = function(on)
     boil.config = on and true or false
+    -- 这一格也能拖(跟别的占位框一样)。⚠ 隐藏的框体照样吃鼠标 ⇒ 退出配置模式要关掉,
+    -- 不然它会在那儿挡着,而症状是"HUD 左边有块地方点不动"。
+    local db = _G.DodoCombatHUDDB
+    local locked = type(db) == "table" and db.locked
+    if boil.slot then boil.slot:EnableMouse((on and not locked) and true or false) end
 end
 ns.BoilingSlotOn  = function() return not slotDB().manualOff end
 ns.BoilingSetSlot = function(v)

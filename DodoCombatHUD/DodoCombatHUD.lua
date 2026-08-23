@@ -219,6 +219,11 @@ end
 -- ---------------------------------------------------------------- 构件
 
 local root, testMode = nil, false
+-- 拖拽整个 HUD 的那对函数。**声明在这儿、赋值在 BuildHUD 里** ——
+-- 占位框(配置模式)和沸点那一格都要用同一对,而它们在别的地方建。
+-- ⚠ 声明写晚了那两句赋值就成了全局变量,而 `luac -p` 挑不出任何毛病
+--    (0.9.0 的 segHost 就是这么崩的,tools/test_scope.lua 守着这条)。
+local HudDragStart, HudDragStop = nil, nil
 local power, health, cast    -- 血量(上) / 主资源(中) / 施法(下)
 -- 🔴 次要资源那三个**必须在这儿前向声明**,不能等到 LayoutSegs 那节才 `local`。
 -- 0.9.0 首次真机就栽在这:声明写在 BuildHUD **下面** ⇒ BuildHUD 里那句
@@ -596,8 +601,33 @@ local function MakeSlotMark(parent, label)
     local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("CENTER")
     fs:SetText(label)
+
+    -- 🔴 占位框本身就是拖拽把手 —— 配置模式下 aura 那几排占了屏幕上不小一块,
+    --    而那块地方原来是**抓不住的**(条才能抓)。挂的是模块层那对 Hud* 函数,
+    --    不是另写一份"也拖 root"的代码。
+    -- ⚠ EnableMouse 归 LayoutDots 跟显隐一起管:配置模式外这些框是隐藏的,
+    --    但**隐藏的框体照样能吃鼠标** —— 不关的话它会把底下的东西挡住,
+    --    而症状是"这块地方点不动了",完全想不到是几个看不见的框。
+    f:EnableMouse(false)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function() if HudDragStart then HudDragStart() end end)
+    f:SetScript("OnDragStop",  function() if HudDragStop  then HudDragStop()  end end)
+    -- 悬停高亮。⚠ 它**救不了发现性**(光标已经在上面才说话)——
+    --   "占位框能直接拖"这句得写在开配置模式时那条消息里,canon 那条讲的就是这个。
+    f:SetScript("OnEnter", function(self) bg:SetColorTexture(0.25, 0.75, 1, 0.4) end)
+    f:SetScript("OnLeave", function(self) bg:SetColorTexture(0.15, 0.55, 1, 0.22) end)
+
     f:Hide()
     return f
+end
+
+-- 显隐 + 吃不吃鼠标,**一起翻**。分开写的话早晚漏一个,而漏掉 EnableMouse 的症状是
+-- 「HUD 附近有一块地方点不动」—— 几个看不见的框在挡着,想不到是它们。
+-- 🔴 锁上了就别吃鼠标:锁定的语义是"别让我手滑挪了它",占位框不能是那条规矩的例外。
+local function ShowMark(mark, on)
+    if not mark then return end
+    mark:SetShown(on and true or false)
+    mark:EnableMouse((on and not (DB and DB.locked)) and true or false)
 end
 
 local function BuildDots()
@@ -726,12 +756,16 @@ local function BuildHUD()
     root:SetClampedToScreen(true)
     root:SetMovable(true)
 
-    local function startDrag() if not DB.locked then root:StartMoving() end end
-    local function stopDrag()
+    -- 🔴 赋给**模块层**那两个 local(上面声明过),不是新建两个局部函数 ——
+    --    配置模式的占位框和沸点那一格都要挂同一对。各写一份的话,
+    --    "从条上拖"和"从占位框上拖"迟早会在存位置这件事上分叉。
+    HudDragStart = function() if not DB.locked then root:StartMoving() end end
+    HudDragStop = function()
         root:StopMovingOrSizing()
         local _, _, _, x, y = root:GetPoint()
         CharDB.x, CharDB.y = math.floor(x + 0.5), math.floor(y + 0.5)
     end
+    local startDrag, stopDrag = HudDragStart, HudDragStop
     root:RegisterForDrag("LeftButton")
     root:SetScript("OnDragStart", startDrag)
     root:SetScript("OnDragStop", stopDrag)
@@ -784,7 +818,7 @@ local function LayoutDots()
             slot.mark:SetPoint("BOTTOMLEFT", health.frame, "TOPLEFT", (i - 1) * (w + sp), DB.dotYOffset)
             -- 显隐也在这儿定,不另开一个函数:位置和"该不该显示"分两处算,
             -- 早晚会漂成"框在这儿、图标在那儿"。判据取自跟 HUD 同一个 VisibleFor。
-            slot.mark:SetShown(configMode and DB.dotsOn ~= false and DB.healthOn ~= false
+            ShowMark(slot.mark, configMode and DB.dotsOn ~= false and DB.healthOn ~= false
                 and i <= #VisibleFor("dots"))
         end
         pcall(function()
@@ -823,7 +857,7 @@ local function LayoutDots()
                 slot.mark:ClearAllPoints()
                 slot.mark:SetPoint("TOPLEFT", cdAnchor, "BOTTOMLEFT",
                     cdRowPad + (i - 1) * (cw + csp), -(DB.cdYOffset or 4))
-                slot.mark:SetShown(configMode and DB.cdsOn ~= false and i <= #VisibleFor("cds"))
+                ShowMark(slot.mark, configMode and DB.cdsOn ~= false and i <= #VisibleFor("cds"))
             end
             pcall(function()
                 c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = cw,
@@ -856,7 +890,7 @@ local function LayoutDots()
         rightBox.mark:SetSize(cols * rw + (cols - 1) * rsp, 2 * rh + rsp)
         rightBox.mark:ClearAllPoints()
         rightBox.mark:SetPoint("TOPLEFT", health.frame, "TOPRIGHT", DB.raidXOffset or 4, 0)
-        rightBox.mark:SetShown(configMode and DB.raidOn ~= false and DB.healthOn ~= false)
+        ShowMark(rightBox.mark, configMode and DB.raidOn ~= false and DB.healthOn ~= false)
         -- ⚠ 每线的像素高**必须跟着图标大小重算** —— 它是在建组时设过一次的,
         --    不在这儿再设的话,改完 /dch rh 就不再是"每列 2 格"(会变成 1 格或 3 格),
         --    而症状是「排布突然乱了」,想不到是这行没跟上。
@@ -1889,6 +1923,7 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         Print(on and "配置模式|cff33ff33开|r —— 全部该显示的框体都摆出来了,已解锁,拖吧。再敲一次收工。"
                   or "配置模式|cffff3333关|r —— 位置和锁定都还原了。")
         if on then
+            Print("  |cff33ff33那些占位框本身就能拖|r —— 不用去够那三根条。")
             Print("  ⚠ aura 那几排画的是**空占位框**:图标是暴雪容器画的,塞不进假光环。")
             Print("    框里空着**不代表**那一格有问题,退出配置模式才看得到真东西。")
         end
@@ -2073,6 +2108,16 @@ ns.ToggleConfig        = function()
     return configMode
 end
 ns.IsConfigMode        = function()        return configMode end
+-- 把任意框体接成「拖它 = 拖整个 HUD」的把手。给 Boiling.lua 那一格用。
+-- 🔴 导出的是**动作**不是那对函数本身:别的文件拿到函数就能绕过 DB.locked 自己调,
+--    而"锁定"这条规矩只该有一处判(HudDragStart 里那句)。
+ns.MakeDragHandle      = function(frame)
+    if type(frame) ~= "table" or not frame.RegisterForDrag then return end
+    frame:EnableMouse(false)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() if HudDragStart then HudDragStart() end end)
+    frame:SetScript("OnDragStop",  function() if HudDragStop  then HudDragStop()  end end)
+end
 -- 「这一种资源单独关掉了没有」+ 开关。判据只在 ResHidden 那一处声明,这里只是门面。
 ns.IsResHidden         = function(name)    return ResHidden(name) end
 ns.SetResHidden        = function(name, hidden)

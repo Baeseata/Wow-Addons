@@ -23,6 +23,7 @@ local NAMES = {
     "cdRowPad",   -- 沸点那个固定格占掉的左侧留白(Boiling.lua 推进来)
     "cdOverflowSig",
     "configMode", "preConfigLocked",   -- 0.13.2 配置模式
+    "HudDragStart", "HudDragStop",     -- 0.13.3 占位框也当拖拽把手
 }
 
 local lines = {}

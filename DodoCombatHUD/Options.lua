@@ -710,6 +710,7 @@ local function BuildMainPage()
     end)
     Refreshers[#Refreshers + 1] = function() cfgBtn:SetText(cfgText()) end
     c:Note("配置模式:三根条填上假数据、aura 每个格子画一个占位框、并**自动解锁**,摆完再点一次全部还原(包括原来的锁定状态)。")
+    c:Note("|cff33ff33那些占位框本身就能拖|r —— 抓哪个都行,拖的都是整叠 HUD,不用去够那三根条。")
     c:Note("⚠ aura 那几排的占位框**里面是空的** —— 图标是暴雪容器画的,我们塞不进假光环。空框不代表那一格有问题。")
     c:Slider("所有条的长度", 40, 1200, "width", ns.ApplyLayout)
     c:Note("全部同宽,一个值管到底 —— 次要资源那排格子加起来也等于这个长度(缝算在里面)。")
