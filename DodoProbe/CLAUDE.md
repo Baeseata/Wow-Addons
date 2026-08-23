@@ -7,10 +7,39 @@
 
 ## 用法
 
+**权威清单 = `DodoProbe.lua` 底部那个 slash 分发表**(`/dp` 与 `/dodoprobe` 是同一个)。
+下表是它的注释版,**加了子命令请回来补这里**;怀疑漂了就当场重数一遍:
+
+```bash
+grep -nE 'cmd == "' DodoProbe/DodoProbe.lua
 ```
-/dp          立刻跑一次，打印一张表（脱战/战斗中都能跑）
-/dp arm      武装：进战 3 秒后跑一次，跑完自动解除
+
 ```
+/dp              立刻跑一次主表,打印 + 自动落盘(脱战/战斗中都能跑)
+/dp arm          武装:进战 3 秒后跑一次,跑完自动解除
+/dp copy         把上一次 /dp 的输出重新弹一次复制窗(Ctrl+A / Ctrl+C)
+
+/dp lat          开关「DoT 上身 → 名条图标出现」的延迟探针(见下面 /dp lat 一节)
+/dp tint         建 DoT 染色钻机:条按 DoT 组合变色(判据只能是眼睛)
+/dp dot <数字>   设染色 / 光环探针盯的那个 DoT 的 spellID
+/dp exec <数字>  设斩杀探针的 spellID
+/dp aura         开关 aura 探针那几排(要先脱战 /dp 跑过一次才建得起来)
+
+/dp class        跑一次职业色探针:target + nameplate1..N,连区域上下文一起落盘
+/dp macro        跑一次「宏 / 灌注顺位」开工前置探针 —— 有副作用(临时建一个宏再删),
+                 所以只走手敲、不进默认 /dp。DodoGuanzhu 那条阻塞项的验法就是它
+
+/dp pos          开关玩家坐标采样(每 POS_TICK 秒一次,没动就不记)
+/dp mark <名字>  在坐标流里打一个具名点,如 /dp mark cross(身份在打点那刻钉死)
+/dp posclear     清空坐标记录
+
+/dp log          报落盘日志条数 + 文件路径
+/dp clear        清空落盘日志(只清 log,不碰 pos)
+```
+
+⚠ **拼错的子命令、以及 `/dp dot` / `/dp exec` 忘了带数字,都会静默落进 else 分支跑一次完整主表**
+—— 不报「未知命令」。想设 id 却看到一整张表刷出来,就是漏了那个数字。
+⚠ 凡带「记录 / 清空」的(`pos` / `posclear` / `log` / `clear`),**都要再 `/reload` 一次才真的落到文件**。
 
 `/dp arm` 是为了量「战斗中」那一列——手动在战斗里打字来不及。
 
@@ -334,4 +363,21 @@ curl -s https://raw.githubusercontent.com/Gethe/wow-ui-source/live/Interface/Add
 ## 生命周期
 
 一次性诊断工具，**不发 CurseForge**。留着是因为每个补丁都要重量一次。
-真不要了：删 `DodoProbe/` 文件夹即可，没有任何插件依赖它。
+
+🔴 **删这个文件夹之前先读这条 —— 它不是零依赖的。**
+`DodoCombatHUD` 通过 `_G.DodoProbeLog` 拿它当落盘诊断通道(调用点在 `DodoCombatHUD.lua`,
+搜 `DodoProbeLog`)。那是**探测式调用**(`if _G.DodoProbeLog then …`)⇒ 删了**不崩、不报错**,
+只是 `/dch probe` 的落盘输出**安静地消失**,而那条通道正是「Claude 直接读文件、别让 Jerry 截屏」
+的主路径 —— 症状会晚很久才被发现,且看起来像 DodoCombatHUD 自己坏了。
+⚠ `DodoCombatHUD.toc` 的 `## OptionalDeps` 里**没有** `DodoProbe`,所以加载顺序也不保证。
+
+**「还有没有别人依赖它」别信这一行,当场重数**(2026-08-22 全量核过 = 只有上面这一个):
+
+```bash
+git grep -n "DodoProbe" -- '*.lua' '*.toc' | grep -v '^DodoProbe/'
+```
+
+判命中的方法:**只有出现在可执行语句里的才算依赖**。当天 6 条命中里,真依赖只有
+`DodoCombatHUD.lua:1469` 那一行 `if _G.DodoProbeLog then …`;其余(`DodoSays/Macros.lua`、
+`DodoUnholy/Rotation.lua` 里指回本文的那几条,以及 DodoCombatHUD 自己的两句注释)全是**注释/散文**。
+⚠ 别按「命中几条」下结论 —— 散文引用会越攒越多,而它们删了什么都不会坏。

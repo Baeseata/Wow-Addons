@@ -17,7 +17,21 @@ local ADDON, ns = ...
 ----------------------------------------------------------------------------------------------------
 -- Secret-Values shim + helpers
 ----------------------------------------------------------------------------------------------------
-local IsSecret = issecretvalue or function() return false end
+-- ⚠ This is ONE OF SEVERAL deliberate hand-written copies of the same is-secret test across the
+-- monorepo (DodoGrid keeps its own because it must run without the `Dodo` package). The copies are
+-- meant to share ONE shape; this one was the WEAKEST form of it until 2026-08-22, when it was brought to the canonical shape:
+--   * resolved ONCE at load time (a late-loading `issecretvalue` would never be picked up),
+--   * no `pcall` (if `issecretvalue` ever throws, the caller throws),
+--   * passes the raw return through instead of normalising to a real boolean.
+-- The canonical shape is `type` probe + `pcall` + `== true` — see `DodoSays/Util.lua` for why each
+-- of those three exists (a nil folded to false there cost a whole raid night of silent no-ops).
+-- 🔴 If you touch any copy, touch them all. Re-derive the current list, don't trust this comment:
+--     git grep -n 'issecretvalue' -- '*.lua'
+local function IsSecret(v)
+	if type(issecretvalue) ~= "function" then return false end
+	local ok, secret = pcall(issecretvalue, v)
+	return ok and secret == true
+end
 
 local function Bool(v)
 	if IsSecret(v) or v == nil then return false end

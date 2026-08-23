@@ -47,7 +47,7 @@
 ```
 UNIT_SPELLCAST_CHANNEL_START unit=boss1 id=<secret> name=<secret> start=<secret> end=<secret> id2=<secret>
 ```
-**`spellID` / `name` / `startTime` / `endTime` 无一例外全是 secret**，`?` 上如此（`??` 未测）。
+**`spellID` / `name` / `startTime` / `endTime` 无一例外全是 secret**，`?` 上如此（**本次 trace 未覆盖 `??`**）。
 
 ⇒ 三层降级链的**第 1 层（比 id）和第 2 层（比名字）在真机上永远走不到**，
 `identifyEcho` **每一次都落到第 3 层「place」**。硬编码的 `SERMON_IDS` / `ECHO_ID` 实际是死代码
@@ -88,6 +88,8 @@ A/B 验过（拆掉围栏 → `got 8, want 6`，精确指出两次主阶段施�
 
 ## 6. 仍然未知
 
-- **`??` 全部**（8/18 才开）：分身「Echo of Azta'rec」撞名那条围栏、`5/6/7` 波数、`hard` 的 3.003 slot
+- **`??`（encounterID 3525）全部**：分身「Echo of Azta'rec」撞名那条围栏、`5/6/7` 波数、`hard` 的 3.003 slot。
+  🔑 **本文是「我方真机实测」的唯一出处 ⇒ 判据就是本文件自己:上面没有 `??` 场次的小节 = 还没量过。**
+  哪天真打了一把 `??`，把 trace 作为新的一节加进本文，那一刻这条自动作废（不用去别处改状态）。
 - **第三轮（30%，5 波）** 本轮团灭没拿到 —— 但 1/2 轮的规律一致，5 波大概率同形
 - **布道 spellID 每轮变不变**（SnakeSays 的说法）—— 本轮**验不了**，因为 id 全 secret

@@ -33,9 +33,10 @@
 
 探针清单 → [`docs/PROBE-CHECKLIST.md`](docs/PROBE-CHECKLIST.md)（第 7 条 `??` 双 boss 是**唯一还会改代码**的一条）
 
-**离线测试**（不用进游戏，本机 Lua 5.4 直接跑）：
+**离线测试**（不用进游戏，装了 Lua 5.4 的机器直接跑）：在**该机的 `DodoSays/` 目录**下跑 ——
+**HOME** = `D:\World of Warcraft\_retail_\Interface\AddOns\DodoSays`（就地改，那个目录**不是 git tree**）；
+**OMEN** = 它自己那份 `Wow-Addons` clone 里的 `DodoSays/`。两台的绝对路径以各机 `~/.claude/CLAUDE.md` 为准。
 ```
-cd D:\World of Warcraft\_retail_\Interface\AddOns\DodoSays
 lua tools/test_detector.lua
 ```
 它加载**真的** `Util/Board/Announce/Detector`（只 stub 客户端 API），跑真事件 handler。
@@ -58,9 +59,12 @@ lua tools/test_detector.lua
 **两处一起坏才复现 8/15 那个「整场零报点零报错」**（实测 18 条红）。⇒ 这两道防线是**一对**，
 别因为「单独拆掉测试没红」就以为哪一道是多余的。
 
-`?` 单问号**已经开着**（打通任意 T11 地下堡即开门），机制同族、只是短一截，现在就能量。`??` 2026-08-18 赛季开服才开。
+`?` 单问号**已经开着**（打通任意 T11 地下堡即开门），机制同族、只是短一截，随时能量。
+`??` 随 S2 赛季开服开放（2026-08-18）。
+🔑 **`??` 到底量没量过 → 查 [`docs/RESEARCH-live-trace.md`](docs/RESEARCH-live-trace.md) 里有没有 `??`（encounterID **3525**）的场次**
+——那份是本项目唯一的「我方真机实测」等级文件。查不到 = 还没量，**本文与 `docs/` 里任何 `??` 数字都只是攻略站说法，别当实测用**。
 
-## 3. 架构（调研已确认可行，未实测）
+## 3. 架构（`?` 上每条事件都有真机 trace + 离线用例 —— trace 见 [`docs/RESEARCH-live-trace.md`](docs/RESEARCH-live-trace.md) §1，用例跑 `lua tools/test_detector.lua`）
 
 | 事件 | 动作 |
 |---|---|
@@ -104,8 +108,13 @@ lua tools/test_detector.lua
   🔴 **打 tag 必须带 `--cleanup=verbatim`** —— git 默认 strip 模式把 `#` 开头的行**当注释删掉**,
   而 changelog 是 Markdown、标题正是 `#` 开头 ⇒ **所有段落标题静默消失**,tag 打完毫无提示。
   ⇒ 判据:`git tag -l --format='%(contents)' <tag> | grep '^#'` **必须有输出**;打完 tag、push 之前跑它。
-  ⚠ 这条 `PUBLISHING.md` §7 早就写着(1.2.0 实踩),**0.12.0 又踩一次** —— 因为发版时读的是本文件、
-  不是那份。**这就是它现在也写在这里的原因**;别把它删了改成一句"详见 PUBLISHING.md"。
+  ⚠ **这个坑踩过两次**(1.2.0 一次、0.12.0 又一次)。根因不是没人写下来,是**当时只写在一份
+  `PUBLISHING.md` 里,而那份文件被 `.gitignore:6` 排除、从不进仓、从不跨机**(HOME 上全盘搜索零命中)
+  ⇒ 换台机就等于它不存在,而"详见 PUBLISHING.md §7"这种指针读起来**像这件事已经有人管了**,
+  于是没人再写第二份。**这就是判据现在直接写在这里的原因;别把上面几行删成一句"详见某某文件"。**
+  同族判据的另一份**跨机可读**出处 = `.github/workflows/curseforge-release.yml`(tracked):
+  `:5` 注释「The annotated tag message becomes the changelog (Markdown)」;
+  `:76-79` 断言 tag 的 `-vX.Y.Z` 必须等于 TOC `## Version`,不等就 `exit 1`。
 - **发版账本 = Actions 运行记录 + CF 回的 `{"id":…}`**,不是 tag(tag 会被删,那两样不会)。
 - **打包白名单实查（2026-08-16 重核 `.github/workflows/curseforge-release.yml:129-131`）**：只有
   `*.lua *.toc README.md LICENSE *.tga *.blp *.png *.ttf *.xml *.mp3 *.ogg` 进包，
@@ -113,6 +122,12 @@ lua tools/test_detector.lua
   ⇒ **`tools/` 里的 harness 和测试是被路径排除挡住的，不是靠 `*.lua` 白名单**（`*.lua` 反而会收它们）
   ⇒ **`docs/` 下的调研文档天然进不了 CF 包**（`.md` 不在白名单，只有 `README.md` 例外）
   ⇒ 只动 `tools/` 的改动**不产生可发布内容,不需要发版**
+- 🔴 **`Media/Dodo.tga` 是本插件自己的副本,别当重复资产删掉。** 承上:zip **只装 `DodoSays/` 这一个目录**
+  ⇒ 从 CF 单独装的用户机器上 **`Interface\AddOns\Dodo\` 根本不存在**,`## IconTexture` 一旦指回
+  `AddOns\Dodo\`,那一格图标对**所有外部用户**就是空的 —— 而**在开发机上永远看不出来**
+  (HOME 和 OMEN 的 AddOns 目录里 Dodo 整合包都装着,路径永远解析得到)。
+  DodoInspect / DodoNameplate / DodoLura 同样各带一份,
+  四份 md5 相同是**有意的**。判据:**TOC 里任何 `Interface\AddOns\…` 路径都必须指向本插件自己的文件夹**。
 - 🔴 **已知缺口**：`:143` 那道验收闸只 grep `CLAUDE\.md|/test/|/tools/`，**不含 `/docs/`**。
   今天靠白名单挡住，闸没参与。**哪天有人往白名单加 `-o -name '*.md'`，`docs/` 会静默进包而闸不报** ⇒
   真要放宽白名单，**同一个 commit 里把 `/docs/` 加进那条 grep**。

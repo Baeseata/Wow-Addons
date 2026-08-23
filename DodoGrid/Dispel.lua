@@ -23,18 +23,34 @@ local DISPEL_CANDIDATES = {
 }
 local WARLOCK_SINGE = 89808            -- Singe Magic: Imp PET ability (IsSpellKnown(id, true) + Imp active)
 
+-- ── API posture for this file (keep both shims below to the SAME rule) ────────────────────────
+-- 1. If a `C_*` namespaced version exists, that is the call we make.
+-- 2. A legacy-global fallback is allowed ONLY when it is type-guarded AND its return SHAPE is
+--    known not to have changed. Never call a legacy global bare — the failure of a nil-call here
+--    is "the dispel macro body has no spell name in it", which looks EXACTLY like "this spec has
+--    no dispel". Both shims end with an explicit safe value so a missing API degrades, not throws.
+-- (`GetSpellInfo` was the one bare legacy global left in the whole monorepo; it is gone now — see
+--  the note in spellName() for why it did NOT get a guarded fallback.)
+
 local function spellKnown(id, isPet)
-	if C_SpellBook and C_SpellBook.IsSpellKnown then
+	if C_SpellBook and type(C_SpellBook.IsSpellKnown) == "function" then
 		-- 2nd arg is a SpellBookSpellBank enum (Player/Pet), NOT a boolean — passing a bool errors.
 		local bank = isPet and Enum.SpellBookSpellBank.Pet or Enum.SpellBookSpellBank.Player
 		return C_SpellBook.IsSpellKnown(id, bank) and true or false
 	end
-	return IsSpellKnown(id, isPet) and true or false   -- global form's 2nd arg IS the boolean isPet (deprecated 11.2.0)
+	-- Legacy fallback kept: the global form's 2nd arg IS the boolean isPet (deprecated 11.2.0), and
+	-- its return shape (a single truthy/falsey) is unambiguous, so normalising it is safe.
+	if type(IsSpellKnown) == "function" then return IsSpellKnown(id, isPet) and true or false end
+	return false
 end
 
 local function spellName(id)
-	if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(id) end
-	return (GetSpellInfo(id))
+	if C_Spell and type(C_Spell.GetSpellName) == "function" then return C_Spell.GetSpellName(id) end
+	-- Deliberately NO `GetSpellInfo` fallback. The modern global returns a different shape than the
+	-- old `name, rank, icon, …` tuple, and we cannot verify which shape this client ships — a wrong
+	-- shape here silently concatenates garbage into the macro body instead of failing loudly.
+	-- Returning nil makes Resolve() report "no dispel spell", which Apply() already handles.
+	return nil
 end
 
 -- Returns the dispel spell NAME (string) for the macro, or nil if this spec has none.

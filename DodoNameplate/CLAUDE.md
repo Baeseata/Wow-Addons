@@ -18,20 +18,55 @@ publishes through that repo's own workflow (`.github/workflows/curseforge-releas
   `.github/` would be dead config — GitHub only reads workflows from the repo root.
 - The CurseForge project id (`1587138`) stays in the `.toc` as `## X-Curse-Project-ID`;
   the workflow reads it from there. Keep that line.
-- The old standalone repo is **not deleted** — if you have unpushed work in a clone of it,
-  push it there first and hand-merge, do not assume this folder is newer.
+- 🔴 **The old standalone repo `Baeseata/DodoNameplate` was ARCHIVED (read-only) on 2026-08-22 —
+  leave it archived.** Until that day it was a loaded gun aimed at the live CurseForge listing: its
+  `.github/workflows/release.yml` fired on `on: push: tags: - '**'` (**any** tag, not just
+  version-shaped ones), its `CF_API_KEY` secret was still valid, Actions were enabled, and its
+  `.pkgmeta` + TOC named **the same CurseForge project `1587138`** this folder publishes to — while
+  its source sat at 0.9.1. One stray `git push --tags` from any old clone of it would have packaged
+  **0.9.1** and published it over the newer release. Archiving is reversible, which is the whole
+  reason this note exists: **do not un-archive it.** (`DodoGrid` was archived the same way after its
+  own monorepo move — same precedent; the file-set diff showed the standalone side held zero source
+  the monorepo lacks, only its own build plumbing.)
+- **The only release path now is a monorepo tag `DodoNameplate-vX.Y.Z`** (see the tag rule above).
+  You can no longer push to the standalone repo, so if an old clone of it turns up with unpushed
+  work, diff it into this folder by hand.
 
 ⛔ **Do not add `## Group: Dodo` or repoint `Media/Dodo.tga` at the parent `Dodo` addon**
 just to match the other folders. This addon is distributed standalone on CurseForge and its
 users need not have the parent pack installed. `DodoInspect` is the precedent: same pattern,
 shipping for months.
 
-Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, gitignored).
+### Release mechanics (no `PUBLISHING.md` — it never existed in this repo)
+
+This section used to point at `PUBLISHING.md` §10 in the monorepo root. That file was local-only and
+gitignored: it is not in the tree, it never crossed machines, and it cannot be read from OMEN or from
+a fresh clone. **Do not re-add a pointer to it.** The tracked, authoritative source is the workflow
+itself — [`.github/workflows/curseforge-release.yml`](../.github/workflows/curseforge-release.yml) at
+the repo root. What it does, so nobody has to guess:
+
+- Fires on pushed tags matching `Dodo*-v*`. The addon folder name and the version are parsed back out
+  of the tag, and the job **hard-fails** if the tag version differs from the TOC `## Version`.
+- Project id: read from the TOC's `## X-Curse-Project-ID` first, falling back to a hardcoded map for
+  the older addons. This addon declares its own (`1587138`), so the workflow needs no edit for it.
+- Game versions: the TOC `## Interface` list is turned into CurseForge game-version names, and an
+  unknown name is a hard failure. This addon declares only `120100` **on purpose** (it needs 12.1
+  APIs; claiming older clients would ship it to clients it crashes on).
+- Packaging is an allowlist — `*.lua`, `*.toc`, `README.md`, `LICENSE`, media — minus `test/`,
+  `tools/` and `CLAUDE.md`. **`README.md` reaches users**; the dev docs do not.
+- The annotated tag's message becomes the CurseForge changelog (Markdown), so tag with
+  `-a --cleanup=verbatim`.
+- Dry run first: Actions tab -> "CurseForge Release" -> run with `addon = DodoNameplate`,
+  `dry_run = true`. It builds the zip and resolves game-version ids but skips the upload.
 
 ## Current status
 
 - **Product**: WoW Retail Midnight nameplate replacement with category-specific layouts and secret-safe state displays.
-- **Release**: v0.9.1, Interface 120100, patch 12.1. (v0.9.0 was dead on arrival — see GOTCHAS S3.)
+- **Release**: Interface 120100, patch 12.1. **Which version shipped = `## Version` in
+  `DodoNameplate.toc`; what has been published = `git tag -l 'DodoNameplate-*' | sort -V`**
+  (`sort -V`, not `tail` — tags sort as strings, so `v0.10.0` lands *before* `v0.9.1`). No number is
+  written on this line any more: it said `v0.9.1` while the addon was already on 0.10.0. The v0.9.0
+  dead-on-arrival story lives in GOTCHAS S3 and SESSION-LOG 2026-08-11, where history belongs.
 - **Scope**: groups 2-6 are styled; group 1 stays on Blizzard's personal-resource path. Enemy auras apply to hostile creatures and enemy players.
 - **Aura architecture**: `Auras.lua` preallocates three `CustomAuraContainerTemplate` containers for each permanent `nameplate1` through `nameplate40` token at `PLAYER_LOGIN`. Main, CC, and buff groups are precreated; `maxFrameCount=0` disables a group. The addon never enumerates restricted aura data or handles `UNIT_AURA`.
 - **Aura display**: main priority + personal nameplate debuffs, shared CC, purgeable buffs, big defensives, external defensives, and optional generic buffs. Wrapper frames clip each row to the configured aggregate icon limit.
@@ -73,7 +108,15 @@ Full migration notes: `PUBLISHING.md` §10 in the monorepo root (local-only, git
 
 ## Development environment
 
-- Live development normally happens in the Retail AddOns folder; there is no build step.
+- There is no build step: the folder the game loads *is* the source. **Where you edit differs per
+  machine — check that machine's own `~/.claude/CLAUDE.md`, do not assume.** As of 2026-08-22:
+  **HOME** has no clone of `Wow-Addons` at all and edits the addon **in place** under
+  `D:\World of Warcraft\_retail_\Interface\AddOns\` (that directory is **not** a git tree and holds
+  **no junctions** — verified 24/24 folders — so pushing means cloning to a temp dir, copying, and
+  committing there). **OMEN** has a `~/Code/Wow-Addons` clone, edits there, and copies into its own
+  AddOns folder. ⚠ Either way the copy step is real: **"I edited it" does not mean the game sees
+  it.** If `/reload` shows nothing changed, check that the file actually moved before you go hunting
+  for a Lua bug.
 - Plater and Blizzard FrameXML are reference implementations. For aura behavior, use the 12.1 `Blizzard_AuraContainer` implementation rather than 12.0 manual enumeration patterns.
 - `.toc` load order is intentional.
 

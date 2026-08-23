@@ -18,6 +18,32 @@ ns.ADDON = ADDON
 -- --------------------------------------------------------------------------
 -- Is this value secret? Wrapped in pcall because a build may not ship the API
 -- at all -- in which case nothing is secret and every read is plain.
+--
+-- DELIBERATE COPY -- do NOT fold this into the shared Dodo library.
+-- DodoSays ships standalone on CurseForge, and the CF zip contains exactly one
+-- folder: .github/workflows/curseforge-release.yml does `cd "$ADDON"` and packs
+-- only that tree. So `Interface\AddOns\Dodo\` does not exist for anyone who
+-- installs from CF, and anything reached via `_G.Dodo` is nil there. Requiring
+-- the shared lib would take the addon down on every non-developer machine.
+--
+-- The same predicate is hand-written in four addons. They MUST all be kept in
+-- the same shape -- type probe, then pcall, then normalise to a real boolean:
+--     DodoSays/Util.lua       (this one)
+--     DodoGuanzhu/Macro.lua
+--     DodoNameplate/Guards.lua
+--     DodoUnholy/Rotation.lua
+-- Change one, change all four. If you find one that differs, that difference
+-- is the bug -- fix it toward this shape, do not copy it outward. (No line
+-- numbers on purpose: they rot. Grep `issecretvalue` to find them.)
+--
+-- Why each piece earns its place:
+--   * type probe  -- clients that never shipped the API leave the global nil,
+--                    and calling nil is a hard error, not a "false".
+--   * pcall       -- `issecretvalue` itself may throw; a throw inside a UNIT_*
+--                    handler takes the whole feature down without a word.
+--   * `== true`   -- collapses the answer to a REAL boolean at the boundary.
+--                    Note this is the opposite of equals() below, which must
+--                    stay three-state; see its comment for the fight that cost.
 -- --------------------------------------------------------------------------
 local function isSecret(v)
 	if type(issecretvalue) ~= "function" then return false end

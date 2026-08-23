@@ -22,9 +22,20 @@
 
 ## 发布
 
-- CF project **1602130**(Wow-Addons 家族 workflow,case map 已注册);发版 = 改 TOC `## Version:` → commit → tag `DodoLura-vX.Y.Z`(annotated,tag message = changelog,`--cleanup=verbatim`)→ push。
+- CF project **1602130**;发版 = 改 TOC `## Version:` → commit → tag `DodoLura-vX.Y.Z`(annotated,tag message = changelog,`--cleanup=verbatim`)→ push。
+  ⚠ 那两个 tag 修饰不是风格,各对应一次真踩过的坑,**打完 tag、push 之前各验一句**:
+  **annotated** —— lightweight tag 会把 commit message 当 changelog 甩上 CF(而我们的 commit message 是中文);判据 `git cat-file -t <tag>` 必须回 `tag`,回 `commit` 就是 lightweight。
+  **`--cleanup=verbatim`** —— git 默认 strip 模式把 `#` 开头的行当注释删掉,而 changelog 是 Markdown、标题正是 `#` 开头 ⇒ **所有段落标题静默消失,打完毫无提示**;判据 `git tag -l --format='%(contents)' <tag> | grep '^#'` 必须有输出。
+  ⚠ 本插件的 project id **走 workflow 里那张 case 表兜底**(`curseforge-release.yml`),TOC 里没有 `## X-Curse-Project-ID` —— 而 workflow **优先读 TOC 那一行**,新插件按 TOC 那条路走、不用改 workflow。
 - zip 只收 lua/toc/README/媒体文件 —— AirHorn.ogg 能进包,本文件(CLAUDE.md)和 .txt 不进包。AirHorn.ogg = CC-BY 3.0 Mike Koenig(README 已署名,勿删)。
-- 1.0.0 于 2026-07-08 上传成功(HTTP 200),等 CF 首次人工审核后公开。
+- 🔴 **`Media/Dodo.tga` 是这个插件自己的副本,别当重复资产删掉。** CF 的 zip **只装 `DodoLura/` 这一个目录**
+  (`curseforge-release.yml` 的 Build 步骤 `cd "$ADDON"`),所以从 CF 单独装的用户机器上
+  **`Interface\AddOns\Dodo\` 根本不存在** —— TOC 的 `## IconTexture` 一旦指回 `AddOns\Dodo\`,
+  那一格图标对**所有外部用户**就是空的,而**在开发机上永远看不出来**
+  (HOME 和 OMEN 的 AddOns 目录里 Dodo 整合包都装着,路径永远解析得到)。
+  DodoInspect / DodoNameplate / DodoSays 同样各自带一份,四份 md5 相同是**有意的**。
+- **发到哪一版 / 过审没有 → 查 `DodoLura.toc` 的 `## Version` + CF 项目 1602130 的 Files 页**,
+  别信 doc 里写的数字(1.0.0 首发于 2026-07-08)。
 - 1.1.0 = WoW 12.1 兼容版:Interface **120100**,迁移 `AddAuraSound/RemoveAuraSound`,保留 12.0.5/12.0.7 API 回退,并改为 zone-based 预注册。
 
 ## 未来风险(唯一的维护点)

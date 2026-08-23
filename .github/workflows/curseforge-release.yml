@@ -8,8 +8,15 @@ name: CurseForge Release
 # the zip, validates the API token and resolves game version ids, but skips the
 # actual upload.
 #
-# Registering a new addon: put "## X-Curse-Project-ID: <id>" in its TOC and add
-# the folder name to the workflow_dispatch options list below.
+# Registering a new addon: TWO places, and they do different jobs.
+#   1. Put "## X-Curse-Project-ID: <id>" in its TOC. This is the only one that
+#      matters for a real (tag-triggered) release - see "Resolve addon, version
+#      and project id" below, which reads the TOC first.
+#   2. Add the folder name to the workflow_dispatch options list below, otherwise
+#      you cannot pick it for a manual dry run. Forgetting this cannot ship a wrong
+#      package; it just makes the addon unselectable in the Actions UI.
+# Do NOT add new entries to the PROJECT_ID case map further down - it is a legacy
+# fallback, not the registration point. Cross-machine notes: ../../DODO_ADDONS.md.
 
 on:
   push:
@@ -81,8 +88,14 @@ jobs:
           fi
 
           # Prefer the id declared in the TOC ("## X-Curse-Project-ID"), so a new
-          # addon only needs it in one place. The case map below stays as the
-          # fallback for the addons whose TOC does not carry the id yet.
+          # addon only needs it in one place. The case map below is a LEGACY
+          # FALLBACK, still load-bearing for exactly the three addons whose TOC
+          # does not carry the id yet (DodoBricks / DodoInspect / DodoLura, as of
+          # 2026-08-22 - verify with: grep -l X-Curse-Project-ID */*.toc).
+          # DodoNameplate and DodoSays already declare it in their TOC and never
+          # reach this map. Do not add new addons here: put the id in the TOC.
+          # Migrating the three over is safe but must be A/B-checked with a
+          # workflow_dispatch dry_run=true before the map is deleted.
           PROJECT_ID=$(grep -i '^## X-Curse-Project-ID:' "$TOC" | head -n1 | cut -d: -f2- | tr -d ' \r')
           if [ -z "$PROJECT_ID" ]; then
             case "$ADDON" in

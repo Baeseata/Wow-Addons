@@ -4,7 +4,7 @@ A single-player **crowd-runner** (Count Masters / Join Clash style) minigame for
 Warcraft, built entirely with native WoW UI primitives (no custom textures or audio files).
 Part of the **Dodo** addon series.
 
-![Interface](https://img.shields.io/badge/WoW-Retail%2012.0.7-blue) ![Type](https://img.shields.io/badge/type-minigame-orange)
+![Interface](https://img.shields.io/badge/WoW-Retail%20Midnight-blue) ![Type](https://img.shields.io/badge/type-minigame-orange)
 
 ## How it plays
 

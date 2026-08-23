@@ -98,10 +98,35 @@ end
 -- 🔴 对 secret 做 tostring / 拼接 / 比较是**当场崩**,而这个函数的调用点恰恰是
 --    "出错了正在拼一句给人看的提示" —— 在那儿崩等于把一条可读的错误换成一次卡死。
 --    所以拼进任何字符串之前先问一句;`issecretvalue` 在老客户端上可能不存在,故先探。
+--
+-- 🔴 **反讽提醒(2026-08-22 审计逮到)**:上面几十行处那句「canon:同一不变式两份手写实现 =
+--    静默分歧发生器」(往上 grep `静默分歧发生器`)—— 引的规则是对的,
+--    而**紧跟着的这个 `isSecret` 自己就是第 4 份副本**。
+--    引了规则不等于遵守了规则;这条留在这儿,是为了让下一个读到上面那句的人别再被它安慰。
+--
+-- 🔑 份数别写死(写死的当天就开始烂):现查 `git grep -n 'pcall(issecretvalue' -- '*.lua'`。
+--    2026-08-22 现查 = 5 份独立封装(DodoNameplate/Guards · DodoSays/Util · DodoUnholy/Rotation ·
+--    DodoGuanzhu/Macro · DodoGrid/Core),全部已对齐成 type 探测 + pcall + `== true`。
+--    ⚠ DodoCombatHUD 另有 2 处**内联**未封装(同文件 795 / 1501 附近),不在这 5 份里。
+--    全 repo 四份手写 isSecret:
+--      ① DodoNameplate/Guards.lua   (`Guards.IsSecret`,载入时解析一次的函数引用;逐帧热路径)
+--      ② DodoSays/Util.lua          (type 探测 + pcall + `== true` 归一)
+--      ③ DodoUnholy/Rotation.lua    (2026-08-22 已按本形状统一)
+--      ④ 本文件(就是下面这一份)
+--    **这四份是刻意的副本,不是漏抽的重复代码**:DodoNameplate / DodoInspect **故意不挂**
+--    `## OptionalDeps: Dodo`(为独立发 CurseForge 而解耦),运行时根本调不到 `Dodo.*`。
+--    ⇒ **别把任何一份改成 require `Dodo/Shared.lua`,也别删任何一份。**
+--    ⇒ 代价的对价是:**改一处必须把上面四处全改一遍**(判据 = 「这两份不一致了谁会发现」——
+--      没人会,所以只能靠这份清单)。
+--    形状约定:type 探测 → pcall → 归一成真布尔(pcall 防暴雪改签名把调用方带走;
+--    归一防「nil 被当 false 用」—— DodoSays/Util.lua 的 `equals` 注释记着 2026-08-15
+--    那次 `== true` 把 nil 折成 false、整场零报点零报错)。
+--    ✅ 2026-08-22 五份已全部对齐成 `ok and X == true`(本份原为 `and true or false`,已改)。
+--      对返回布尔的 API 两者等价;真要统一就四处一起改,别只改一处。
 local function isSecret(v)
     if type(issecretvalue) ~= "function" then return false end
     local ok, yes = pcall(issecretvalue, v)
-    return ok and yes and true or false
+    return ok and yes == true
 end
 
 -- 能安全拼进提示的写法。**永远不 tostring 一个可能是 secret 的值。**

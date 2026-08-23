@@ -6,8 +6,16 @@ local DB
 local ICON_SIZE = 31
 local DUPLICATE_WINDOW = 60
 
+-- Minimap button default angle: every Dodo addon that draws its own minimap button
+-- has to pick a DIFFERENT one, otherwise two buttons stack perfectly and the lower
+-- one is unclickable on a fresh install. Angles in use across the monorepo (grep
+-- 'minimapAngle|minimap = { angle' to re-check -- this list rots):
+--   200 DodoGuanzhu / 200 DodoSays / 205 DodoPool / 210 DodoGatherMate
+--   220 (this addon) / 225 DodoMap / 235 DodoBricks / 265 DodoRush
+-- Was 210 until 2026-08-22, which collided exactly with DodoGatherMate.
+-- Only affects fresh installs: the saved value wins (see deepCopy, fill-if-nil).
 local DEFAULTS = {
-    minimap = { angle = 210 },
+    minimap = { angle = 220 },
     records = {},
 }
 
@@ -239,7 +247,7 @@ minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Hig
 
 local function updateMinimapButtonPosition()
     local radius = (Minimap:GetWidth() / 2) + 6
-    local angle = math.rad(DB.minimap.angle or 210)
+    local angle = math.rad(DB.minimap.angle or DEFAULTS.minimap.angle)
     local x = math.cos(angle) * radius
     local y = math.sin(angle) * radius
     minimapButton:ClearAllPoints()

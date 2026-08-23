@@ -18,8 +18,9 @@
 
 ## 🔴 开工前必读
 
-1. **[GOTCHAS.md](GOTCHAS.md)** —— 九条**真机实测**事实(12.1.0 build 120100)。
-   尤其 §1 那个**未验证假设**:`@名字` 对队友解不解析得成 unit。**它没被验证过**,
+1. **[GOTCHAS.md](GOTCHAS.md)** —— 一批**真机实测**事实(测的是哪个 build 见该文件页首)。
+   尤其 §1 那个**未验证假设**:`@名字` 对队友解不解析得成 unit。**它没被验证过**
+   (⚠ canon `rules/wow-addons.md` 把它写成了结论 —— **不一致,以 GOTCHAS §1 为准**),
    整份代码只把它落在 `Macro.TokenFor` 一处,证伪了只改那一个函数。
 2. **[PENDING-WORK.md](PENDING-WORK.md)** —— 剩下什么活。⚠ **进度只看它,别信本文**。
 3. 想知道某条实测事实怎么来的:探针是 `DodoProbe` 的 **`/dp macro`** 子命令,
@@ -64,13 +65,25 @@ print(sorted({-int(m.group(1)) for m in re.finditer(r'-([0-9]{3})[,)]', s)}))"
 
 ## 装机
 
-repo ↔ 游戏 AddOns 目录**不是 junction**(至少 OMEN 上不是)⇒ 改完要拷:
+🔴 **repo ↔ 游戏 AddOns 目录不是 junction —— 两台机都不是**(2026-08-22 实测:HOME 上
+`AddOns` 下 24/24 个目录零 junction;OMEN 同)。**⇒ 改完必须拷,不拷就永远到不了游戏。**
+⚠ 别听信任何「是 junction / 无需同步」的说法(repo 里历史上有过),信了它的症状是
+**`/reload` 之后什么都没变**,读起来像代码 bug,而实际上游戏根本没见到你的新文件。
+⚠ 反过来也别**再建一个** junction 来「省事」—— 现状是两台都没有,保持一致。
+
+两台机的形状**不一样**,先认清自己在哪台(机器名见该机 `~/.claude/CLAUDE.md`):
+
+- **OMEN**:有 `~/Code/Wow-Addons` clone ⇒ 在 clone 里改 → 拷进它自己的 AddOns。
+- **HOME**:**没有 clone**,插件**就地**在该机 AddOns 目录里改(那个目录不是 git tree)
+  ⇒ 推送 = 临时 clone 到别处 → 把改动拷进去 → commit → push。
 
 ```bash
+# 从工作副本拷进游戏目录(路径见该机 ~/.claude/CLAUDE.md)
 cp -f *.lua *.toc "<该机的 AddOns 路径>/DodoGuanzhu/"
 ```
 
-各机 AddOns 路径不同,见该机 `~/.claude/CLAUDE.md`。拷完**逐文件比 sha256**,别信 `cp` 没报错。
+拷完**逐文件比 sha256**,别信 `cp` 没报错。⚠ 跨机比对用
+`git diff --no-index --ignore-cr-at-eol`(autocrlf 会让裸 hash 比对全是假差异)。
 
 - 改**已有 .lua 的内容** → `/reload` 就够
 - **加了新文件并写进 TOC** → 必须**完整重启客户端**(TOC 只在启动时读一次)

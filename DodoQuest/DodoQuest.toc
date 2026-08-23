@@ -3,7 +3,7 @@
 ## OptionalDeps: Dodo
 ## Title: DodoQuest
 ## Notes: Lightweight auto quest accept/turn-in for Retail 12.0.
-## Author: OpenAI
+## Author: Doodo
 ## Version: 1.2.0
 ## SavedVariables: DodoQuestDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga

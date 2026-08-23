@@ -18,6 +18,10 @@ local AIRDROP_MAPS = {
 }
 
 local DEFAULTS = {
+    -- The minimap ring is SHARED with every other Dodo addon that draws its own
+    -- button; two identical defaults stack perfectly and the lower button cannot
+    -- be clicked on a fresh install. Before changing this value (or picking one
+    -- for a new addon) grep the monorepo for `minimapAngle|minimap = { angle`.
     minimap = { angle = 210 },
     settings = {
         alpha = 0.4,

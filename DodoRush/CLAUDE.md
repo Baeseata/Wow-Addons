@@ -2,10 +2,10 @@
 
 > 单人**人海快跑**(Count Masters / Join Clash 类人海跑酷)小游戏,World of Warcraft 插件,Dodo 系列之一。
 > 仓库: `github.com/Baeseata/Wow-Addons` (public)。本插件在 `DodoRush/`。
-> **跨机协作**: 换机器先 `git pull`,Claude 先读本文件接上进度。
+> **跨机协作**: 换机器先拿到最新代码(**两台机的形状不一样,见 §8**),Claude 先读本文件接上进度。
 > ⚠️ **本插件 shipped 内容已全英文化(2026-06-11,同 DodoPool/DodoBricks)**:.lua/.toc 的注释 +
 > UI 字符串**零中文**,改 UI 文案**务必继续用英文**,别手滑写回中文。本 CLAUDE.md 保持中文(不进发布包)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
+> **支持到哪个客户端版本 = 查 `DodoRush.toc` 的 `## Interface`** —— doc 不复述版本号(复述一遍就是第二份会漂的真相)。
 > 姊妹项目 DodoPool(九球)/ DodoBricks(打砖块)各有自己的 CLAUDE.md,套路(音效/窗口/小地图/键盘)同源。
 
 ---
@@ -37,8 +37,11 @@
 
 ## 2. 怎么跑 / 开发环境
 
-- 放进 `World of Warcraft\_retail_\Interface\AddOns\DodoRush\`;**依赖父插件 `Dodo`**(共享库 + 图标)。
-- 本机(主力机)AddOns 目录就是工作目录,直接改;另一台机器建议 junction(见 DodoPool/CLAUDE.md §1)。
+- 放进 `<WoW>\_retail_\Interface\AddOns\DodoRush\`;**依赖父插件 `Dodo`**(共享库 + 图标)。各机 WoW 路径不同,**见该机 `~/.claude/CLAUDE.md`**。
+- 🔴 **两台机都不是 junction,改完必须拷**(2026-08-22 在 HOME 实测:24/24 个 `Dodo*` 目录 `LinkType=(none)`、无 `.git`):
+  - **HOME**: 就地在该机 AddOns 里改(那个目录不是 git tree),推送走 §8。
+  - **OMEN**: 在 `~/Code/Wow-Addons` clone 里改,**再拷进它自己的 AddOns** 才进游戏。
+  - ⚠ 本行原文写的是「本机(主力机)AddOns 就是工作目录」+「另一台机器建议 junction」——「本机」这个词在一份两台机共享的 repo 里**无法解析**,而 junction 那半句已实测为假(DodoPool/CLAUDE.md §1 原来那段 `mklink` 也一并改掉了)。⚠ **别顺手真去建一个 junction**:两台机的推送流程都建立在「不是链接」这个前提上。
 - **全新插件首次出现要完全重启魔兽**(/reload 不认新文件夹);之后改代码 `/reload` 即可。
 - 打开: 小地图粉色 D 图标(默认角度 265,错开 Pool 205 / Bricks 235)或 `/rush`(亦 `/dodorush`)。
 
@@ -135,11 +138,15 @@ need>3.3 后加法门消失 = 落后玩家失去追赶机制,调参时注意这�
 
 ## 8. 跨机 / git
 
-- 仓库 `github.com/Baeseata/Wow-Addons`(public)。本机 AddOns 不是 git clone:
-  推送 = 临时目录 clone → 拷贝 DodoRush/ 进去 → commit + push(沙箱禁 `Remove-Item` D: 路径,
-  用 .NET Delete 或 Copy-Item 覆盖)。
-- **per-addon CLAUDE.md 已入库**(2026-06-11 起,用户要求跨机可拉):.gitignore 不再排除 CLAUDE.md;
-  `DODO_ADDONS.md` / `PUBLISHING.md` 仍 local-only。⚠️ **CurseForge 发布打包时记得剔除 CLAUDE.md**
-  (若打包脚本是整文件夹 zip,会把开发笔记一起装进去)。
-- 另一台机器开工 checklist: ① `git pull` ② 读本文件 ③ 确认 `DodoRush` + `Dodo` 都进 AddOns
+- 仓库 `github.com/Baeseata/Wow-Addons`(public)。**两台机的形状不一样**(都不是 junction,见 §2):
+  - **HOME**: AddOns 目录**不是 git clone** ⇒ 推送 = 临时目录 clone → 拷贝 `DodoRush/` 进去 → commit + push
+    (沙箱禁在同一条命令里 `Remove-Item` + 提 `D:\` 路径,用 `[System.IO.File]::Delete` 或 `Copy-Item` 覆盖)。
+  - **OMEN**: 有 `~/Code/Wow-Addons` clone ⇒ 在 clone 里改 → `git pull`/`commit`/`push`,**再拷进该机 AddOns**。
+- **per-addon CLAUDE.md 已入库**(2026-06-11 起,用户要求跨机可拉):.gitignore 不再排除 CLAUDE.md。
+  ⚠️ `DODO_ADDONS.md` / `PUBLISHING.md` 被 .gitignore 排除 ⇒ **它们永不跨机**,而 `PUBLISHING.md`
+  2026-08-22 在 HOME 上全盘搜索**零命中** —— **别把任何一条发版知识指向它**(发版正文见 DodoBricks/CLAUDE.md §8
+  + `.github/workflows/curseforge-release.yml`,后者 tracked、两台机都读得到)。
+  ✅ **CLAUDE.md 不用手工剔除**:打包白名单里有 `-not -name 'CLAUDE.md'`,而且紧接着一条硬 guard
+  (grep `Forbidden files leaked`)泄进去就 `exit 1`。⚠ 原文那句「发布打包时**记得**剔除」是手工纪律,已被工具取代。
+- 任一台开工 checklist: ① 拿到最新代码 ② 读本文件 ③ 确认 `DodoRush` + `Dodo` 都拷进了**该机** AddOns
   ④ 完全重启魔兽 ⑤ 跑 §5.1 ⑥ 报错记下来修。

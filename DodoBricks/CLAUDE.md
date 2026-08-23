@@ -1,8 +1,8 @@
 # DodoBricks - 开发简报 (read me first)
 
 > 单人数字打砖块 (Ballz/Bricks n Balls 类),WoW 插件,Dodo 系列之一。仓库: `Baeseata/Wow-Addons` (public),插件在 `DodoBricks/`。
-> 换机器先 `git pull` + 读本文件。**UI 文案用英文**(中文是 Jerry 跟 Claude 的设计沟通语言)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.1.0,Interface 120100。
+> 换机器先拿到最新代码(**两台机的形状不一样,见 §8**)+ 读本文件。**UI 文案用英文**(中文是 Jerry 跟 Claude 的设计沟通语言)。
+> **支持到哪个客户端版本 = 查 `DodoBricks.toc` 的 `## Interface`** —— doc 不复述版本号(复述一遍就是第二份会漂的真相)。
 > 姊妹项目 DodoPool(九球)有自己的 `DodoPool/CLAUDE.md`,音效/窗口/小地图按钮套路同源。
 
 ---
@@ -39,7 +39,16 @@
 
 ## 2. 开发环境
 
-放入 `WoW\_retail_\Interface\AddOns\DodoBricks\`,**依赖父插件 `Dodo`**。AddOns 目录与 repo 是 junction(改repo=改游戏目录,无需同步)。**全新插件完全重启魔兽**,之后 `/reload`。打开: 小地图粉色D图标(角度235)或 `/bricks`。
+放入 `<WoW>\_retail_\Interface\AddOns\DodoBricks\`,**依赖父插件 `Dodo`**(各机 WoW 路径不同,见该机 `~/.claude/CLAUDE.md`)。
+
+🔴 **AddOns 目录不是 junction、也不是 git tree —— 改完必须拷。** 2026-08-22 在 **HOME** 上实测:24/24 个 `Dodo*` 目录全部 `LinkType=(none)`、无 `.git`,AddOns 目录本身也不是仓库;**OMEN** 是在 `~/Code/Wow-Addons` clone 里改、再拷进它自己的 AddOns。
+⚠ 本行原文写的是「junction(改 repo = 改游戏目录,**无需同步**)」——**那是假的**。信它的 session 会在 clone 里改完就收工,**改动永远到不了游戏**,而失败签名是「/reload 后什么都没变」,读起来像代码 bug、不像同步没做。
+⚠ **也别顺手再去建一个 junction** 把这句话变成真的 —— 两台机的推送流程(§8)都建立在「不是链接」这个前提上。
+复核一台机是不是链接(PowerShell,只读):`Get-ChildItem <AddOns> -Directory -Filter Dodo* | % { $_.Name, $_.LinkType, (Test-Path "$($_.FullName)\.git") }` —— `LinkType` 非空才是 junction。
+
+⚠ **HOME 上没装 DodoBricks**(2026-08-22 实测:repo 有、`D:\...\AddOns\DodoBricks` 不存在)⇒ 在 HOME 只能改 repo、**没法进游戏验**。要真机验收:从 repo 拷一份进该机 AddOns + 完全重启客户端,或去 OMEN。
+
+**全新插件完全重启魔兽**,之后 `/reload`。打开: 小地图粉色D图标(角度235)或 `/bricks`。
 
 ---
 
@@ -61,12 +70,15 @@
 
 ## 4. 当前进度
 
+> **「现在是哪版 / 发到哪版」不在本节** —— 查 `DodoBricks.toc` 的 `## Version` + `git tag -l 'DodoBricks-*' | sort -V`(⚠ 别 `| tail`,tag 按字符串排,`v1.10.0` 会排在 `v1.3.0` 前面)+ CF 项目 1571430 的 Files 页。**本节只记每一版做了什么。**
+
 **v0.1.0 实机通过(2026-06-10)**: 基础弹球循环跑通,三角砖SetVertexOffset实机成立。
 **v0.2.0 实机通过(同日)**: 碎砖闪光/全清+2球/激光+炸弹道具/多球散布。
 **v0.2.1 写完未实机**: 球彗星尾迹(1-3节余像,ADD混合,TRAIL_BUDGET=240)。
-**v0.2.3(代码现状)**: 球速渐变最终=纯回合内快进(3s起/15s拉满x3.0),无关数提速/无HUD指示。0.2.1尾迹+0.2.3快进随0.3.0一起验。
+**v0.2.3**: 球速渐变最终=纯回合内快进(3s起/15s拉满x3.0),无关数提速/无HUD指示。0.2.1尾迹+0.2.3快进随0.3.0一起验。
 **v0.3.0 = 插件 1.1.0,实机通过(2026-06-11),已push+CurseForge上线**: sinfulness实测反馈驱动——68关"太简单/球多清屏/看不懂道具"。8x12棋盘/难度曲线/计分/道具glyph/7种道具/宝箱+治疗砖/事件框架+双压/Boss/Juice全部实现。Headless harness 110关 ALL PASS(`test/harness.lua`,LuaJIT)。
 **v0.4.0 = 插件 1.2.0,已push+CurseForge上线(2026-06-12),headless ALL PASS,实机未验**: boss重平衡(x14+0.5吞掉约砍半)+基岩砖(详§1)。Jerry实测反馈驱动。
+**插件 1.2.1(2026-08-11,commit d4d2690)**: Retail 12.1 兼容 —— TOC `## Interface` 加 120100,无玩法/数值改动。
 
 **harness**: `luajit test/harness.lua .` (LuaJIT 在 `%LOCALAPPDATA%\Programs\LuaJIT\bin\`; toc不引用不进游戏)。`luajit -bl *.lua` 纯语法检查。
 
@@ -112,6 +124,20 @@
 
 ## 8. 跨机 / git
 
-仓库 `Baeseata/Wow-Addons`(public)。本机AddOns=junction到repo(改repo即改游戏目录)。另一台机器开工: `git pull`->读本文件->确认DodoBricks+Dodo都进AddOns->完全重启魔兽。
+仓库 `Baeseata/Wow-Addons`(public)。**两台机都不是 junction**(实测见 §2),各自的形状不一样:
 
-**发版**: 提TOC Version->push->打annotated tag `DodoBricks-vX.Y.Z`(tag message=changelog)->GitHub Action自动打包上传;dry-run与细节见`PUBLISHING.md`(local-only)。2026-06-12起全自动(首战踩坑:tag `--cleanup=verbatim`保`##`标题/curl -F分号截断metadata JSON,修法在PUBLISHING.md §7)。
+- **OMEN**: 有 `~/Code/Wow-Addons` clone。在 clone 里改 → commit/push → 再拷进该机 AddOns 才进游戏。
+- **HOME**: **没有 clone**,插件就地在 `D:\...\AddOns\` 里改(该目录不是 git tree);推送 = 临时目录 clone → 把插件文件夹拷进去 → commit → push。⚠ sandbox 禁在同一条命令里 `Remove-Item` + 提 `D:\` 路径,用 `[System.IO.File]::Delete` 或直接 `Copy-Item` 覆盖。**且 HOME 上根本没装 DodoBricks**,在 HOME 它只有 repo 一份(见 §2)。
+
+任一台开工: 拿到最新代码(`git pull` 或重新 clone)→ 读本文件 → 确认 `DodoBricks` + `Dodo` 都进了**该机**的 AddOns → 完全重启魔兽。
+
+**发版**(2026-06-12 起全自动)。⚠ **别再指向 `PUBLISHING.md`** —— 它被 `.gitignore` 排除、从未被 git 跟踪,且 2026-08-22 在 HOME 上全盘搜索**零命中** ⇒ 它永不跨机,那是条死链。正文 = 本节 + `.github/workflows/curseforge-release.yml`(tracked,两台机都读得到)。
+
+1. 提 TOC `## Version` → **先 push 代码**(zip 取自 tag 指向的那个 commit;顺序反了就把旧代码发出去)。
+2. Actions 页手动跑一次 **`dry_run=true`**:真打包 + 验 token + 解析游戏版本、只跳过上传 —— 免费的负对照。
+3. 打 **annotated** tag `DodoBricks-vX.Y.Z`,tag message = changelog(Markdown)→ CI 自动打包上传。
+   - 🔴 **必须 `--cleanup=verbatim`**:git 默认 strip 模式把 `#` 开头的行**当注释删掉**,而 changelog 的标题正是 `#` 开头 ⇒ **所有段落标题静默消失**,打完毫无提示。判据(push 前跑):`git tag -l --format='%(contents)' <tag> | grep '^#'` **必须有输出**。
+   - 🔴 **lightweight tag 会把 commit message 当 changelog 甩上 CF**。判据:`git cat-file -t <tag>` 必须回 `tag`,回 `commit` 就是 lightweight。
+   - ✅ 「curl `-F` 被分号/逗号截断 metadata JSON → CF 回 400 Invalid JSON」(1.2.0 首战踩的那个)**已经修在 workflow 里**:metadata 走文件 `-F "metadata=<metadata.json"`(grep `metadata goes through a file`,注释里写明原因)。**别改回内联 `-F "metadata=$JSON"`。**
+- **project id**: workflow 优先读 TOC 的 `## X-Curse-Project-ID`,没有才落到它内部那张 case 表 —— **DodoBricks 走的正是 case 表**(grep `DodoBricks)  PROJECT_ID`,id 1571430);要脱离 case 表就往自己 TOC 加那一行。
+- **CLAUDE.md / test/ / tools/ 不会进包**:打包白名单里 `-not -name 'CLAUDE.md'`(grep `-not -path './test/*'`),而且紧接着有一条硬 guard(grep `Forbidden files leaked`)泄进去就 `exit 1`。**不用手工剔除。**

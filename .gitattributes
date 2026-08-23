@@ -2,3 +2,9 @@
 *.tga binary
 *.blp binary
 *.png binary
+# Audio/fonts: 9 tracked .ogg today (DodoLura/AirHorn.ogg + DodoSays/Sounds/{en,zh}/*.ogg).
+# .mp3 / .ttf have zero files right now but are in the release packager's whitelist
+# (.github/workflows/curseforge-release.yml, "Build addon zip"), so declare them up front.
+*.ogg binary
+*.mp3 binary
+*.ttf binary

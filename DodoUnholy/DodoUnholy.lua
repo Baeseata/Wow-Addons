@@ -355,8 +355,10 @@ function DodoUnholy:Initialize()
             self:ScanBars()
         elseif msg == "debug" and self.DebugRotation then
             self:DebugRotation()
-        elseif msg == "cl" and self.ProbeCombatLog then
-            self:ProbeCombatLog()
+        -- ⛔ `cl`(战斗日志探针)已于 2026-08-22 连同 `Rotation.lua` 里的
+        --    `ProbeCombatLog` 一起删除 —— 注册 COMBAT_LOG_EVENT_UNFILTERED 会抛
+        --    ADDON_ACTION_FORBIDDEN 并污染当时的调用栈。理由和证据出处见 Rotation.lua
+        --    里原地那段注释。**别把这个分支加回来。**
         elseif msg == "lock" then
             self.db.rotation.locked = true
             self:ApplyRotationAppearance()
@@ -366,7 +368,7 @@ function DodoUnholy:Initialize()
             self:ApplyRotationAppearance()
             print("|cff33ff99DodoUnholy|r：出招图标已解锁,拖动它移动位置。")
         else
-            print("|cff33ff99DodoUnholy|r：/duh config 设置 | scan 导出技能ID | debug 实时读数 | cl 战斗日志探针 | lock/unlock 锁定/解锁图标。")
+            print("|cff33ff99DodoUnholy|r：/duh config 设置 | scan 导出技能ID | debug 实时读数 | lock/unlock 锁定/解锁图标。")
         end
     end
 end

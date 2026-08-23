@@ -1,8 +1,16 @@
 # Claude-assist development notes.
 # Per-addon CLAUDE.md handoff docs ARE tracked since 2026-06-11 (cross-machine dev needs them).
+# DODO_ADDONS.md is tracked again since 2026-08-22, for that same reason: it is the only place
+# the cross-machine conventions are written down, and while it was ignored (c3d9aec, 2026-06-10)
+# only whichever machine held the file could read them. Do NOT ignore it again.
 # NOTE for publishing: exclude CLAUDE.md from CurseForge zips - it's dev notes, not addon content.
+# (Root-level .md never reaches a CurseForge zip anyway: the packaging step in
+#  .github/workflows/curseforge-release.yml only walks the addon's own folder.)
 # Top-level working notes below stay local, not published.
-DODO_ADDONS.md
+# PUBLISHING.md: absent on HOME (whole-disk search, 2026-08-22) and never tracked in git
+# (git log --all --diff-filter=A -- '*PUBLISHING*' is empty) => it can never travel between
+# machines. Do not cite it as the release authority; the release ritual lives in
+# .github/workflows/curseforge-release.yml and in DODO_ADDONS.md.
 PUBLISHING.md
 
 # Local publishing staging area (screenshots, zips for CurseForge uploads).

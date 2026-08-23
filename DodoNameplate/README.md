@@ -25,7 +25,9 @@ Copy the `DodoNameplate` folder into `World of Warcraft/_retail_/Interface/AddOn
 
 ## Supported version
 
-Version **0.9.0**, Retail / Midnight 12.1, Interface **120100**.
+Retail / Midnight 12.1, Interface **120100**.
+
+The addon version is not repeated here: read `## Version` in `DodoNameplate.toc`, or the version in the downloaded package file name. (Repeating it in this file just creates a third copy that goes stale — the `DodoNameplate-v0.10.0` package shipped with this line still reading `Version 0.9.0`.)
 
 ## License
 

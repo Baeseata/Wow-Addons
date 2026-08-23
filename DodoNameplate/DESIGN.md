@@ -1,6 +1,7 @@
 # DodoNameplate - Design Spec
 
-> Current product design for v0.9.0 / Retail Midnight 12.1. API constraints and exact guards live in [`GOTCHAS.md`](GOTCHAS.md).
+> Current product design for Retail Midnight 12.1. API constraints and exact guards live in [`GOTCHAS.md`](GOTCHAS.md).
+> The shipped version is `## Version` in `DodoNameplate.toc`; published versions are `git tag -l 'DodoNameplate-*' | sort -V`. This file deliberately carries no version number — the one that used to be here was wrong on the day it was written (commit `9cad50f2` said 0.9.1 in its subject and 0.9.0 in this line).
 
 ## 0. Premise
 

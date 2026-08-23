@@ -2,8 +2,15 @@
 -- V0 单体出招助手 (Rider of the Apocalypse 流派: Festering Scythe + Soul Reaper + Commander of the Dead, 无 Blightfall, 无 San'layn)
 -- 设计要点:
 --   * 只读 + 只显示,绝不发送任何按键 (合规)。
---   * 12.0 Secret Values: 战斗中部分 API (UnitHealth 某些单位 / 战斗属性) 返回 secret,
---     对其比较/运算会抛错。所有读数都过 issecretvalue 守卫,整段求值再包一层 pcall。
+--   * 🔴 Secret Values 的真实口径(12.1 实测,推翻本文件原来写的 12.0 模型):
+--     原文写的是「**战斗中部分** API 返回 secret」—— 那是 12.0 的模型,已被证伪。
+--     实测口径见 `DodoProbe/CLAUDE.md`「已知结论」节(搜 `UnitHealth` / `UnitPower`):
+--       · `UnitHealth`  = `SecretReturns` **无条件**,脱战也 secret
+--       · `UnitPower`   = 「除非该能量类型被显式标为**永不** secret,否则一律 secret」,**跟战斗无关**
+--     ⇒ 本文件的 `TargetHealthPct` / `RunicPower` 在 12.1 上**每次都返回 nil**(不是崩,是静默降级),
+--       依赖它们排优先级的整套引擎因此已经失效。**这不是 bug,是结构性的 —— 要用得换引擎。**
+--       别去「修」这几个读数函数;背景与去向见本插件 CLAUDE.md。
+--     所有读数仍过 issecretvalue 守卫 + 整段求值包 pcall —— 守卫本身是对的,只是守出来全是 nil。
 --   * 新技能 (Putrefy / Dread Plague / Festering Scythe) 的 spellID 暂为 nil → 对应优先级行自动跳过,
 --     待 /duh scan 拿到精确 ID 后填入即可激活。
 
@@ -52,10 +59,32 @@ local function clamp(v, lo, hi)
     return v
 end
 
--- 是否 secret 值 (12.0 战斗保护)。issecretvalue 是 12.0 全局;不存在时退化为 false。
+-- 是否 secret 值。issecretvalue 是 12.x 全局;老客户端上不存在,故先探类型。
+--
+-- 🔑 份数别写死(写死的当天就开始烂):现查 `git grep -n 'pcall(issecretvalue' -- '*.lua'`。
+--    2026-08-22 现查 = 5 份独立封装(DodoNameplate/Guards · DodoSays/Util · DodoUnholy/Rotation ·
+--    DodoGuanzhu/Macro · DodoGrid/Core),全部已对齐成 type 探测 + pcall + `== true`。
+--    ⚠ DodoCombatHUD 另有 2 处**内联**未封装(同文件 795 / 1501 附近),不在这 5 份里。
+-- 🔴 这是**刻意的第 3 份副本,不是漏抽的重复代码**。全 repo 一共四份手写 isSecret:
+--     ① DodoNameplate/Guards.lua   (`Guards.IsSecret`,载入时解析一次的函数引用;逐帧热路径)
+--     ② DodoSays/Util.lua          (type 探测 + pcall + `== true` 归一)
+--     ③ 本文件(就是这一份)
+--     ④ DodoGuanzhu/Macro.lua      (与 ② 同形)
+--    为什么不抽进共享库 `Dodo/Shared.lua`:DodoNameplate / DodoInspect **故意不挂**
+--    `## OptionalDeps: Dodo`(为独立发 CurseForge 而解耦),运行时根本调不到 `Dodo.*`。
+--    ⇒ **别把任何一份改成 require Dodo,也别删任何一份。**
+--    ⚠ canon `rules/engineering.md`「同一不变式两份手写实现 = 静默分歧发生器」——
+--      我们接受这个代价,但代价的对价是:**改一处必须把上面四处全改一遍。**
+--    形状约定(四份都照这个走):type 探测 → pcall → 归一成真布尔。
+--      · pcall:暴雪哪天改签名 / 让它抛错时,不能把调用方一起带走
+--      · 归一:secret 判定绝不许把 nil 当 false 用(DodoSays/Util.lua 的 `equals` 注释
+--        记着 2026-08-15 那次 `== true` 把 nil 折成 false、整场零报点零报错)
+--    ⚠ 已知残留差异:④ 写的是 `ok and yes and true or false`,②③ 写的是 `== true`。
+--      对返回布尔的 API 两者等价;真要统一就四处一起改,别只改一处。
 local function isSecret(v)
-    if issecretvalue then return issecretvalue(v) end
-    return false
+    if type(issecretvalue) ~= "function" then return false end
+    local ok, secret = pcall(issecretvalue, v)
+    return ok and secret == true
 end
 
 local function Known(spellID)
@@ -398,7 +427,10 @@ local function probeVal(fn)
 end
 
 function DodoUnholy:DebugRotation()
-    print("|cff33ff99DodoUnholy 探测|r 12.0.7 战斗可读性 (打着木桩、处于战斗中再敲):")
+    -- 版本号不写死在这儿(会腐烂):要知道现在跑的是哪版就看 `GetBuildInfo()` / TOC 的 ## Interface。
+    -- ⚠ 12.1 起 UnitHealth / UnitPower 一律 secret(脱战也是)⇒ 下面这些读数**预期全是 nil**,
+    --   那是现状不是故障;背景见本文件头 + 本插件 CLAUDE.md。
+    print("|cff33ff99DodoUnholy 探测|r 战斗可读性 (打着木桩、处于战斗中再敲):")
     print(" InCombat=", tostring(InCombatLockdown()),
           " | 目标=", UnitExists("target") and (GetUnitName("target") or "?") or "无",
           " | 可攻击=", tostring(HasEnemyTarget()))
@@ -427,37 +459,22 @@ function DodoUnholy:DebugRotation()
     print("|cff33ff99DodoUnholy|r 探测完毕,整段发我。")
 end
 
--- 战斗日志探针: 测 COMBAT_LOG 在 12.0.7 战斗中是否还能读到 spellId (决定能否自己数伤口)
-function DodoUnholy:ProbeCombatLog()
-    local f = self._clProbeFrame
-    if not f then
-        f = CreateFrame("Frame")
-        self._clProbeFrame = f
-    end
-    local n = 0
-    print("|cff33ff99DodoUnholy CL探针|r 接下来 ~8 秒持续打木桩,抓战斗日志事件...")
-    f:SetScript("OnEvent", function()
-        if n >= 12 then return end
-        local ok = pcall(function()
-            local info = { CombatLogGetCurrentEventInfo() }
-            local sub = info[2]
-            if type(sub) ~= "string" or not sub:find("SPELL") then return end
-            n = n + 1
-            local sid    = isSecret(info[12]) and "secret" or tostring(info[12])
-            local nm     = isSecret(info[13]) and "secret" or tostring(info[13])
-            local srcSec = isSecret(info[4]) and "secret" or "ok"
-            local dstSec = isSecret(info[8]) and "secret" or "ok"
-            print(("CL#%d %s id=%s 名=%s src=%s dst=%s"):format(n, tostring(sub), sid, nm, srcSec, dstSec))
-        end)
-        if not ok then print("CL 事件读取抛错(疑似 secret)") end
-    end)
-    f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    C_Timer.After(8, function()
-        f:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-        f:SetScript("OnEvent", nil)
-        print("|cff33ff99DodoUnholy|r CL探针结束,整段发我。")
-    end)
-end
+-- ⛔⛔ 这里原来有 `DodoUnholy:ProbeCombatLog()`(`/duh cl`)—— 一个注册
+--     `COMBAT_LOG_EVENT_UNFILTERED` 抓 8 秒再 unregister 的探针。**2026-08-22 整个删掉。**
+--
+--     **为什么删**:12.x 对插件**彻底关闭**战斗日志。实测结论(2026-08-15)原文在
+--     `DodoSays/Trace.lua` 顶部那段 `REGISTER_FAILED` 注释里(搜
+--     `COMBAT_LOG_EVENT_UNFILTERED`):即使是**干净的加载期 chunk** 注册它也抛
+--     `ADDON_ACTION_FORBIDDEN`;而**一次 forbidden 调用会污染当时调用栈上的一切**,
+--     当晚 boss 血条消失被怀疑(未坐实)就是它干的。
+--
+--     ⇒ 所以这不是「探针没用」,是**跑它一次就是一次真伤害**,而且伤的是别的插件 /
+--       暴雪自己的界面,症状离肇事点很远,极难归因。答案我们已经有了,重问的代价是负的。
+--
+--     🔴 **别再加回来。** 想量「战斗日志现在还给不给」= 去问 `DodoSays/Trace.lua` 那条结论;
+--        真要重新量,也只该在 `DodoProbe` 里带一次性开关做,不该躺在一个日常插件的 slash 命令里。
+--        (同时删掉的:`DodoUnholy.lua` 里 `/duh cl` 的分发分支 + 帮助行 —— 留着分支会让
+--         `self.ProbeCombatLog` 恒为 nil、静默落到帮助文本,那比删干净更难懂。)
 
 -- ----------------------------------------------------------------------------
 -- 初始化 (由 DodoUnholy:Initialize 调用)

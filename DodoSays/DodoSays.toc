@@ -6,7 +6,7 @@
 ## Author: Doodo
 ## Version: 0.13.0
 ## SavedVariables: DodoSaysDB
-## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
+## IconTexture: Interface\AddOns\DodoSays\Media\Dodo.tga
 ## X-Category: Boss Encounters
 ## X-License: All Rights Reserved (addon code)
 ## X-Credits-Voice: Synthesised with OpenAI gpt-4o-mini-tts, voice "coral"

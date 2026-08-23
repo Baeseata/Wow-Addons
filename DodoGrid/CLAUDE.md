@@ -7,10 +7,17 @@
 This addon used to live in its own repo `Baeseata/DodoGrid`. It is now a folder in the
 **`Baeseata/Wow-Addons`** monorepo — one repo, one `main`.
 
-- **The live AddOns folder is NOT a git tree any more.** `D:\World of Warcraft\_retail_\Interface\AddOns\DodoGrid`
-  has no `.git`. Editing in place still works (edit → `/reload` → test), but to **push** you clone
-  `Baeseata/Wow-Addons` to a temp dir, copy the changed files in, commit, push — same as every
-  other Dodo addon. `git log` from the live folder no longer exists; run it in the clone.
+- **The live AddOns folder is NOT a git tree, and it is NOT a junction either — a change you make
+  in the clone does not reach the game until you copy it.** (AddOns paths differ per machine; see
+  that machine's `~/.claude/CLAUDE.md`.) Two layouts exist today:
+  - **HOME** — no clone at all. You edit *in place* inside the live AddOns folder (edit → `/reload`
+    → test). To **push**: clone `Baeseata/Wow-Addons` to a temp dir, copy the changed files in,
+    commit, push. `git log` does not work from the live folder; run it in the clone.
+  - **OMEN** — has `~/Code/Wow-Addons`. You edit in the clone, then copy into that machine's own
+    AddOns folder to test.
+  ⚠ If anyone ever re-creates a junction here, say so explicitly — an addon folder that *looks*
+  like it syncs but does not is the worst case: `/reload` shows nothing changed and it reads like
+  a code bug.
 - Compare live-vs-repo with `git diff --no-index --ignore-cr-at-eol` (clone checkout is CRLF, the
   live folder is LF — naive hash compares claim everything differs). Export back with
   `git -c core.autocrlf=false archive` to keep LF.
@@ -21,8 +28,9 @@ This addon used to live in its own repo `Baeseata/DodoGrid`. It is now a folder 
 - DodoGrid is **not on CurseForge**: the monorepo release workflow only fires on a `<Addon>-vX.Y.Z`
   tag, so it never touches this addon.
 
-> **CONTEXT HANDOFF**: Developed + tested on the HOME machine, directly in the live AddOns folder
-(edit → `/reload` → test). Do NOT re-research the 12.1 Secret Values / secure-aura rules — they
+> **CONTEXT HANDOFF**: Historically written and in-game tested on **HOME**, in its live AddOns
+folder (edit → `/reload` → test); the per-machine edit/push loop is in the banner above.
+Do NOT re-research the 12.1 Secret Values / secure-aura rules — they
 are distilled below and in the sibling addon's `..\DodoNameplate\GOTCHAS.md` (in-game-verified
 ground truth).
 
@@ -30,15 +38,24 @@ ground truth).
 
 ## What it is
 
-Healer-focused party/raid unit frames (like Cell/Grid) for WoW Retail **Midnight / 12.1** (`## Interface: 120005, 120007, 120100`). Standalone (own `CopyDefaults`, no hard `_G.Dodo` dep; nests under the Dodo package via `## Group: Dodo`).
+Healer-focused party/raid unit frames (like Cell/Grid) for WoW Retail **Midnight / 12.1**. Standalone (own `CopyDefaults`, no hard `_G.Dodo` dep; nests under the Dodo package via `## Group: Dodo`). Supported client builds = read `DodoGrid.toc`'s `## Interface` line, don't trust a copy of it here.
 
-**Status: v0.6.0, 12.1 aura migration implemented; live restricted-instance smoke test pending.** Party (player+party1-4) and Raid (1-40, grouped by subgroup into 小队 columns, Blizzard-style cells). Flat class-color health bars, health %, 死亡/离线/鬼魂 status, role icon, out-of-range dim, left-click target + right-click menu. **Aura indicators** are owned by Blizzard's `CustomAuraContainerTemplate`: ① my buffs (`HELPFUL|PLAYER`) small icon row; ② important debuffs (`HARMFUL|RAID`/`RAID_IN_COMBAT`/`CROWD_CONTROL`) one overlaid center slot with configurable category priority; ③ dispellable (`HARMFUL|RAID_PLAYER_DISPELLABLE`) full-cell school-colored slot. **Click-to-dispel** remains a configurable secure `/cast [@<token>]` binding (default Shift+Left). ESC options panel (General + 布局 + 光环 + 驱散 sub-pages). Hides Blizzard's default party/raid frames (taint-free).
+**Current version = `DodoGrid.toc`'s `## Version`; what landed in it = `git log -- DodoGrid`.** Party (player+party1-4) and Raid (1-40, grouped by subgroup into 小队 columns, Blizzard-style cells). Flat class-color health bars, health %, 死亡/离线/鬼魂 status, role icon, out-of-range dim, left-click target + right-click menu. **Aura indicators** are owned by Blizzard's `CustomAuraContainerTemplate`: ① my buffs (`HELPFUL|PLAYER`) small icon row; ② important debuffs (`HARMFUL|RAID`/`RAID_IN_COMBAT`/`CROWD_CONTROL`) one overlaid center slot with configurable category priority; ③ dispellable (`HARMFUL|RAID_PLAYER_DISPELLABLE`) full-cell school-colored slot. **Click-to-dispel** remains a configurable secure `/cast [@<token>]` binding (default Shift+Left). ESC options panel (General + 布局 + 光环 + 驱散 sub-pages). Hides Blizzard's default party/raid frames (taint-free).
 
 ---
 
 ## Architecture (decided 2026-06-25 — do not relitigate)
 
-**Route A: self-rolled `SecureUnitButton`, one per STATIC unit token** — NOT Blizzard's `SecureGroupHeaderTemplate` (Route B). Two A/B spike addons (`DodoGridSpikeA/B`) in the AddOns folder proved this; A won for a healer-custom frame (flat code, easy indicator attachment, debuggable). A scales to raid by adding a roster/layout manager, not a rewrite.
+**Route A: self-rolled `SecureUnitButton`, one per STATIC unit token** — NOT Blizzard's `SecureGroupHeaderTemplate` (Route B). Two A/B spike addons (`DodoGridSpikeA/B`) proved this; A won for a healer-custom frame (flat code, easy indicator attachment, debuggable). A scales to raid by adding a roster/layout manager, not a rewrite.
+
+> ⛔ **Don't go looking for those two spikes — they are not in this repo.** They live only in
+> **HOME**'s live AddOns folder and were **never committed**: verified 2026-08-22 in a fresh clone,
+> `git log --all -- '*DodoGridSpike*'` returns nothing and a full-history path scan finds no
+> `spike` path. They therefore **cannot have reached OMEN through git** (a 2026-08-22 audit also
+> found no repo on the account holding them; nothing outside the git/GitHub channel was scanned).
+> They were throwaway one-shot verification artefacts and are deliberately kept local — the
+> decision they produced is the paragraph above, and that decision is the part worth keeping.
+> Nothing here needs them to be readable, so don't go add them either.
 
 - 45 buttons built ONCE at login (out of combat): player+party1-4 in `partyContainer`, raid1-40 in `raidContainer`. The `"unit"` attribute is STATIC and never mutates → the only combat-protected work is `Layout()` repositioning.
 - A secure `RegisterStateDriver(container, "visibility", "[group:raid] …")` swaps the two containers in/out — this runs securely in combat AND structurally kills the player-duplicate (in a raid the player IS some raidN, so the party set is hidden). Never use `UnitIsUnit` to self-detect (it's secret-when-restricted).
@@ -93,4 +110,4 @@ Backlog / next:
 
 ## Workflow
 
-**Discuss every new requirement before writing code.** Jerry drives design. Dev loop: edit → `/reload` (a brand-new `.lua` added to the `.toc` loads on /reload; a brand-new addon folder needs a full client restart) → watch BugSack. Push gotcha: the live folder is no longer a git tree — clone `Baeseata/Wow-Addons` to a temp dir, copy changed files into `DodoGrid/`, commit, push (see the monorepo banner at the top).
+**Discuss every new requirement before writing code.** Jerry drives design. Dev loop: edit → `/reload` (a brand-new `.lua` added to the `.toc` loads on /reload; a brand-new addon folder needs a full client restart) → watch BugSack. Push gotcha: the live AddOns folder is neither a git tree nor a junction — **the whole edit/copy/push loop, per machine, is in the monorepo banner at the top of this file.** (Kept there only; don't restate it here, the two copies will drift.)

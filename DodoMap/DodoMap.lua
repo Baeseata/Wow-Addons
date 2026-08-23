@@ -5,6 +5,10 @@ local DEFAULTS = {
     unlockCoordFrame = false,
     fontSize = 14,
     coordFramePos = nil,
+    -- The minimap ring is SHARED with every other Dodo addon that draws its own
+    -- button; two identical defaults stack perfectly and the lower button cannot
+    -- be clicked on a fresh install. Before changing this value (or picking one
+    -- for a new addon) grep the monorepo for `minimapAngle|minimap = { angle`.
     minimapAngle = 225,
 }
 

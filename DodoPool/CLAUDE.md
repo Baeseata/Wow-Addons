@@ -2,8 +2,10 @@
 
 > 单人 **9 球台球** 小游戏,World of Warcraft 插件,Dodo 系列之一。
 > 仓库: `github.com/Baeseata/Wow-Addons` (public)。本插件在 `DodoPool/`。
-> **跨机协作**: 换机器先 `git pull`,Claude 先读本文件接上进度。UI 文案用**中文**(Dodo 系列惯例)。
-> 当前游戏版本: 正式服 至暗之夜 (Midnight) 12.0.7,Interface 120007。
+> **跨机协作**: 换机器先拿到最新代码(**两台机的形状不一样,见 §8**),Claude 先读本文件接上进度。
+> **UI 文案用英文**(跟 DodoBricks / DodoRush 一致);中文只是 Jerry 跟 Claude 的设计沟通语言。
+> ⚠ 本行原文写的是「UI 文案用**中文**(Dodo 系列惯例)」——**对自己和对系列都是假的**:2026-08-22 按码位扫 `DodoPool/` 全目录,**中文全部落在本文件里**,`Core/Game/Geometry/Physics/Render/Sound.lua` 和 `README.md` **零中文**。复核 = 用 **Grep 工具(ripgrep)** 搜 `[\x{4e00}-\x{9fff}]`,⛔ **别用 Git Bash 的 `grep`**(对中文既假阳性又假阴性)。
+> **支持到哪个客户端版本 = 查 `DodoPool.toc` 的 `## Interface`** —— doc 不复述版本号(复述一遍就是第二份会漂的真相)。
 
 ---
 
@@ -11,13 +13,11 @@
 
 - 这是 WoW retail 插件,要放进 `World of Warcraft\_retail_\Interface\AddOns\DodoPool\` 才能在游戏里加载。
 - **依赖**: 同仓库的 `Dodo` 父插件(提供 `_G.Dodo` 公共库 + 共享图标 `Dodo.tga`)。装 DodoPool 时**必须也装 Dodo**。
-- **dev 设置(本机用的法子,推荐另一台也这么搞)**: 用目录 junction 把 repo 里的文件夹链进 AddOns,这样在 repo 里改、游戏里直接生效,不用每次拷:
-  ```
-  REM cmd (或 PowerShell New-Item -ItemType Junction),WoW 路径按本机实际改
-  mklink /J "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\DodoPool" "<repo路径>\Wow-Addons\DodoPool"
-  mklink /J "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\Dodo"     "<repo路径>\Wow-Addons\Dodo"
-  ```
-  junction 不需要管理员权限(AddOns 目录对用户可写)。不想用 junction 就直接拷文件夹,改完再拷一次。
+- 🔴 **dev 设置: 两台机都不是 junction,改完必须拷。**
+  - **HOME**: 插件**就地**在该机 AddOns 里改(那个目录不是 git tree),推送走 §8。2026-08-22 实测:该机 24/24 个 `Dodo*` 目录 `LinkType=(none)`、无 `.git`,AddOns 目录本身也不是仓库。
+  - **OMEN**: 有 `~/Code/Wow-Addons` clone,在 clone 里改 → 再拷进它自己的 AddOns 才进游戏。
+  - 各机 WoW 安装路径不同,**见该机 `~/.claude/CLAUDE.md`**,别在本文件里硬编码。
+  - ⚠ 本条原文推荐用 `mklink /J` 建 junction、还硬编码了 `C:\Program Files (x86)\World of Warcraft\...` —— **那个路径在 HOME 上不存在,junction 也一个都没有**。⚠ **别顺手去建一个**把这句话变成真的:两台机的推送流程都建立在「不是链接」这个前提上,而一个信了 junction 的 session 会在 clone 里改完就收工,**改动永远到不了游戏**,症状是「`/reload` 后什么都没变」——读起来像代码 bug,不像同步没做。
 - **加载规则**: 全新插件首次出现要**完全重启魔兽**(光 /reload 不认新文件夹);之后改代码 **`/reload`** 即可。
 - **打开游戏**: 小地图上的**粉色 D 图标**左键,或斜杠命令 `/pool`(亦 `/dodopool`)。
 
@@ -127,6 +127,8 @@
 
 ## 8. 跨机 / git
 
-- 仓库 `github.com/Baeseata/Wow-Addons`(public)。`git pull` 拿更新,改完 `git add . && git commit && git push` 同步回去。
-- 另一台机器开工 checklist: ① `git pull` ② 读本文件 ③ 确认 `DodoPool` + `Dodo` 都链进/拷进该机 AddOns ④ 进游戏 `/pool` 测 §5.1 待办 ⑤ 记录报错 -> 修。
+- 仓库 `github.com/Baeseata/Wow-Addons`(public)。**两台机拿更新 / 推回去的姿势不同**(都不是 junction,见 §1):
+  - **OMEN**: `~/Code/Wow-Addons` clone → `git pull` → 在 clone 里改 → `git add`/`commit`/`push` → **再拷进该机 AddOns** 才进游戏。
+  - **HOME**: 没有 clone,就地在 AddOns 里改;推送 = 临时目录 clone → 把 `DodoPool/` 拷进去 → commit → push。⚠ sandbox 禁在同一条命令里 `Remove-Item` + 提 `D:\` 路径,用 `[System.IO.File]::Delete` 或直接 `Copy-Item` 覆盖。
+- 任一台开工 checklist: ① 拿到最新代码 ② 读本文件 ③ 确认 `DodoPool` + `Dodo` 都拷进了**该机** AddOns ④ 进游戏 `/pool` 测 §5.1 待办 ⑤ 记录报错 -> 修。
 - 设计讨论的完整来龙去脉在跟 Claude 的对话里;本文件是浓缩后的"够接着干"的上下文。

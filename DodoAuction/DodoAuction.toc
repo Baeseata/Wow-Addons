@@ -3,7 +3,7 @@
 ## OptionalDeps: Dodo
 ## Title: DodoAuction
 ## Notes: doodo的拍卖行小助手
-## Author: Dodo
+## Author: Doodo
 ## Version: 1.0
 ## SavedVariables: DodoAuctionDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga

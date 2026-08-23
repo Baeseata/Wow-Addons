@@ -3,8 +3,8 @@
 ## OptionalDeps: Dodo
 ## Title: DodoAirdrop
 ## Notes: Tracks war mode airdrop talking head alerts and records last seen times per map.
-## Author: OpenAI
-## Version: 0.3.0
+## Author: Doodo
+## Version: 0.3.1
 ## SavedVariables: DodoAirdropDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
