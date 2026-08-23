@@ -76,6 +76,43 @@ local function nsSeam(src, quiet)
 end
 check("面板调的 ns.* 全都有人导出", nsSeam(OPT), 0)
 
+-- 反方向:**导出了却没人调**的 ns.*。`ns` 是插件私有表(local ADDON, ns = ...),
+-- 外面谁也够不着 ⇒ 零调用方就是真的没人用。canon:留一个零调用方的函数,
+-- 等于让下一个人以为还有这条路可走(0.13.2 就攒出了三个:
+-- SetLocked / ToggleTest / IsTestMode,面板改完之后全成了摆设)。
+-- ⚠ 只查**函数形状**的导出;数据表(DEFAULTS / SPEC / LUST…)是给别人读的,不在此列。
+print("== ns.* 有没有导出了却没人调的 ==")
+local otherSrc = {}
+for _, n in ipairs(FILES) do otherSrc[#otherSrc + 1] = slurp(n) end
+
+-- ⚠ 已知会**少报**:注释里提到 `ns.Foo` 也算"被调用"(没做剥注释)。
+--   少报是安全方向 —— 它只会漏掉几个死导出,不会冤枉活的。
+local function deadExports(optSrc, quiet)
+    local defined, used = {}, {}
+    local all = { optSrc }
+    for _, s in ipairs(otherSrc) do all[#all + 1] = s end
+    for _, src in ipairs(all) do
+        for k in src:gmatch("%f[%w_]ns%.([%w_]+)%s*=%s*function") do defined[k] = true end
+        for k in src:gmatch("function%s+ns%.([%w_]+)") do defined[k] = true end
+    end
+    for _, src in ipairs(all) do
+        for k, nxt in src:gmatch("%f[%w_]ns%.([%w_]+)%s*(.)") do
+            if nxt ~= "=" then used[k] = true end     -- 定义那一处不算"被调用"
+        end
+    end
+    local dead = {}
+    for k in pairs(defined) do if not used[k] then dead[#dead + 1] = k end end
+    table.sort(dead)
+    if not quiet then
+        for _, k in ipairs(dead) do print("     |> ns." .. k .. " 导出了但一个调用方都没有") end
+        local nDef = 0; for _ in pairs(defined) do nDef = nDef + 1 end
+        assert(nDef >= 15, ("只扫到 %d 个函数型导出,正则漂了"):format(nDef))
+        print(("     (%d 个函数型导出)"):format(nDef))
+    end
+    return #dead
+end
+check("没有零调用方的 ns.* 导出", deadExports(OPT), 0)
+
 ---------------------------------------------------------------------------------------------------
 -- 接缝 ②:面板绑的每个 DB 键名,DEFAULTS 里必须真的有
 --
@@ -144,9 +181,11 @@ local function hardCoded(src, quiet)
     end
     if not quiet then
         for _, s in ipairs(bad) do print("     |> " .. s .. " 是硬编码 y —— 改用 Col:take()") end
-        -- 反空转:页面里现在**确实**有几处三参 SetPoint(手接的 bpCheck / chanEdit),
-        -- 一处都扫不到就是正则漂了,那条绿是假的。
-        assert(seen >= 2, ("只扫到 %d 处锚到页面的 SetPoint,正则漂了"):format(seen))
+        -- 反空转:页面里现在还剩一处三参 SetPoint(施法页手接的 chanEdit)。
+        -- ⚠ 这个阈值**刚刚真的救过一次**:0.13.2 把沸点那个 bpCheck 挪进列表以后
+        --   只剩 1 处,它当场红了 —— 说明它不是摆设。但它也只是"扫得到东西"这种弱证据,
+        --   真正证明扫描器有用的是下面那条 A/B(种一个硬编码 y 进去,必须变红)。
+        assert(seen >= 1, ("一处锚到页面的 SetPoint 都没扫到,正则漂了"):format(seen))
         print(("     (扫了 %d 处锚到页面的 SetPoint)"):format(seen))
     end
     return #bad
@@ -207,7 +246,11 @@ print("== 估算:每页每列的高度 ==")
 
 -- 每种控件占多高。跟 Options.lua 里 Col:* 的 take() 参数**手工对齐** ——
 -- 漂了的话下面那个反空转会先炸(见 nCalls 断言)。
-local H = { Header = 26, Check = 26, Slider = 38, Color = 26, Button = 28, Button2 = 0, Edit = 44 }
+-- ⚠ **加了新的 Col:方法就要来这儿补一行**,否则它的高度按 0 算,估出来的页面
+--   比真实矮 —— 而"估矮了"读起来正好是"放得下",跟 canon 那条「偏小的方向读起来
+--   正好像没问题」一模一样。下面 nCalls 那个反空转拦不住这种(它只数调用次数)。
+local H = { Header = 26, Check = 26, CheckFn = 26, Slider = 38, Color = 26,
+            Button = 28, Button2 = 0, Edit = 44 }
 
 -- 中文一个字约占两个 ASCII 宽;300px / 约 6px 一个 ASCII 单位 ≈ 50 单位一行。
 local function noteHeight(text)
@@ -273,7 +316,7 @@ check("六个页面估算都装得下(<=545)", overflow(OPT), 0)
 -- A/B:种回缺陷,下面这几条必须都报 caught。
 -- 不做这一步的话,上面那些绿只证明"没找到违规",不证明"没有违规"。
 ---------------------------------------------------------------------------------------------------
-print("== A/B(种回缺陷,下面六条必须都报 caught)==")
+print("== A/B(种回缺陷,下面七条必须都报 caught)==")
 
 local function ab(label, mutate, scan)
     local src = mutate(OPT)
@@ -303,8 +346,8 @@ ab("colorGet 绑了一个 DEFAULTS 里没有的键",
 -- ⑤ 有人把硬编码 y 写回页面里 —— 就是 0.13.0 那个满屏重叠的形状。
 ab("页面里写回了硬编码 y",
    function(s)
-       return s:gsub('bpCheck:SetPoint%("TOPLEFT", c%.x, bpTop%)',
-                     'bpCheck:SetPoint("TOPLEFT", 16, -64)', 1)
+       return s:gsub('chanEdit:SetPoint%("TOPLEFT", r%.x %+ 6, chanTop%)',
+                     'chanEdit:SetPoint("TOPLEFT", 352, -220)', 1)
    end, hardCoded)
 
 -- ⑥ 某一列排到面板外面 —— 就是 0.13.1 第一版团队增益页那个 -593。
@@ -312,6 +355,13 @@ ab("页面里写回了硬编码 y",
 ab("某页某列超出面板高度",
    function(s) return s:gsub('c:AuraEditor%("raid", 30, nil, false, 5%)',
                              'c:AuraEditor("raid", 30, nil, false, 20)', 1) end, overflow)
+
+-- ⑦ 导出一个没人调的 ns.*。真机上它不报错、不影响任何东西 ——
+--    它只是让下一个人以为"还有这条路可走"。
+ab("导出了一个零调用方的 ns.*",
+   function(s) return s:gsub("function ns%.RegisterOptions%(%)",
+                             "ns.NobodyCallsThisXX = function() end\nfunction ns.RegisterOptions()", 1) end,
+   deadExports)
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

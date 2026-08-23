@@ -707,7 +707,8 @@ local function RowUpdate(_, dt)
     -- 有红显红、没红有绿显绿;两种情况**都发光**(你定的)。
     local active = echoOn or ProcUp()
     SetGlow(active)
-    if boil.bg then boil.bg:SetAlpha(active and 0.55 or 0) end
+    -- 配置模式下即使没内容也留一点底色(0.35),好让人看得见这格占哪儿。
+    if boil.bg then boil.bg:SetAlpha(active and 0.55 or (boil.config and 0.35 or 0)) end
 end
 
 -- ---- 建格 / 显隐 -----------------------------------------------------------
@@ -1041,6 +1042,16 @@ ns.BoilingEvaluate = Evaluate   -- 给 Options / 自身增益排开关用
 --    理由见上面 slotDB 那段;面板那边要是照直觉写一个 `on`,两份判据当场分叉,
 --    而症状是「勾选框和屏幕上那格对不上」—— 谁也看不出来是两个键。
 --    ⇒ 只暴露动作,不暴露键名。
+-- 配置模式:把那格的暗底点亮,好让人看得见它占的位置。
+-- ⚠ **只置标志,不自己画** —— RowUpdate 每帧都在跑,alpha 归它算(它同时知道
+--   现在有没有 proc / echo)。在这儿也写一遍就是两份实现,而且第一版真栽了:
+--   我照抄了 RowUpdate 里的条件 `not (echoOn or ProcUp())`,而 `echoOn` 是**那个函数
+--   里的局部变量** ⇒ 在模块层读到的是个全局 nil,条件恒等于 `not ProcUp()`。
+--   `luac -p` 挑不出来(读全局是合法 Lua),而症状只会是 alpha 偶尔不对。
+-- ⚠ 也不碰 boil.slot 的显隐:那归 Evaluate 管,多一条判据 = 退出配置模式那格可能就没了。
+ns.BoilingSetConfig = function(on)
+    boil.config = on and true or false
+end
 ns.BoilingSlotOn  = function() return not slotDB().manualOff end
 ns.BoilingSetSlot = function(v)
     -- 走的是跟 `/dch bp row` 完全同一段代码(手动路径:会吭声、会写盘)。

@@ -63,6 +63,12 @@ local DEFAULTS = {
     -- 次要资源 = 离散的那批(圣能 / 连击点 / 碎片 / 真气 / 符文 / 奥术充能 / 精华)。
     -- 自己一根条、画成 N 格,**N 格加起来仍等于其它条的总宽**(缝也算在内)。
     secondaryOn     = true,
+    -- 🔴 **按资源分别关**(0.13.2)。上面那个 `secondaryOn` / `powerOn` 是全账号一份 ——
+    --    在血 DK 上关掉符文,暗牧的连击点、骑士的圣能也一起没了,而那看起来像 bug。
+    --    颜色早就是按资源存的(powerColors[名字]),显隐一直没跟上,这是那个缺口。
+    -- 🔴 存的是**反面**(`resOff[名字] = true`,缺席 = 显示):默认值根本不进存档,
+    --    也就无从变旧 —— 就是 0.12 那个「改默认值对已落盘的键无效」的通法。
+    resOff          = {},
     secondaryHeight = 12,
     segGap          = 2,
     -- 上面这根:目标血量
@@ -344,6 +350,12 @@ local lustBox, raidBox = nil, nil               -- { container=, buttons={}, ids
 --    多几个框体换"结构上保证",便宜(DodoNameplate 建 120 个)。
 local cdRow = { slots = {} }                    -- slots[i] = { container=, spellID=, buttons={} }
 local cdOverflowSig = nil                       -- 上次报过的"配得比格子多"签名,防重复吵
+-- 配置模式(0.13.2):点开显示全部**该显示**的框体,好拖;再点一下恢复。
+-- 声明放这儿(跟别的模块状态一起)是**故意的**:占位框的显隐要在 LayoutDots 里定,
+-- 而那个函数在文件中部 —— 声明写晚了那句赋值就成了全局变量,
+-- 而 `luac -p` 挑不出任何毛病(0.9.0 的 segHost 就是这么崩的,tools/test_scope.lua 守着)。
+local configMode = false
+local preConfigLocked = nil
 -- 0.11:右侧那两排合成**一个**容器(两个 group)。rightBox 持有真容器;
 -- lustBox / raidBox 退化成指向它的两个"视图"(带各自的 group 名),下游不用全改。
 local rightBox = nil
@@ -560,6 +572,34 @@ local function MakeRightBox(parent, cols)
     return { container = c, buttons = bucket, keys = RAID_KEYS }
 end
 
+-- ── 配置模式的占位框(0.13.2)────────────────────────────────────
+--
+-- 🔴 aura 那几排的图标是**暴雪容器**画的,我们没法给它塞假光环 ⇒ 配置模式里
+--    那几排只能画一个跟真格子**同位置同大小**的空框。对"摆位置"来说那就够了,
+--    但要写明白:框里是空的**不代表**那一格有问题。
+--
+-- ⚠ parent 给容器的 parent(不是容器本身):「我们的框体锚到光环容器」是被禁的
+--   (UntrustedLayoutScriptExecution),而且它在 pcall 里抛,症状会是"占位框整个不见了"。
+local function MakeSlotMark(parent, label)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetFrameStrata("HIGH")
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(f)
+    bg:SetColorTexture(0.15, 0.55, 1, 0.22)
+    for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, 1 },
+                         { "TOPLEFT", "BOTTOMLEFT", 1, 0 }, { "TOPRIGHT", "BOTTOMRIGHT", 1, 0 } }) do
+        local t = f:CreateTexture(nil, "OVERLAY")
+        t:SetColorTexture(0.4, 0.8, 1, 0.9)
+        t:SetPoint(e[1]); t:SetPoint(e[2])
+        if e[3] > 0 then t:SetWidth(1) else t:SetHeight(1) end
+    end
+    local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetPoint("CENTER")
+    fs:SetText(label)
+    f:Hide()
+    return f
+end
+
 local function BuildDots()
     if dots.built or dots.dead then return end
     if not (C_XMLUtil and C_XMLUtil.GetTemplateInfo
@@ -602,7 +642,8 @@ local function BuildDots()
             Print("目标 DoT 那排没建起来(其余部件照常):" .. tostring(c))
             return
         end
-        dots.slots[i] = { container = c, spellID = nil, buttons = bucket }
+        dots.slots[i] = { container = c, spellID = nil, buttons = bucket,
+                          mark = MakeSlotMark(health.frame, tostring(i)) }
     end
 
     -- ── 另外三个容器 ────────────────────────────────────────────
@@ -647,7 +688,8 @@ local function BuildDots()
                 return c
             end)
             if not okc then e1 = cc break end
-            cdRow.slots[i] = { container = cc, spellID = nil, buttons = bucket }
+            cdRow.slots[i] = { container = cc, spellID = nil, buttons = bucket,
+                               mark = MakeSlotMark(root, tostring(i)) }
         end
         -- 嗜血 + 其余团队增益:**同一个容器的两个 group**(为什么见 MakeRightBox 上面那段)。
         -- lustBox / raidBox 保留成两个"视图":共享同一个 container,只是 group 名不同 ⇒
@@ -734,6 +776,17 @@ local function LayoutDots()
         -- 容器 → 锚到**我们自己的**框体,这个方向是允许的。反过来(我们的对象锚到容器)
         -- 会被拒:"Anchoring disallowed ... forbidden aspects: UntrustedLayoutScriptExecution"。
         c:SetPoint("BOTTOMLEFT", health.frame, "TOPLEFT", (i - 1) * (w + sp), DB.dotYOffset)
+        -- 占位框跟容器**同一次算出来**,不另写一份坐标 —— 两份手写的几何必然会漂,
+        -- 而漂了以后"配置模式里框的位置跟真图标对不上"是最难查的那种。
+        if slot.mark then
+            slot.mark:SetSize(w, h)
+            slot.mark:ClearAllPoints()
+            slot.mark:SetPoint("BOTTOMLEFT", health.frame, "TOPLEFT", (i - 1) * (w + sp), DB.dotYOffset)
+            -- 显隐也在这儿定,不另开一个函数:位置和"该不该显示"分两处算,
+            -- 早晚会漂成"框在这儿、图标在那儿"。判据取自跟 HUD 同一个 VisibleFor。
+            slot.mark:SetShown(configMode and DB.dotsOn ~= false and DB.healthOn ~= false
+                and i <= #VisibleFor("dots"))
+        end
         pcall(function()
             c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = w,
                                         elementHeight = h, layoutIndex = 1 })
@@ -765,6 +818,13 @@ local function LayoutDots()
             -- cdRowPad 是沸点那个固定格占掉的左侧留白,它没启用时是 0。
             c:SetPoint("TOPLEFT", cdAnchor, "BOTTOMLEFT",
                 cdRowPad + (i - 1) * (cw + csp), -(DB.cdYOffset or 4))
+            if slot.mark then
+                slot.mark:SetSize(cw, ch)
+                slot.mark:ClearAllPoints()
+                slot.mark:SetPoint("TOPLEFT", cdAnchor, "BOTTOMLEFT",
+                    cdRowPad + (i - 1) * (cw + csp), -(DB.cdYOffset or 4))
+                slot.mark:SetShown(configMode and DB.cdsOn ~= false and i <= #VisibleFor("cds"))
+            end
             pcall(function()
                 c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = cw,
                                             elementHeight = ch, layoutIndex = 1 })
@@ -790,6 +850,13 @@ local function LayoutDots()
         c:SetSize(cols * rw + (cols - 1) * rsp, 2 * rh + rsp)
         c:ClearAllPoints()
         c:SetPoint("TOPLEFT", health.frame, "TOPRIGHT", DB.raidXOffset or 4, 0)
+        -- 右侧是**一个** 2xN 网格容器 ⇒ 占位框也只要一个,罩住整片。
+        -- (逐格罩没意义:那几格的位置归暴雪的 flow layout 算,我们本来就不控制。)
+        if not rightBox.mark then rightBox.mark = MakeSlotMark(root, "团队增益") end
+        rightBox.mark:SetSize(cols * rw + (cols - 1) * rsp, 2 * rh + rsp)
+        rightBox.mark:ClearAllPoints()
+        rightBox.mark:SetPoint("TOPLEFT", health.frame, "TOPRIGHT", DB.raidXOffset or 4, 0)
+        rightBox.mark:SetShown(configMode and DB.raidOn ~= false and DB.healthOn ~= false)
         -- ⚠ 每线的像素高**必须跟着图标大小重算** —— 它是在建组时设过一次的,
         --    不在这儿再设的话,改完 /dch rh 就不再是"每列 2 格"(会变成 1 格或 3 格),
         --    而症状是「排布突然乱了」,想不到是这行没跟上。
@@ -1057,9 +1124,18 @@ local function EnsureSegs(n)
     end
 end
 
+-- 这一种资源被单独关掉了吗。⚠ 判据只声明这一处,主资源和次要资源共用 ——
+-- 两处各判一次就是 canon 说的静默分歧发生器。
+local function ResHidden(name)
+    if not name then return false end
+    local t = DB and DB.resOff
+    return type(t) == "table" and t[name] == true
+end
+
 local function LayoutSegs()
     if not segHost then return end
     local show = (secondary ~= nil) and (DB.secondaryOn ~= false) and not segsDead
+                 and not ResHidden(secondary.name)
     segHost:SetShown(show)
     if not show then return end
 
@@ -1105,7 +1181,10 @@ local function ApplyLayout()
     -- SetAllPoints ⇒ 真正决定疯狂条高度的是这一行,不是下面 LayoutBar 那个 SetSize),
     -- 而血条锚它上沿、施法条锚它下沿 ⇒ 不塌就留一条等高空隙,像「条没画出来」。
     -- 用 1 不用 0:高度 0 的框体行为不一致,1px 肉眼已经看不出来。
-    root:SetSize(DB.width, (DB.powerOn ~= false) and DB.powerHeight or 1)
+    -- 🔴 判据必须跟 RefreshAvailability 那句**完全一致**(全局开关 + 按资源单独关),
+    --   少一半的症状是「关掉符文以后中间空一条」—— 而那跟布局算错分不开。
+    local powerShown = (DB.powerOn ~= false) and not ResHidden(POWER_NAME[mainPower])
+    root:SetSize(DB.width, powerShown and DB.powerHeight or 1)
     root:ClearAllPoints()
     root:SetPoint("CENTER", UIParent, "CENTER", CharDB.x, CharDB.y)
     root:EnableMouse(not DB.locked)
@@ -1153,6 +1232,16 @@ end
 
 -- ---------------------------------------------------------------- 驱动
 
+-- ── 配置模式(0.13.2)──────────────────────────────────────────
+--
+-- 「点开就显示全部**该显示**的框体,好拖;再点一下恢复」。
+-- 它 = 演示模式(三根条填假数据强制显示)+ aura 每格一个占位框 + 自动解锁。
+--
+-- 🔴 「该显示」的判据**取自跟 HUD 同一个来源**(VisibleFor + 那几个开关),
+--    不另写一份 —— 两份手写的判据必然会漂,而漂了以后
+--    "配置模式里有框、退出去却没图标"跟"那一格坏了"分不开。
+-- ⚠ 占位框里是**空的**,因为 aura 图标是暴雪容器画的、我们塞不进假光环。
+--    空框 ≠ 那一格有问题,退出配置模式才看得到真东西。
 local hasPower = false
 
 -- 门:UnitPowerMax 对「没有的能量类型」返明文 0。万一哪天连 Max 也变 secret,
@@ -1165,7 +1254,8 @@ local function RefreshAvailability()
     if plain then hasPower = plain > 0 else hasPower = (raw ~= nil) end
     -- 两个条件是不同性质的:hasPower = 「这个角色有没有这种资源」(游戏说了算),
     -- powerOn = 「我想不想看」(玩家说了算)。任一为否都不显示,但别把它们合成一个。
-    power.frame:SetShown((hasPower or testMode) and DB.powerOn ~= false)
+    power.frame:SetShown((hasPower or testMode) and DB.powerOn ~= false
+        and not ResHidden(POWER_NAME[mainPower]))
 end
 
 -- 每根条自己一个 pcall + 自己一个闸。血条那条路(量程是 secret)从没验过,
@@ -1403,6 +1493,8 @@ local function Help()
           (secondary and ("  次要 = " .. secondary.name .. " " .. secondary.max .. " 格") or ""))
     Print("  /dch unlock | lock          解锁拖动 / 锁回去(抓哪根都行)")
     Print("  /dch test                   演示模式(两根都填上,方便摆位置)")
+    Print("  /dch config                 配置模式:全部框体摆出来 + 自动解锁,再敲一次收工")
+    Print("  /dch sres [main]            只隐藏/显示**这一种**资源(次要 / 加 main = 主资源)")
     Print("  /dch width 260              两根条同宽")
     Print("  /dch gap 3                  两根条之间的缝")
     Print("  /dch power|health|cast      主资源条 / 目标血条 / 施法条 开关")
@@ -1791,6 +1883,28 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         testMode = not testMode
         RefreshAvailability()
         Print(testMode and "演示模式开(血 35% / 疯狂 65%)" or "演示模式关")
+    elseif cmd == "config" then
+        -- 跟面板上那个按钮走**同一段代码**,不许各写一份(canon:同一不变式两份实现)。
+        local on = ns.ToggleConfig()
+        Print(on and "配置模式|cff33ff33开|r —— 全部该显示的框体都摆出来了,已解锁,拖吧。再敲一次收工。"
+                  or "配置模式|cffff3333关|r —— 位置和锁定都还原了。")
+        if on then
+            Print("  ⚠ aura 那几排画的是**空占位框**:图标是暴雪容器画的,塞不进假光环。")
+            Print("    框里空着**不代表**那一格有问题,退出配置模式才看得到真东西。")
+        end
+    elseif cmd == "sres" then
+        -- 按资源单独隐藏。全局那个 /dch secondary 是**全账号一份** ——
+        -- 在血 DK 上关掉符文,暗牧的连击点也一起没了,而那看起来像 bug。
+        local which = (arg == "main") and POWER_NAME[mainPower] or (secondary and secondary.name)
+        if not which then
+            Print("现在探测不到" .. ((arg == "main") and "主资源" or "次要资源") ..
+                  "(/dch res 看一眼)。用法:/dch sres [main]")
+            return
+        end
+        local now = not ns.IsResHidden(which)
+        ns.SetResHidden(which, now)
+        Print(("%s:%s(只影响这一种资源,别的角色不受牵连)"):format(
+            which, now and "|cffff3333隐藏|r" or "|cff33ff33显示|r"))
     elseif cmd == "probe"   then ProbeAuraFilters()
     elseif cmd == "bp"      then if ns.BoilingProbe then ns.BoilingProbe(arg) else Print("Boiling.lua 没加载") end
     elseif cmd == "health"  then Toggle("healthOn", "目标血条")
@@ -1917,7 +2031,6 @@ end
 ns.ApplyLayout         = function()        if DB and CharDB then ApplyLayout() end end
 ns.RefreshAvailability = function()        if DB then RefreshAvailability() end end
 ns.ApplyBlizzCastBar   = function(restore) if DB then ApplyBlizzCastBar(restore) end end
-ns.LayoutDots          = function()        if DB then LayoutDots() end end
 -- ── 0.13 面板要用的 ────────────────────────────────────────────
 -- 改完法术表要走这条:光改 DB 不推 filter 的话,屏幕上什么都不会变,
 -- 而那看起来像"面板没接上",是最费时间的一类误判。
@@ -1934,15 +2047,43 @@ ns.SpellLabel          = SpellLabel
 -- 面板得先知道"这根条现在画的是哪个资源"才知道往哪一格写。nil = 没探测到。
 ns.MainResourceName    = function()        return POWER_NAME[mainPower] end
 ns.SecondaryName       = function()        return secondary and secondary.name end
--- 三个按钮。演示模式返回新状态,好让按钮文字跟着变。
-ns.SetLocked           = function(v)       if DB then DB.locked = v and true or false; ApplyLayout() end end
-ns.ToggleTest          = function()
+-- ⚠ 这儿曾经有 ns.SetLocked / ns.ToggleTest / ns.IsTestMode 三个导出。
+--   0.13.2 面板把「演示模式」按钮换成「配置模式」、锁定改成直接绑 DB.locked 之后,
+--   它们**一个调用方都没有了** ⇒ 删掉(canon:留一个零调用方的函数,
+--   等于让下一个人以为还有这条路可走)。演示模式本身还在,入口是 `/dch test`。
+--   `tools/test_options.lua` 有一条 guard 盯着"别再养出零调用方的导出"。
+-- 配置模式:开 = 演示模式 + 占位框 + 解锁;关 = 全部还原。
+-- 🔴 锁定状态要**记住进来之前是什么**再还原,不能一律锁回去 ——
+--    本来就没锁着的人退出配置模式会突然被锁上,而他不知道是谁锁的。
+ns.ToggleConfig        = function()
     if not DB then return false end
-    testMode = not testMode
+    configMode = not configMode
+    testMode = configMode
+    if configMode then
+        preConfigLocked = DB.locked
+        DB.locked = false
+    elseif preConfigLocked ~= nil then
+        DB.locked = preConfigLocked
+        preConfigLocked = nil
+    end
+    ApplyLayout()
     RefreshAvailability()
-    return testMode
+    -- 沸点那一格归 Boiling.lua 自己,它有自己的暗底 ⇒ 递一声,别在这儿画第二个框。
+    if ns.BoilingSetConfig then pcall(ns.BoilingSetConfig, configMode) end
+    return configMode
 end
-ns.IsTestMode          = function()        return testMode end
+ns.IsConfigMode        = function()        return configMode end
+-- 「这一种资源单独关掉了没有」+ 开关。判据只在 ResHidden 那一处声明,这里只是门面。
+ns.IsResHidden         = function(name)    return ResHidden(name) end
+ns.SetResHidden        = function(name, hidden)
+    if not (DB and name) then return end
+    DB.resOff = type(DB.resOff) == "table" and DB.resOff or {}
+    -- 存反面:显示时**把键删掉**,不写 false —— 写 false 就是把默认值落盘了,
+    -- 而那正是 0.12 那个「改默认值对已落盘的键无效」的坑。
+    DB.resOff[name] = hidden and true or nil
+    ApplyLayout()
+    RefreshAvailability()
+end
 -- 「回默认位置和尺寸」= /dch reset 那一条,一个字都不多做 ——
 -- 按钮和命令走同一段代码,不许各写一份(canon:同一不变式两份实现 = 静默分歧发生器)。
 ns.ResetGeometry       = function()
@@ -1953,15 +2094,11 @@ ns.ResetGeometry       = function()
     ApplyLayout()
 end
 ns.DEFAULTS            = DEFAULTS
--- 给 Boiling.lua 当锚:自身 buff 排要跟着 HUD 走,HUD 一挪它就跟着挪。
--- 返回的是**主资源条那个 root**(条堆的锚点),不是某一根条 —— 那几根条会开关,
--- 认某一根当锚的话,关掉它整排就飞了。
-ns.GetHudRoot          = function() return root end
--- 条堆**真正的底**。⚠ 不是 root —— root 只是主资源那一格,它下面还挂着
--- 次要资源(segHost)和施法条。施法条是**瞬态的**(只在施法时 Show),
--- 拿它当锚会让下面的东西一施法就跳,所以只认到 segHost 为止,
--- 施法条那块空间由调用方自己按 castHeight 让开。
--- 大招那排的锚点与几何,给 Boiling.lua 在它左边钉固定格用。
+-- 自身增益那排的锚点与几何,给 Boiling.lua 在它左边钉固定格用。
+-- ⚠ 锚认到 **segHost 为止**,不认施法条 —— 施法条是**瞬态的**(只在施法时 Show),
+--   拿它当锚会让下面的东西一施法就跳。
+-- ⚠ 这儿曾经还有 ns.GetHudRoot / ns.GetHudBottom,零调用方,0.13.2 删了
+--   (它俩想表达的"root 只是主资源那一格、真正的底是 segHost"已经写在这条里了)。
 -- 返回:锚框体, y 偏移(相对该框体 BOTTOMLEFT)
 ns.GetCdRowAnchor      = function()
     if not DB then return nil end
@@ -1974,10 +2111,6 @@ ns.SetCdRowPad         = function(px)
     if not DB then return end
     cdRowPad = tonumber(px) or 0
     LayoutDots()
-end
-ns.GetHudBottom        = function()
-    if segHost and segHost:IsShown() then return segHost end
-    return root
 end
 
 -- ---------------------------------------------------------------- 生命周期

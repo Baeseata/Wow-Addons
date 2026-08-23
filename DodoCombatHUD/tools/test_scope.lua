@@ -22,6 +22,7 @@ local NAMES = {
     "cdRow",      -- 0.13:自身增益改固定格位,原来的单容器 cdBox 已删
     "cdRowPad",   -- 沸点那个固定格占掉的左侧留白(Boiling.lua 推进来)
     "cdOverflowSig",
+    "configMode", "preConfigLocked",   -- 0.13.2 配置模式
 }
 
 local lines = {}

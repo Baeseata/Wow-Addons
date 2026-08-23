@@ -135,6 +135,35 @@ function Col:Check(label, key, tooltip, apply)
     return c
 end
 
+-- 勾选框,但值不在 DB 顶层(比如"只隐藏这一种资源",存的是 resOff[资源名])。
+-- get 返回 nil = 这个东西现在不存在 ⇒ 画灰 + 点不动(原因由调用方在旁边那行说明)。
+function Col:CheckFn(label, get, set, tooltip)
+    local c = CreateFrame("CheckButton", nil, self.p, "UICheckButtonTemplate")
+    c:SetSize(24, 24)
+    c:SetPoint("TOPLEFT", self.x, self:take(26))
+    local fs = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fs:SetPoint("LEFT", c, "RIGHT", 2, 0)
+    local function refresh()
+        local v = get()
+        c:SetEnabled(v ~= nil)
+        c:SetChecked(v == true)
+        fs:SetText(label())
+    end
+    refresh()
+    c:SetScript("OnClick", function(self2) set(self2:GetChecked() and true or false); refresh() end)
+    if tooltip then
+        c:SetScript("OnEnter", function(self2)
+            GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+            GameTooltip:SetText(fs:GetText() or "", 1, 1, 1)
+            GameTooltip:AddLine(tooltip, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        c:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    Refreshers[#Refreshers + 1] = refresh
+    return c
+end
+
 -- 整数像素滑条,标题在条的正上方 ⇒ 这一格要 14(字) + 16(条) + 余量。
 function Col:Slider(label, lo, hi, key, apply, unit)
     local top = self:take(38)
@@ -333,9 +362,14 @@ end
 
 local ROW_H = 22
 
-function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
+-- `pinned` = 这一排最左边那个**不归列表管**的固定格(现在只有血 DK 的沸点)。
+-- 🔴 它必须**画在列表里**,不能只给个单独的勾选框(0.13.1 就是那么做的,错了):
+--    屏幕上血 DK 是 7 个图标,而列表说"占 6/8 格"、里面的 `1.` 对应屏幕第 2 格
+--    ⇒ **配置面板在撒谎**。它不能移不能删,但它得在那儿,而且得占第 1 号。
+--    形状:{ eligible=fn(返回 能不能显示, 为什么不能), get=fn, set=fn, icon=spellID, label= }
+function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows, pinned)
     local parent = self.p
-    local rows, refresh = {}, nil
+    local rows, pinRow, refresh = {}, nil, nil
     local shownRows = math.min(visibleRows or maxRows, maxRows)
 
     local status = self:NoteBox(1)
@@ -348,7 +382,7 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
     scroll:SetSize(300, shownRows * ROW_H)
     scroll:SetPoint("TOPLEFT", self.x, self:take(shownRows * ROW_H + 6))
     local child = CreateFrame("Frame", nil, scroll)
-    child:SetSize(300, maxRows * ROW_H)
+    child:SetSize(300, (maxRows + 1) * ROW_H)
     scroll:SetScrollChild(child)
 
     local function spec() return ns.CurrentSpec() end
@@ -367,42 +401,60 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
         return true
     end
 
-    local function makeRow(i)
-        local top = -(i - 1) * ROW_H
-        local r = {}
+    -- 行的**纵向位置每次刷新时才定**:固定格在不在会让整列上下挪一行,
+    -- 而它跟着专精变。建的时候钉死的话,换到血 DK 就会有两行叠在一起。
+    local function placeRow(r, vis)
+        local top = -(vis - 1) * ROW_H
+        r.icon:ClearAllPoints();  r.icon:SetPoint("TOPLEFT", 0, top - 2)
+        r.check:ClearAllPoints(); r.check:SetPoint("TOPLEFT", 20, top)
+        r.text:ClearAllPoints();  r.text:SetPoint("TOPLEFT", 44, top - 4)
+        if r.up then
+            r.up:ClearAllPoints();   r.up:SetPoint("TOPLEFT", 216, top)
+            r.down:ClearAllPoints(); r.down:SetPoint("TOPLEFT", 238, top)
+        end
+        if r.del then r.del:ClearAllPoints(); r.del:SetPoint("TOPLEFT", 260, top) end
+    end
 
+    -- 一行的框体。`withButtons=false` 用于固定格:它不能移也不能删,
+    -- 🔴 而"不能删"的表达方式是**根本不给那个按钮**,不是给一个点了没反应的。
+    local function newRowWidgets(withButtons)
+        local r = {}
         r.icon = child:CreateTexture(nil, "ARTWORK")
-        r.icon:SetPoint("TOPLEFT", 0, top - 2)
         r.icon:SetSize(18, 18)
         r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- 削掉暴雪图标那圈自带边框
 
         r.check = CreateFrame("CheckButton", nil, child, "UICheckButtonTemplate")
-        r.check:SetPoint("TOPLEFT", 20, top)
         r.check:SetSize(22, 22)
+
+        r.text = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        r.text:SetJustifyH("LEFT")
+        r.text:SetWordWrap(false)                     -- 名字太长就截断,绝不换行(会撑破行高)
+        r.text:SetWidth((withButtons and reorder) and 168 or 236)
+
+        if withButtons then
+            local function tinyBtn(label)
+                local b = CreateFrame("Button", nil, child, "UIPanelButtonTemplate")
+                b:SetSize(20, 18); b:SetText(label)
+                return b
+            end
+            if reorder then r.up, r.down = tinyBtn("^"), tinyBtn("v") end
+            r.del = tinyBtn("x")
+        end
+        return r
+    end
+
+    local TIP = "取消勾选 = 不占格位,但配置和名次都留着,勾回来还在原处。想彻底删掉用右边那个 x。"
+
+    local function makeRow(i)
+        local r = newRowWidgets(true)
         r.check:SetScript("OnEnter", function(self2)
             GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
             GameTooltip:SetText("显示这一格", 1, 1, 1)
-            GameTooltip:AddLine("取消勾选 = 不占格位,但配置和名次都留着,勾回来还在原处。想彻底删掉用右边那个 x。", nil, nil, nil, true)
+            GameTooltip:AddLine(TIP, nil, nil, nil, true)
             GameTooltip:Show()
         end)
         r.check:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        r.text = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        r.text:SetPoint("TOPLEFT", 44, top - 4)
-        r.text:SetJustifyH("LEFT")
-        r.text:SetWordWrap(false)                     -- 名字太长就截断,绝不换行(会撑破行高)
-        r.text:SetWidth(reorder and 168 or 214)
-
-        local function tinyBtn(dx, label)
-            local b = CreateFrame("Button", nil, child, "UIPanelButtonTemplate")
-            b:SetPoint("TOPLEFT", dx, top)
-            b:SetSize(20, 18)
-            b:SetText(label)
-            return b
-        end
-        if reorder then
-            r.up   = tinyBtn(216, "^")
-            r.down = tinyBtn(238, "v")
+        if r.up then
             r.up:SetScript("OnClick", function()
                 local l = listNow(); if ns.ListMove(l, i, -1) then commitList(l) end
             end)
@@ -410,7 +462,6 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
                 local l = listNow(); if ns.ListMove(l, i, 1) then commitList(l) end
             end)
         end
-        r.del = tinyBtn(260, "x")
         r.del:SetScript("OnClick", function()
             local l = listNow()
             local id = l[i]; if not id then return end
@@ -430,6 +481,23 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
     end
 
     for i = 1, maxRows do rows[i] = makeRow(i) end
+
+    if pinned then
+        pinRow = newRowWidgets(false)
+        pinRow.icon:SetTexture(
+            (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(pinned.icon)) or 134400)
+        pinRow.check:SetScript("OnClick", function(self2)
+            pinned.set(self2:GetChecked() and true or false)
+            refresh()
+        end)
+        pinRow.check:SetScript("OnEnter", function(self2)
+            GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+            GameTooltip:SetText("显示这一格", 1, 1, 1)
+            GameTooltip:AddLine(pinned.tip or "这一格位置固定,不能移动也不能删除。", nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        pinRow.check:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
 
     -- 添加行:输入框 + 两个按钮,同一行。
     local addTop = self:take(30)
@@ -495,7 +563,9 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
     end)
 
     local function hideRow(r)
-        r.icon:Hide(); r.check:Hide(); r.text:Hide(); r.del:Hide()
+        if not r then return end
+        r.icon:Hide(); r.check:Hide(); r.text:Hide()
+        if r.del then r.del:Hide() end
         if r.up then r.up:Hide(); r.down:Hide() end
     end
 
@@ -505,21 +575,49 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
         --    空列表跟"这个专精本来就没有"长得一模一样,而两者的下一步完全不同。
         if perSpec() and sp == nil then
             status:SetText("|cffff3333问不出当前专精|r —— 这一排暂时改不了(切一下专精 / 重登)。")
+            hideRow(pinRow)
             for i = 1, maxRows do hideRow(rows[i]) end
             addBox:Hide(); addBtn:Hide(); resetBtn:Hide()
             return
         end
         addBox:Show(); addBtn:Show(); resetBtn:Show()
 
+        -- 固定格在不在 —— 它跟着专精和天赋走,所以每次刷新都要重问。
+        local pinOn, pinWhy = false, nil
+        if pinned then pinOn, pinWhy = pinned.eligible() end
+        local offset = pinOn and 1 or 0
+        if pinOn then
+            placeRow(pinRow, 1)
+            local on = pinned.get()
+            pinRow.icon:SetDesaturated(not on)
+            pinRow.check:SetChecked(on and true or false)
+            pinRow.check:Show(); pinRow.icon:Show()
+            -- 🔴 明写「固定」两个字。它不能移不能删,而屏幕上跟别的行长得一样 ——
+            --    不写的话人会去找它的 ^ v,找不到就以为是 bug。
+            pinRow.text:SetFormattedText("%s1. %s  |cff808080(固定,不能移动)|r",
+                on and "" or "|cff707070", pinned.label)
+            pinRow.text:Show()
+        else
+            hideRow(pinRow)
+        end
+
         local list, custom = ns.AuraList(d, kind, sp)
         local vis = #(ns.VisibleAuraList(d, kind, sp))
         local head = custom and "|cffffcc00你自己配的|r" or "内置表"
         if cap then
-            status:SetFormattedText("%s —— 占 %d / %d 格%s", head, vis, cap,
-                (#list > vis) and ("(另有 " .. (#list - vis) .. " 个没勾,不占格)") or "")
+            -- 🔴 数**屏幕上真有几格**,把固定格算进去。0.13.1 报的是列表自己的
+            --    6/8,而屏幕上是 7 个 —— 那就是配置面板在撒谎。
+            local shownPin = (pinOn and pinned.get()) and 1 or 0
+            status:SetFormattedText("%s —— 屏幕上 %d / %d 格%s%s", head,
+                vis + shownPin, cap + offset,
+                (#list > vis) and ("(另有 " .. (#list - vis) .. " 个没勾)") or "",
+                pinOn and "(第 1 格是沸点专格)" or "")
         else
             status:SetFormattedText("%s —— %d 个%s", head, #list,
                 (#list > vis) and ("(其中 " .. (#list - vis) .. " 个没勾)") or "")
+        end
+        if pinned and not pinOn and pinWhy then
+            note:SetText("|cff808080沸点专格:" .. pinWhy .. "。|r")
         end
         -- ⚠ 列表比编辑器能列的还长时**要说出来**。canon:静默截断读起来跟"全都在"
         --   一模一样,而这里恰恰是"我配的那个怎么不见了"最容易发生的地方。
@@ -527,27 +625,32 @@ function Col:AuraEditor(kind, maxRows, cap, reorder, visibleRows)
             note:SetText(("还有 %d 个没列出来(这个编辑器最多 %d 行)—— 用 /dch 看全部。")
                 :format(#list - maxRows, maxRows))
         end
-        child:SetHeight(math.max(shownRows, #list) * ROW_H)
+        local total = #list + offset
+        child:SetHeight(math.max(shownRows, total) * ROW_H)
         -- 装得下就把滚动条收起来:一条永远滑不动的滚动条只是噪音。
-        if scroll.ScrollBar then scroll.ScrollBar:SetShown(#list > shownRows) end
+        if scroll.ScrollBar then scroll.ScrollBar:SetShown(total > shownRows) end
 
         for i = 1, maxRows do
             local r, id = rows[i], list[i]
             if not id then
                 hideRow(r)
             else
+                placeRow(r, i + offset)
                 local hidden = ns.IsAuraHidden(d, kind, sp, id)
                 local tex = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)
                 r.icon:SetTexture(tex or 134400)          -- 134400 = 问号图标
                 r.icon:SetDesaturated(hidden)
                 r.icon:Show()
                 r.check:SetChecked(not hidden); r.check:Show()
-                -- 序号 = 格号(固定格位那两排);名字查不到就红字 —— 那是填错 ID 唯一看得见的地方。
+                -- 🔴 序号 = **屏幕上的格号**(算上固定格)。不加 offset 的话血 DK 的
+                --    「1.」指的是屏幕上第 2 格 —— 而那正是 0.13.1 那个撒谎的形状。
+                --    名字查不到就红字 —— 那是填错 ID 唯一看得见的地方。
                 r.text:SetFormattedText("%s%d. %s  |cff808080(%d)|r",
-                    hidden and "|cff707070" or "", i, ns.SpellLabel(id), id)
+                    hidden and "|cff707070" or "", i + offset, ns.SpellLabel(id), id)
                 r.text:Show()
                 if r.up then
                     -- 🔴 第一格的 ^ 和最后一格的 v 必须**点不动**,不是点了没反应。
+                    --    ⚠ 有固定格时,列表第 1 项的 ^ 仍然是灰的 —— 它换不到固定格前面去。
                     r.up:SetEnabled(i > 1); r.up:Show()
                     r.down:SetEnabled(i < #list); r.down:Show()
                 end
@@ -591,15 +694,23 @@ local function BuildMainPage()
     c:Check("锁定位置", "locked",
         "取消勾选就能拖。血条 / 主资源 / 施法条**哪根都能抓**(次要资源那排格子抓不动,它太薄)。摆好记得勾回来。",
         ns.ApplyLayout)
-    local testBtn
-    testBtn = c:Button(ns.IsTestMode() and "演示模式:开" or "演示模式:关", 130, function()
-        testBtn:SetText(ns.ToggleTest() and "演示模式:开" or "演示模式:关")
+    -- 🔴 只给**一个**模式按钮。配置模式 = 演示模式 + aura 占位框 + 自动解锁,
+    --    它完全盖住演示模式 —— 并排放两个"看起来差不多"的按钮,人只会去猜该点哪个。
+    --    (`/dch test` 还留着,想只填假数据不解锁的时候用。)
+    local cfgBtn
+    local function cfgText() return ns.IsConfigMode() and "配置模式:开" or "配置模式:关" end
+    cfgBtn = c:Button(cfgText(), 130, function()
+        ns.ToggleConfig()
+        cfgBtn:SetText(cfgText())
+        for _, fn in ipairs(Refreshers) do pcall(fn) end
     end)
     c:Button2("回默认位置和尺寸", 150, 140, function()
         ns.ResetGeometry()
         for _, fn in ipairs(Refreshers) do pcall(fn) end
     end)
-    c:Note("演示模式把两根条填上假数据,方便摆位置(它不写存档,关掉就没了)。")
+    Refreshers[#Refreshers + 1] = function() cfgBtn:SetText(cfgText()) end
+    c:Note("配置模式:三根条填上假数据、aura 每个格子画一个占位框、并**自动解锁**,摆完再点一次全部还原(包括原来的锁定状态)。")
+    c:Note("⚠ aura 那几排的占位框**里面是空的** —— 图标是暴雪容器画的,我们塞不进假光环。空框不代表那一格有问题。")
     c:Slider("所有条的长度", 40, 1200, "width", ns.ApplyLayout)
     c:Note("全部同宽,一个值管到底 —— 次要资源那排格子加起来也等于这个长度(缝算在里面)。")
     c:Slider("条与条之间的缝", 0, 100, "gap", ns.ApplyLayout)
@@ -693,6 +804,21 @@ local function BuildResourcePage()
             or "|cffff3333现在探测不到主资源|r —— 颜色改不了(换个专精 / 变个形再看)。")
     end
     refreshMainNote(); Refreshers[#Refreshers + 1] = refreshMainNote
+    -- 🔴 上面那个「显示主资源条」是**全账号一份** —— 在血 DK 上关掉,暗牧的疯狂条
+    --    也一起没了,而那看起来像 bug。颜色早就是按资源存的,显隐一直没跟上。
+    c:CheckFn(function()
+            local n = ns.MainResourceName()
+            return n and ("单独显示 " .. n) or "单独显示(现在探测不到)"
+        end,
+        function()
+            local n = ns.MainResourceName(); if not n then return nil end
+            return not ns.IsResHidden(n)
+        end,
+        function(v)
+            local n = ns.MainResourceName(); if n then ns.SetResHidden(n, not v) end
+        end,
+        "只管**这一种**资源。换个职业/专精不受影响 —— 存的是资源名,不是一个全局开关。")
+
     do local get, set = ticksIO("powerTicks"); c:Edit("刻度(百分比,逗号分隔)", 200, get, set) end
     c:Note("⚠ 跟血条那条一样是**静态几何**:主资源的值是 secret,插件读不到、也不许拿它做比较 —— 条的长度自己就是百分比,刻度只是给你眼睛用的参照。")
 
@@ -713,6 +839,19 @@ local function BuildResourcePage()
             or "|cff808080这个专精没有离散资源(或者被 max<=12 那道防守挡了)。|r")
     end
     refreshSecNote(); Refreshers[#Refreshers + 1] = refreshSecNote
+    r:CheckFn(function()
+            local n = ns.SecondaryName()
+            return n and ("单独显示 " .. n) or "单独显示(这专精没有)"
+        end,
+        function()
+            local n = ns.SecondaryName(); if not n then return nil end
+            return not ns.IsResHidden(n)
+        end,
+        function(v)
+            local n = ns.SecondaryName(); if n then ns.SetResHidden(n, not v) end
+        end,
+        "只管**这一种**资源(血 DK 的符文 / 骑士的圣能 / 盗贼的连击点…)。上面那个「显示次要资源条」是全账号一份,这个不是。")
+
     r:Note("毁灭术的碎片会显示成「三颗半」—— 那半颗的进度也画得出来。符文按谁先冷却好排在前面。")
     return f
 end
@@ -729,40 +868,26 @@ local function BuildSelfPage()
         "资源条**下方**那排:自己身上的重要 buff 还剩多久(骨盾这种常驻的也在里面)。",
         function() ns.ApplyLayout(); if ns.BoilingEvaluate then pcall(ns.BoilingEvaluate) end end)
 
-    -- 沸点专格。⚠ 它不是 DB 顶层的一个键(存的是 db.bpSlot.manualOff,缺席 = 开)
-    -- ⇒ 不能用 Col:Check,得自己接,而且**只走 Boiling.lua 导出的动作**,
-    --   不在这儿读写那个键 —— 两份手写的判据必然会漂。
-    local bpTop = c:take(26)
-    local bpCheck = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-    bpCheck:SetPoint("TOPLEFT", c.x, bpTop)
-    bpCheck:SetSize(24, 24)
-    local bpLabel = bpCheck:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    bpLabel:SetPoint("LEFT", bpCheck, "RIGHT", 2, 0)
-    bpLabel:SetText("血 DK:沸点专格(最左那格)")
-    local bpNote = c:NoteBox(3)
-    local function refreshBp()
-        if not ns.BoilingEligible then
-            bpCheck:SetEnabled(false); bpCheck:SetChecked(false)
-            bpNote:SetText("|cff808080Boiling.lua 没加载。|r")
-            return
-        end
-        local ok, why = ns.BoilingEligible()
-        bpCheck:SetEnabled(ok)
-        bpCheck:SetChecked(ok and ns.BoilingSlotOn() or false)
-        -- 🔴 点不动的时候必须说出为什么 —— 一个变灰又不解释的勾选框读起来像"坏了"。
-        bpNote:SetText(ok
-            and "15 秒 proc 显绿、3 秒 echo 显红,都发光。它**位置固定**在最左,其余图标顺次右移。"
-            or ("|cff808080" .. (why or "现在用不上") .. "。|r"))
-    end
-    bpCheck:SetScript("OnClick", function(self2)
-        if ns.BoilingSetSlot then ns.BoilingSetSlot(self2:GetChecked() and true or false) end
-        refreshBp()
-    end)
-    refreshBp(); Refreshers[#Refreshers + 1] = refreshBp
-
     c:Header("盯哪几个 buff(按专精)")
     c:Note("勾 = 显示。取消勾选**不删配置、也不动名次**,勾回来还在原处。^ v 排左右顺序 —— 屏幕上从左到右就是这个顺序。")
-    c:AuraEditor("cds", ns.CD_SLOTS or 8, ns.CD_SLOTS or 8, true)
+    -- 🔴 沸点那一格**画在列表里**,当第 1 行,不能移不能删。
+    --    0.13.1 把它做成了列表外一个单独的勾选框 —— 错了:屏幕上血 DK 是 7 个图标,
+    --    而列表说"占 6/8 格"、里面的「1.」对应屏幕第 2 格 ⇒ **配置面板在撒谎**。
+    --    Jerry 原话就是「15+3 那个 aura 不能动,其他的可以显示/隐藏、可以调左右位置」——
+    --    「不能动」的意思是它在列表里、只是动不了,不是它不在列表里。
+    -- ⚠ 开关只走 Boiling.lua 导出的动作,**不在这儿读写那个键**
+    --    (它存的是 db.bpSlot.manualOff,缺席 = 开)—— 两份手写的判据必然会漂。
+    c:AuraEditor("cds", ns.CD_SLOTS or 8, ns.CD_SLOTS or 8, true, nil, {
+        icon  = 50842,        -- 血液沸腾:那一格画的就是它的图标
+        label = "沸点(15 秒 proc / 3 秒 echo)",
+        tip   = "15 秒 proc 显绿、3 秒 echo 显红,都发光。它钉死在最左那格,其余图标顺次右移;取消勾选就把那一格收起来,其余图标左移一格。",
+        eligible = function()
+            if not ns.BoilingEligible then return false, "Boiling.lua 没加载" end
+            return ns.BoilingEligible()
+        end,
+        get = function() return ns.BoilingSlotOn and ns.BoilingSlotOn() end,
+        set = function(v) if ns.BoilingSetSlot then ns.BoilingSetSlot(v) end end,
+    })
 
     local r = R(f)
     r:Header("大小 / 位置")
