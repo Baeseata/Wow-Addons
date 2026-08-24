@@ -194,6 +194,7 @@ BigWigs packager workflow、有效的 `CF_API_KEY`，以及**跟单仓里同一�
 | DodoQuest | 任务自动化（自动接交、最优奖励、Shift 暂停） | — |
 | DodoRaidTools | 团本阶段计时（ENCOUNTER_TIMELINE 事件） | — |
 | DodoRush 🎮 | 人群奔跑（A/D 选数学门、扩军、撞红敌、无尽） | `CLAUDE.md` |
+| DodoSentinel | 陵寝哨兵「数字游戏」中场：玩家报点名 → 团长在自建 grid 上手点打标。**2026-08-24 立项，目前零代码、只有设计档** | `CLAUDE.md` |
 | DodoSays | Azta'rec（毒瀑深渊）记忆游戏辅助：布道时手点、回响时报点；**在 CF 上**，且**只声明 `120100`** | `CLAUDE.md` / `PENDING-WORK.md` / `docs/` 研究档 |
 | DodoShield | 进战定时文字/声音提醒（多方案；如放罩子） | — |
 | DodoStatHUD | 实时属性 HUD（套装名、副属性、趋势箭头） | — |
