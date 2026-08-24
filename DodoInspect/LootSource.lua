@@ -14,6 +14,12 @@
 -- Defaults ON like the addon's other display toggles (owner decision
 -- 2026-08-14; he keeps Data/Loot.lua current by hand). It shipped opt-in
 -- because the data is season-dated -- see Options.lua for that history.
+--
+-- This file also owns the DERIVED card list the loot browser (LootPanel.lua)
+-- draws its left column from -- see ns.LootCardList below. It lives here
+-- rather than in the panel because it is pure data shaping over
+-- Data/Loot.lua with no frame in sight, which is also what makes it
+-- reachable from tools/test_gearrank.lua.
 
 local _, ns = ...
 
@@ -80,6 +86,101 @@ function ns.LootSourceText(itemID)
     local bossName = LookupName(encounterNames, encounterID, "EJ_GetEncounterInfo")
     if not bossName then return instanceName end
     return string.format("%s  #%d %s", instanceName, position, bossName)
+end
+
+-- Localized names for the loot browser, which needs them one at a time
+-- rather than folded into a source line. Same cache, same "nil until the
+-- journal is warm" contract as above -- the browser redraws.
+function ns.LootInstanceName(instanceID)
+    if type(instanceID) ~= "number" then return nil end
+    return LookupName(instanceNames, instanceID, "EJ_GetInstanceInfo")
+end
+
+function ns.LootBossName(encounterID)
+    if type(encounterID) ~= "number" then return nil end
+    return LookupName(encounterNames, encounterID, "EJ_GetEncounterInfo")
+end
+
+--------------------------------------------------------------------
+-- Card list for the loot browser's left column
+--------------------------------------------------------------------
+
+-- DERIVED from ns.LootMeta / ns.LootData / ns.ChallengeMap, never written
+-- out by hand. A hand-kept roster sitting beside a generated loot table is
+-- a second copy of one fact: the two drift, both read as correct on their
+-- own, and nothing in the addon can say which one is right.
+--
+-- Mythic+ mode lists DUNGEONS (8 this season). Raid mode lists BOSSES
+-- (9 this season, across two instances) -- a raid is not one card, because
+-- what a player is asking is "what does THIS boss drop".
+--
+-- `groupFirst` marks the first boss of each instance so the panel can put
+-- the raid name above it. Nine boss names with no headings read as one
+-- raid, and this season they are not.
+--
+-- A boss that drops nothing we know about gets no card. That is right for
+-- a loot browser and worth saying out loud: "9 bosses" here means "9
+-- bosses that drop gear in our table", not "9 bosses in the raid".
+--
+-- Order is derived and total: instance id, then boss position, then
+-- encounter id. pairs() order is unspecified, and a card list that
+-- reshuffles between two openings is a bug nobody can reproduce on demand.
+local cardLists = {}
+
+function ns.LootCardList(mode)
+    if not (ns.LootData and ns.LootMeta) then return nil end
+    mode = (mode == "raid") and "raid" or "mythic"
+    if cardLists[mode] then return cardLists[mode] end
+
+    local list = {}
+    if mode == "mythic" then
+        local ids = {}
+        for instanceID in pairs(ns.LootMeta.dungeons or {}) do
+            ids[#ids + 1] = instanceID
+        end
+        table.sort(ids)
+        for _, instanceID in ipairs(ids) do
+            list[#list + 1] = {
+                kind = "dungeon",
+                key = "d" .. instanceID,
+                instanceID = instanceID,
+                mapID = ns.ChallengeMap and ns.ChallengeMap[instanceID] or nil,
+                groupFirst = false,
+            }
+        end
+    else
+        local seen, rows = {}, {}
+        for _, entry in pairs(ns.LootData) do
+            local instanceID, encounterID, position = entry[1], entry[2], entry[3]
+            local pair = tostring(instanceID) .. ":" .. tostring(encounterID)
+            if (ns.LootMeta.raids or {})[instanceID] and not seen[pair] then
+                seen[pair] = true
+                rows[#rows + 1] = {
+                    kind = "boss",
+                    key = "b" .. encounterID,
+                    instanceID = instanceID,
+                    encounterID = encounterID,
+                    position = position,
+                }
+            end
+        end
+        table.sort(rows, function(a, b)
+            if a.instanceID ~= b.instanceID then
+                return a.instanceID < b.instanceID
+            end
+            if a.position ~= b.position then return a.position < b.position end
+            return a.encounterID < b.encounterID
+        end)
+        local lastInstance
+        for _, row in ipairs(rows) do
+            row.groupFirst = (row.instanceID ~= lastInstance)
+            lastInstance = row.instanceID
+            list[#list + 1] = row
+        end
+    end
+
+    cardLists[mode] = list
+    return list
 end
 
 -- Tooltip line. TooltipDataProcessor fires for every item tooltip, which

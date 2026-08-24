@@ -171,6 +171,12 @@ function ns.RegisterOptions()
                     ns.CloseGearPanel()
                     ns.UpdateSlotButtonStates()
                 end)
+
+            AddFeatureCheckbox(category,
+                "DODO_INSPECT_LOOT_MINIMAP", "showLootMinimap",
+                "Minimap button",
+                "Show a DodoInspect button on the minimap. Clicking it opens the loot browser: this season's eight Mythic+ dungeons and nine raid bosses, with what each of them drops for the specialization you pick. Right-click the button for these options. Switching the button off does not remove the browser -- /dins loot still opens it.",
+                ns.ApplyLootMinimapEnabled)
         end
 
         AddFeatureCheckbox(category,
@@ -210,14 +216,24 @@ function ns.RegisterOptions()
     ns.OptionsRegistered = ok or nil
 end
 
--- Slash command fallback: /dins en | cn | fr | es
+-- Slash command fallback: /dins en | cn | fr | es | loot
+--
+-- `loot` is not just a convenience. It is the entry point that survives
+-- the minimap button being switched off, so turning that checkbox off
+-- costs a button rather than a feature -- and it is the one path that
+-- still works if the Settings API ever stops registering our category
+-- (this whole file's registration is inside a pcall for that reason).
 SLASH_DODOINSPECT1 = "/dins"
 SlashCmdList["DODOINSPECT"] = function(msg)
     msg = (msg or ""):lower():gsub("%s+", "")
+    if msg == "loot" then
+        ns.ToggleLootPanel()
+        return
+    end
     if ns.Locales[msg] then
         ApplyLocale(msg)
         print("DodoInspect: language set to " .. ns.L.name)
     else
-        print("DodoInspect: usage /dins en | cn | fr | es (current: " .. ns.ActiveLocaleKey .. ")")
+        print("DodoInspect: usage /dins en | cn | fr | es | loot (current: " .. ns.ActiveLocaleKey .. ")")
     end
 end

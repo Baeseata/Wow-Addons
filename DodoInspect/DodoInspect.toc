@@ -24,6 +24,8 @@ StatPriorityConfig.lua
 LootSource.lua
 GearRank.lua
 GearPanel.lua
+LootPanel.lua
+Minimap.lua
 SidePanel.lua
 Durability.lua
 StatRatings.lua

@@ -783,5 +783,136 @@ do
                "the substring rule was actually applied to every dungeon")
 end
 
+--------------------------------------------------------------------
+-- Loot browser card list: ns.LootCardList (LootSource.lua)
+--
+-- The left column of the browser is DERIVED from Data/Loot.lua rather
+-- than written out by hand, so what is checked here is that the
+-- derivation agrees with the loot table in both directions and lands in
+-- a TOTAL, stable order. pairs() is unordered: without the sort the
+-- eight cards would reshuffle between two openings of the window, which
+-- is a bug nobody can reproduce on demand and which no screenshot shows.
+--
+-- Properties, not a second copy of the algorithm: asserting the order
+-- against an expected list computed the same way here would only prove
+-- the two typings agree with each other.
+--------------------------------------------------------------------
+
+loadAddonFile("LootSource.lua")
+
+do
+    local mythic = ns.LootCardList("mythic")
+    local raid = ns.LootCardList("raid")
+
+    check(type(mythic) == "table", "the card list answers for mythic")
+    check(type(raid) == "table", "the card list answers for raid")
+
+    -- Reverse assertions first. Every loop below runs over these, so
+    -- empty lists would let the whole section pass proving nothing.
+    checkEqual(#mythic, 8, "mythic mode offers one card per dungeon")
+    checkEqual(#raid, 9, "raid mode offers one card per boss that drops gear")
+
+    -- An unknown mode must not answer with nothing. The window always
+    -- has a mode; a nil list there would draw an empty left column and
+    -- read as "this season has no dungeons".
+    checkEqual(#ns.LootCardList("bogus"), #mythic,
+               "an unrecognised mode falls back to mythic, not to empty")
+    checkEqual(#ns.LootCardList(), #mythic,
+               "a missing mode falls back to mythic, not to empty")
+
+    -- Mythic: exactly the dungeon pool, each with the challenge map id
+    -- the cards need for their icon, and no grouping (a flat list).
+    local seenKey, dungeonSeen = {}, {}
+    for _, card in ipairs(mythic) do
+        checkEqual(card.kind, "dungeon", "mythic cards are dungeons")
+        check(ns.LootMeta.dungeons[card.instanceID] == true,
+              "card " .. tostring(card.instanceID) .. " is in the dungeon pool")
+        check(type(card.mapID) == "number",
+              "dungeon " .. tostring(card.instanceID) .. " carries a challengeMapID")
+        check(card.groupFirst ~= true,
+              "dungeon cards carry no group heading -- there is only one group")
+        check(seenKey[card.key] == nil,
+              "card key " .. tostring(card.key) .. " is used once")
+        seenKey[card.key] = true
+        dungeonSeen[card.instanceID] = true
+    end
+    local missingDungeon = 0
+    for instanceID in pairs(ns.LootMeta.dungeons) do
+        if not dungeonSeen[instanceID] then missingDungeon = missingDungeon + 1 end
+    end
+    checkEqual(missingDungeon, 0, "every dungeon in the pool got a card")
+
+    -- Raid: one card per (instance, boss) pair that really drops
+    -- something, counted straight off the loot table.
+    local pairsInData, pairCount = {}, 0
+    for _, entry in pairs(ns.LootData) do
+        if ns.LootMeta.raids[entry[1]] then
+            local key = entry[1] .. ":" .. entry[2]
+            if not pairsInData[key] then
+                pairsInData[key] = 0
+                pairCount = pairCount + 1
+            end
+            pairsInData[key] = pairsInData[key] + 1
+        end
+    end
+    check(pairCount > 1, "the raid pool has more than one boss to order")
+    checkEqual(#raid, pairCount,
+               "raid cards and raid bosses-with-loot are the same set size")
+
+    local seenPair = {}
+    for _, card in ipairs(raid) do
+        checkEqual(card.kind, "boss", "raid cards are bosses")
+        check(ns.LootMeta.raids[card.instanceID] == true,
+              "boss card " .. tostring(card.encounterID) .. " belongs to a raid")
+        local key = card.instanceID .. ":" .. card.encounterID
+        check(seenPair[key] == nil,
+              "boss " .. tostring(card.encounterID) .. " gets exactly one card")
+        seenPair[key] = true
+        -- The documented boundary: a boss with nothing in our table gets
+        -- no card. Stated as an assertion so "9 bosses" cannot quietly
+        -- start meaning "9 bosses in the raid" after a rewrite.
+        check((pairsInData[key] or 0) > 0,
+              "boss " .. tostring(card.encounterID) .. " actually drops something")
+        check(seenKey[card.key] == nil,
+              "card key " .. tostring(card.key) .. " does not collide with a dungeon key")
+    end
+
+    -- TOTAL order, asserted as a property. Cards must never step
+    -- backwards in (instanceID, position) -- that is what makes the list
+    -- the same on every opening.
+    local ordered, lastInstance, lastPos = true, nil, nil
+    for _, card in ipairs(raid) do
+        if lastInstance then
+            if card.instanceID < lastInstance then
+                ordered = false
+            elseif card.instanceID == lastInstance and card.position < lastPos then
+                ordered = false
+            end
+        end
+        lastInstance, lastPos = card.instanceID, card.position
+    end
+    check(ordered, "raid cards run in a fixed instance-then-position order")
+
+    -- Group headings sit exactly on instance boundaries: one per raid,
+    -- on its first boss and nowhere else.
+    local instanceCount, groupCount, seenInstance = 0, 0, {}
+    lastInstance = nil
+    for _, card in ipairs(raid) do
+        if not seenInstance[card.instanceID] then
+            seenInstance[card.instanceID] = true
+            instanceCount = instanceCount + 1
+        end
+        if card.groupFirst then groupCount = groupCount + 1 end
+        check((card.groupFirst == true) == (card.instanceID ~= lastInstance),
+              "boss " .. tostring(card.encounterID)
+              .. " carries a heading only when its raid changes")
+        lastInstance = card.instanceID
+    end
+    check(instanceCount > 1,
+          "the raid pool spans more than one instance -- otherwise the "
+          .. "grouping above is never exercised and proves nothing")
+    checkEqual(groupCount, instanceCount, "one heading per raid, no more")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

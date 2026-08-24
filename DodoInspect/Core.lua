@@ -73,6 +73,11 @@ local function OnLogin()
     ns.SetupSidePanel()
     ns.SetupStatRatings()
     ns.SetupLootSource()
+    -- The minimap button is the loot browser's only visible entry point,
+    -- so it is built at login rather than lazily on first use: a button
+    -- that only appears once you have already found the feature is not a
+    -- way of finding the feature.
+    ns.ApplyLootMinimapEnabled()
 
     -- refresh the character views when the character frame opens
     if CharacterFrame and CharacterFrame.HookScript then

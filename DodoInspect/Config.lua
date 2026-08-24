@@ -298,6 +298,34 @@ ns.Config = {
     -- figure -- so switching costs one word if he ever changes his mind.)
     GEAR_CRAFTED_ITEM_LEVEL = 331,
 
+    -- Loot browser: the standalone window the minimap button opens, which
+    -- lists this season's dungeon and raid drops. It is NOT docked to the
+    -- Mythic+ UI: that space is where RaiderIO puts its own panel, and two
+    -- addons fighting over one anchor is a bug report waiting to happen
+    -- (owner's call 2026-08-24, replacing the ChallengesFrame mount the
+    -- design doc originally specified).
+    LOOT_MINIMAP_ANGLE = 295,
+    -- The addon's OWN art, not a game icon path. A missing icon path is the
+    -- first suspect whenever a minimap button renders blank -- the client
+    -- draws nothing and says nothing -- and this file ships with the addon,
+    -- so that failure mode simply does not exist here.
+    LOOT_MINIMAP_ICON = "Interface\\AddOns\\DodoInspect\\Media\\Dodo.tga",
+    -- Square texture crop, MEASURED off the file's alpha channel rather than
+    -- copied from LibDBIcon: their 0.07/0.93 exists to cut the border baked
+    -- into Blizzard's icons, and ours has none -- it has a ~20% transparent
+    -- margin instead, which uncropped would render the bird at about half
+    -- the size of every neighbouring button. 0.16..0.84 of a 64px file is a
+    -- 43px square window; the opaque pixels span x 15-50, y 11-52, so it
+    -- clears the art on every side. Re-measure if Media/Dodo.tga is redrawn.
+    LOOT_MINIMAP_CROP = 0.16,
+    -- Card list: the left column of the browser. Selected reads as "you are
+    -- looking at this one", hover as "you could look at this one", and idle
+    -- has to stay legible on its own -- these are the only three states.
+    LOOT_CARD_IDLE_COLOR     = { 0.82, 0.82, 0.82, 1 },
+    LOOT_CARD_HOVER_COLOR    = { 1.00, 1.00, 1.00, 1 },
+    LOOT_CARD_SELECTED_COLOR = { 1.00, 0.82, 0.20, 1 },
+    LOOT_GROUP_COLOR         = { 0.55, 0.55, 0.60, 1 }, -- raid name above its bosses
+
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)
     STAT_COLORS = {

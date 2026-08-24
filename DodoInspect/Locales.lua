@@ -109,6 +109,15 @@ ns.Locales = {
         gearOneHand = "One-hand",
         gearNoOffHandSpec = "This specialization does not use an off hand",
         gearNoOffHandTwo = "A two-handed weapon leaves this slot empty",
+        -- Loot browser (minimap button -> dungeon and raid drops)
+        lootTitle      = "Season Drops",
+        lootTabMythic  = "Mythic+",
+        lootTabRaid    = "Raid",
+        lootPickSource = "Pick a dungeon or a boss on the left.",
+        lootNoData     = "No loot table for this season",
+        lootMiniClick  = "Click: this season's dungeon and raid drops.",
+        lootMiniRight  = "Right-click: DodoInspect options.",
+        lootMiniDrag   = "Drag: move around the minimap.",
         priBuild      = "Build: %s",
         -- stat priority: player customization
         priCustomTag   = "C",
@@ -208,6 +217,15 @@ ns.Locales = {
         gearOneHand = "单手",
         gearNoOffHandSpec = "该专精不使用副手",
         gearNoOffHandTwo = "使用双手武器时该栏空置",
+        -- 掉落查询窗口（小地图按钮 -> 大秘境 / 团本掉落）
+        lootTitle      = "本季掉落",
+        lootTabMythic  = "大秘境",
+        lootTabRaid    = "团本",
+        lootPickSource = "先在左边选一个副本或首领。",
+        lootNoData     = "本季没有掉落数据",
+        lootMiniClick  = "左键：本季大秘境 / 团本掉落。",
+        lootMiniRight  = "右键：DodoInspect 设置。",
+        lootMiniDrag   = "拖动：沿小地图移动。",
         priBuild      = "构建: %s",
         -- stat priority: player customization
         priCustomTag   = "自",
@@ -323,6 +341,15 @@ ns.Locales = {
         gearOneHand = "Une main",
         gearNoOffHandSpec = "Cette specialisation n'utilise pas de main gauche",
         gearNoOffHandTwo = "Une arme a deux mains laisse cet emplacement vide",
+        -- Butin de la saison (bouton minicarte)
+        lootTitle      = "Butin de saison",
+        lootTabMythic  = "Mythique+",
+        lootTabRaid    = "Raid",
+        lootPickSource = "Choisissez un donjon ou un boss a gauche.",
+        lootNoData     = "Pas de table de butin pour cette saison",
+        lootMiniClick  = "Clic : butin des donjons et raids de la saison.",
+        lootMiniRight  = "Clic droit : options de DodoInspect.",
+        lootMiniDrag   = "Glisser : deplacer autour de la minicarte.",
         priBuild      = "Build : %s",
         -- stat priority: player customization
         priCustomTag   = "P",
@@ -422,6 +449,15 @@ ns.Locales = {
         gearOneHand = "Una mano",
         gearNoOffHandSpec = "Esta especializacion no usa mano izquierda",
         gearNoOffHandTwo = "Un arma a dos manos deja esta ranura vacia",
+        -- Botin de la temporada (boton del minimapa)
+        lootTitle      = "Botin de temporada",
+        lootTabMythic  = "Mitica+",
+        lootTabRaid    = "Banda",
+        lootPickSource = "Elige una mazmorra o un jefe a la izquierda.",
+        lootNoData     = "No hay tabla de botin para esta temporada",
+        lootMiniClick  = "Clic: botin de mazmorras y bandas de la temporada.",
+        lootMiniRight  = "Clic derecho: opciones de DodoInspect.",
+        lootMiniDrag   = "Arrastrar: mover alrededor del minimapa.",
         priBuild      = "Build: %s",
         -- stat priority: player customization
         priCustomTag   = "P",
