@@ -197,13 +197,17 @@
 
 ## 施工顺序建议
 
-1. **数据层**:`gen_loot.py` 生成 challengeMap 映射表 + 简称表进 `Data/Loot.lua`；
-   `Config` 加 `GEAR_HERO_BONUS_ID = 12843`。跑 `lua tools/test_gearrank.lua` 保持绿。
-2. ~~**真机点两件事**~~ —— **下拉栏那条已定案**(见上面「下拉栏」节,零代码结论)。
-   **只剩一件真机的活**:`12843` 是不是真给 311。三条离线推导已经互相对上
-   (见 `Config.lua` 的 `GEAR_HERO_BONUS_ID` 注释),但**三条推导对上不等于量过**。
-   顺带同一枪还能答分母(3/6 还是 3/8)和轨道名(是不是真叫 Hero)。
-3. **侧栏一**:卡片 + 挂载 + 跟随隐藏。先不接侧栏二，单独能开能关。
+1. ~~**数据层**~~ ✅ **2026-08-22 已落地**(`ns.ChallengeMap` / `ns.DungeonShort` /
+   `gen_loot.py --build` / test guard + `fixture_dungeonnames.lua`)。细节见 CLAUDE.md
+   「🚧 施工中:大秘境掉落查询侧栏」那节。
+2. ~~**真机点两件事**~~ ✅ **两件都定案了,一件都不剩**:
+   - `12843` = 311 —— **2026-08-22 HOME 游戏内实测坐实**(三行实测值在 CLAUDE.md 那节)。
+   - 下拉栏 —— 定案走**新 API**(`WowStyle1DropdownTemplate` + `SetupMenu` + `CreateRadio`);
+     照抄本机 `DodoGuanzhu/Options.lua` 513 / 550 行。⚠ 老 `UIDropDownMenu_*` 是
+     deprecated-but-alive,**照老写法写不会报错**,所以没有任何信号会拦你。
+   - ⚠ 仍未验的只有**轨道名是不是真叫「Hero」**(DB2 里没有轨道名字段,是按位置推的)。
+     它不阻塞任何一步 —— 只影响 tooltip 措辞要不要写「Hero」这个词。
+3. **← 下一步在这里。侧栏一**:卡片 + 挂载 + 跟随隐藏。先不接侧栏二，单独能开能关。
 4. **侧栏二**:列表 + 四列 + tooltip。
 5. **下拉栏**:切职业/专精。
 6. 第四列持有状态扫描。

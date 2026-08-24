@@ -226,7 +226,11 @@ ns.Config = {
     -- Provenance, stated apart because these are not equally strong:
     --   MEASURED in game: 12841 -> 305, which is sequence 1 of the same
     --     group 617 that 12843 sits in at sequence 3.
-    --   DERIVED (2026-08-22, three independent routes, no measurement):
+    --   MEASURED in game 2026-08-22 on HOME: 12843 renders item 250243 at
+    --     ilvl 311, quality 4. The three derivations below predicted it and
+    --     are kept because re-deriving is how the next season starts, not
+    --     because the number still needs them.
+    --   DERIVED (2026-08-22, three independent routes, before the measurement):
     --     a. ItemBonus(12843) Type=49 -> ItemScalingConfig 316 -> 311.
     --        The same chain reproduces all five in-game measurements on
     --        record (285/292/305/334/344) exactly, and reading Value_0
@@ -237,10 +241,11 @@ ns.Config = {
     --     c. MythicPlusSeasonRewardLevels, season 120 tier 256 (the M+
     --        tier) walks 305 305 308 308 311 315 315 315 318 for keys
     --        +2..+10, i.e. 311 is a level this season really hands out.
-    -- Three derivations agreeing is still not a measurement, and this
-    -- project has been burned by exactly that before. Confirm with the
-    -- recipe in CLAUDE.md ("tooltip rendered at 6/6 / 9/6") -- one /run
-    -- -- and delete this paragraph once it has been seen in game.
+    -- Kept as a rule even though this one is now measured: three
+    -- derivations agreeing is not a measurement, and this project has
+    -- been burned by exactly that before. Next season, re-derive AND
+    -- re-measure -- the recipe is in CLAUDE.md ("tooltip rendered at
+    -- 6/6 / 9/6"), one /run.
     --
     -- "3 of 6" is settled, and not by counting rows: group 617 has eight
     -- entries, but only five carry an ItemExtendedCostID -- five paid
