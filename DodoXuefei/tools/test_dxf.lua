@@ -207,10 +207,11 @@ local function G(name, fn, abName, ab) guards[#guards + 1] =
 -- 读的人拿到恒 nil。`luac -p` 挑不出来(写全局是合法 Lua),纯函数测试也够不着。
 -- 🔑 **新增任何模块级 local 都要加进这张清单** —— 不加的话守卫对它完全失明。
 local NAMES = {
-    "slot", "container", "bg", "label", "idle", "buttons", "needsResize",
+    "slot", "container", "bg", "label", "idle", "borderHost", "border", "buttons", "needsResize",
     "glowOn", "lookKey", "overrideID", "liveFrame", "autoFrame", "DB",
     "echo", "live",
-    "Reposition", "ApplyGeom", "ApplyIdle", "BuildSlot", "ShowSlot", "HideSlot", "Evaluate", "Why",
+    "Reposition", "ApplyGeom", "ApplyIdle", "ApplyBorder",
+    "BuildSlot", "ShowSlot", "HideSlot", "Evaluate", "Why",
 }
 -- 🔴 两个真会咬人的锚点坑,下面各配了一条反向断言证明没踩:
 --    ① 注释里出现同名 ⇒ 先剥注释(不剥的话它扫的是一段说明文字)
@@ -346,7 +347,7 @@ end)
 -- 写 false 就是把默认值落了盘 ⇒ 以后再改默认值对这个人一点用都没有,而且自动路径静默。
 G("manualOff / unlocked 只删键不写 false", function(core)
     local code = stripComments(core)
-    for _, k in ipairs({ "manualOff", "unlocked" }) do
+    for _, k in ipairs({ "manualOff", "unlocked", "borderOff" }) do
         if code:find(k .. "%s*=%s*false") then
             return false, k .. " 被写成了 false —— 该写 nil(删键)"
         end
@@ -406,6 +407,50 @@ G("RowUpdate 里灰图跟着 active 翻", function(core)
     return true
 end, "把 idle:SetShown 那句删掉", function(core, opt)
     return must(replace(core, "        if idle then idle:SetShown(not active) end", "")), opt
+end)
+
+-- ── ④.7e SetAtlas 第二个参数必须是 false ────────────────────────────
+-- 🔴 它是 **useAtlasSize**。传 true 的话贴图会用图集自带的尺寸,
+--    **把玩家设的宽高整个吃掉** —— 而屏幕上的表现只是"边框大小不对",
+--    没人会想到是一个布尔传反了(暴雪自己传的常量叫 IgnoreAtlasSize,实测 = false)。
+G("border:SetAtlas 传的是 false(不吃图集自带尺寸)", function(core)
+    local line = core:match("border:SetAtlas%(BORDER_ATLAS, ([%a]+)%)")
+    if not line then return false, "找不到 border:SetAtlas(BORDER_ATLAS, ...) 这一句" end
+    if line ~= "false" then return false, "第二个参数是 " .. line .. ",传 false 才轮得到我们自己的 SetSize" end
+    return true
+end, "把 useAtlasSize 传成 true", function(core, opt)
+    return must(replace(core, "border:SetAtlas(BORDER_ATLAS, false)",
+                              "border:SetAtlas(BORDER_ATLAS, true)")), opt
+end)
+
+-- ── ④.7f 边框的层级必须高过 echo ────────────────────────────────────
+-- 绿(容器 button)和红(echo 框)都是**独立框体**,层级天然高于父框体的贴图层。
+-- 边框层级不够高的症状是「平时看得见、一亮就没了」—— 像 bug 不像层级问题。
+-- 判据写成**比较两个数**而不是断言 30:以后谁调了 echo 的层级,这条会跟着红。
+G("边框层级高过 echo", function(core)
+    local b = core:match("borderHost:SetFrameLevel%(sf:GetFrameLevel%(%) %+ (%d+)%)")
+    local e = core:match("f:SetFrameLevel%(parent:GetFrameLevel%(%) %+ (%d+)%)")
+    if not b then return false, "找不到 borderHost 的 SetFrameLevel" end
+    if not e then return false, "找不到 echo 的 SetFrameLevel" end
+    if tonumber(b) <= tonumber(e) then
+        return false, ("边框 +%s 没高过 echo +%s ⇒ 红色一亮边框就被盖住"):format(b, e)
+    end
+    return true
+end, "把边框层级压到 echo 底下", function(core, opt)
+    return must(replace(core, "borderHost:SetFrameLevel(sf:GetFrameLevel() + 30)",
+                              "borderHost:SetFrameLevel(sf:GetFrameLevel() + 5)")), opt
+end)
+
+-- ── ④.7g 改尺寸时边框要跟着变 ───────────────────────────────────────
+G("ApplyGeom 里也重算边框", function(core)
+    local body = core:match("ApplyGeom = function%(%).-\nend")
+    if not body then return false, "抠不到 ApplyGeom" end
+    if not body:find("ApplyBorder()", 1, true) then
+        return false, "改宽高时没重算边框 ⇒ 图标变了边框没变"
+    end
+    return true
+end, "把 ApplyGeom 里的 ApplyBorder() 删掉", function(core, opt)
+    return must(replace(core, "    ApplyIdle()\n    ApplyBorder()", "    ApplyIdle()")), opt
 end)
 
 -- ── ④.8 ns.* 接口两边对得上 ──────────────────────────────────────
@@ -630,6 +675,11 @@ do
         ok_("改尺寸不炸(含 SetAuraGroupLayout + 重刷按钮)", pcall(function() nsX.SetNum("width", 200) end), "改尺寸炸了")
         check("改尺寸被钳到上限", nsX.GetNum("width"), 128)
         ok_("改透明度不炸", pcall(function() nsX.SetNum("idleAlpha", 0) end), "ApplyIdle 炸了")
+        check("边框默认是开的", nsX.IsBorderOn(), true)
+        ok_("关边框不炸", pcall(function() nsX.SetBorderOn(false) end), "ApplyBorder 炸了")
+        check("关掉之后读回来是关的", nsX.IsBorderOn(), false)
+        ok_("再开回来不炸", pcall(function() nsX.SetBorderOn(true) end), "ApplyBorder 炸了")
+        check("开回来读得到开", nsX.IsBorderOn(), true)
         check("透明度调得到 0(= 不画)", nsX.GetNum("idleAlpha"), 0)
         ok_("/dxf 无参不炸", pcall(function() G.SlashCmdList["DODOXUEFEI"]("") end), "斜杠命令炸了")
         ok_("/dxf why 不炸", pcall(function() G.SlashCmdList["DODOXUEFEI"]("why") end),

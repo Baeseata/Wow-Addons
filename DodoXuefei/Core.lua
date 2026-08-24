@@ -42,6 +42,21 @@ local ID = {
 local SPEC_BLOOD = 250
 local ECHO_LEN   = 3.0
 
+-- ---------------------------------------------------------------- 暴雪原生 aura 边框
+-- 🔴 这两个数是**扒暴雪源码来的,不是调出来的**(2026-08-23,Gethe/wow-ui-source live):
+--   · atlas 名 = `AuraUtil.SetAuraBorderAtlas` 里 `DEBUFF_DISPLAY_INFO["None"].basicAtlas`
+--     (`Blizzard_FrameXMLUtil/AuraUtil.lua`)。**暴雪只给 debuff 画边框,buff 一律不画**
+--     (`SetAuraBorderAtlasFromAura`:`if auraData.isHarmful then Show else Hide`)——
+--     所以"正常暴雪 aura 边框"指的就是这张,没有第二张 buff 版的。
+--   · 比例 = `Blizzard_BuffFrame/BuffFrameTemplates.xml` 的 `AuraButtonArtTemplate`:
+--     图标 30x30、边框 **40x40 居中** ⇒ 边框比图标大 1/3,**故意往外探出**一圈。
+--     这就是那个样式的一部分,不是算错了。
+-- ⚠ `SetAtlas` 第二个参数是 **useAtlasSize**,暴雪传的 `TextureKitConstants.IgnoreAtlasSize`
+--   实测 **= false**(`Blizzard_SharedXMLBase/TextureUtil.lua`)⇒ 传 false,让我们自己的
+--   SetSize 说了算。传反了的话它会用图集自带的尺寸,而那跟玩家设的宽高毫无关系。
+local BORDER_ATLAS = "ui-debuff-border-default-noicon"
+local BORDER_RATIO = 40 / 30
+
 -- ---------------------------------------------------------------- 模块级状态
 -- 🔴 **全部在这儿声明,一个都不许漏。** DodoCombatHUD 0.9.0 首次真机就是栽在这条上:
 --    `local segHost` 写在文件中部,而上面的函数体里那句 `segHost = CreateFrame(...)`
@@ -49,6 +64,7 @@ local ECHO_LEN   = 3.0
 --    `luac -p` 挑不出来(写全局是合法 Lua),纯函数测试也够不着框体装配。
 --    ⇒ `tools/test_dxf.lua` 有一条守卫盯着这件事:**新增任何模块级 local 都要加进那份清单**。
 local slot, container, bg, label, idle    -- 框体(idle = 不触发时那张常驻灰图)
+local borderHost, border                  -- 暴雪原生 aura 边框(自己画,见下)
 local buttons = {}                        -- 容器**已经建出来**的那些 aura button(改尺寸要挨个碰)
 local needsResize = false                 -- 想 resize 但当时碰不得(战斗中 / 光环被扣值)
 local glowOn      = false
@@ -62,7 +78,7 @@ local echo = { frame = nil, cd = nil, fs = nil, flashTex = nil,
 local live = { armed = false, glowOffAt = nil }
 
 -- 前向声明:下面互相调用,而 Lua 的 local 只对**声明之后**的代码可见。
-local Reposition, ApplyGeom, ApplyIdle, BuildSlot, ShowSlot, HideSlot, Evaluate, Why
+local Reposition, ApplyGeom, ApplyIdle, ApplyBorder, BuildSlot, ShowSlot, HideSlot, Evaluate, Why
 
 -- ---------------------------------------------------------------- secret 安全层
 -- 12.x 的 secret 值**用 type() 认不出来** —— 它伪装成它顶替的那个数,
@@ -114,6 +130,7 @@ end
 --       idleAlpha        **不触发时**那张灰图的不透明度(%);0 = 干脆不画
 --       x / y            相对屏幕中心的偏移
 --       manualOff = true 玩家在面板里取消了「显示」。缺席 = 显示
+--       borderOff = true 关掉了边框。缺席 = **画**边框(同上:缺省该是开的存反面)
 --       unlocked  = true 解锁移动中。缺席 = 锁着(默认就该是锁着,所以存正面没问题)
 local DEF_X, DEF_Y = 0, -140
 
@@ -160,6 +177,7 @@ end
 local function Geom() return Get("width"), Get("height") end
 
 local function Hidden()   return type(DB) == "table" and DB.manualOff == true end
+local function BorderOn() return not (type(DB) == "table" and DB.borderOff == true) end
 local function Unlocked() return type(DB) == "table" and DB.unlocked  == true end
 
 -- ---------------------------------------------------------------- 绿色那半:暴雪的容器
@@ -321,6 +339,17 @@ ApplyIdle = function()
     if idle then idle:SetAlpha(Get("idleAlpha") / 100) end
 end
 
+-- 边框:尺寸跟着图标走(暴雪那个 4/3 比例),显隐跟着 borderOff 走。
+-- ⚠ 它住在一个**层级更高的子框体**里,不是 slot 自己的贴图层 ——
+--   绿(容器 button)和红(echo 框)都是独立框体,层级天然高于父框体的任何贴图层,
+--   边框画在 slot 上就会被它们盖住,而症状是「平时看得见、一亮就没了」。
+ApplyBorder = function()
+    if not border then return end
+    local w, h = Geom()
+    border:SetSize(w * BORDER_RATIO, h * BORDER_RATIO)
+    border:SetShown(BorderOn())
+end
+
 ApplyGeom = function()
     if not slot then return end
     local w, h = Geom()
@@ -336,6 +365,7 @@ ApplyGeom = function()
     end
     RestyleButtons()
     ApplyIdle()
+    ApplyBorder()
     if echo.fs then
         pcall(function()
             echo.fs:SetFont(select(1, echo.fs:GetFont()) or STANDARD_TEXT_FONT,
@@ -564,6 +594,15 @@ BuildSlot = function()
     end
     BuildEcho(sf)
 
+    -- 边框放最上面一层:比 echo(+20)还高,这样红绿灰三种状态它都罩得住。
+    borderHost = CreateFrame("Frame", nil, sf)
+    borderHost:SetAllPoints(sf)
+    borderHost:SetFrameLevel(sf:GetFrameLevel() + 30)
+    border = borderHost:CreateTexture(nil, "OVERLAY")
+    border:SetPoint("CENTER", sf, "CENTER", 0, 0)
+    -- 第二个参数是 useAtlasSize;传 false 让下面 ApplyBorder 里的 SetSize 说了算。
+    pcall(function() border:SetAtlas(BORDER_ATLAS, false) end)
+
     sf:RegisterForDrag("LeftButton")
     sf:SetScript("OnDragStart", function(self)
         if Unlocked() then self:StartMoving() end
@@ -675,9 +714,11 @@ Why = function()
     local w, h = Geom()
     emit(("  ⑦ 容器建了=%s 已建按钮=%d 待补尺寸=%s 现在能碰按钮=%s"):format(
         tostring(container ~= nil), #buttons, tostring(needsResize), tostring(CanTouchButtons())))
-    emit(("  ⑧ 宽x高 = %dx%d  不触发时 %d%%(0 = 不画)  位置 = %d, %d(相对屏幕中心)"):format(
+    emit(("  ⑧ 边框 = %s(贴的是暴雪那张 %s,%.2f 倍图标大小)"):format(
+        tostring(BorderOn()), BORDER_ATLAS, BORDER_RATIO))
+    emit(("  ⑨ 宽x高 = %dx%d  不触发时 %d%%(0 = 不画)  位置 = %d, %d(相对屏幕中心)"):format(
         w, h, Get("idleAlpha"), Coord("x", DEF_X), Coord("y", DEF_Y)))
-    emit("  ⑨ 光环被扣值? = " .. call(C_Secrets and C_Secrets.ShouldAurasBeSecret)
+    emit("  ⑩ 光环被扣值? = " .. call(C_Secrets and C_Secrets.ShouldAurasBeSecret)
          .. "   血沸正高亮? = " .. tostring(ProcUp()))
     emit("---- 完,整段发我 ----")
 end
@@ -753,6 +794,13 @@ ns.SetSlotShown  = function(v)
         emit("沸点格:关。想要回来在面板里勾上,或者 `/dxf on`。")
     end
 end
+ns.IsBorderOn    = function() return BorderOn() end
+ns.SetBorderOn   = function(v)
+    if not DB then return end
+    -- ⚠ 展开写。`v and nil or true` 恒等于 true —— 这插件里已经踩过一次了。
+    if v then DB.borderOff = nil else DB.borderOff = true end
+    ApplyBorder()
+end
 ns.IsUnlocked    = function() return Unlocked() end
 ns.SetUnlocked   = function(v)
     if not DB then return end
@@ -802,6 +850,9 @@ SlashCmdList["DODOXUEFEI"] = function(msg)
             local lo, hi = ns.NumBounds(key)
             emit(("要一个 %d–%d 之间的数。现在 %s = %d"):format(lo, hi, label, ns.GetNum(key)))
         end
+    elseif cmd == "border" then
+        ns.SetBorderOn(not BorderOn())
+        emit("边框:" .. (BorderOn() and "|cff33ff33开|r" or "关"))
     elseif cmd == "pos" then
         if DB then DB.x, DB.y = nil, nil end
         Reposition()
@@ -812,12 +863,14 @@ SlashCmdList["DODOXUEFEI"] = function(msg)
             Hidden() and "|cffff5555关|r" or "|cff33ff33开|r",
             w, h, Get("idleAlpha"), Coord("x", DEF_X), Coord("y", DEF_Y),
             Unlocked() and "|cffffff00解锁中|r" or "锁着"))
+        emit("  边框:" .. (BorderOn() and "开" or "关"))
         local why = ns.WhyNotShown()
         if why then emit("  现在不显示,因为:" .. why) end
         Print("  /dxf on|off  显示 / 不显示")
         Print("  /dxf unlock|lock  解锁拖动 / 锁上")
         Print("  /dxf w <数>  /dxf h <数>  宽 / 高(也可以在 ESC → 选项 → 插件 → DodoXuefei 里拉滑条)")
         Print("  /dxf alpha <0-100>  不触发时那张灰图的透明度;|cffffff000 = 干脆不画|r")
+        Print("  /dxf border  边框开 / 关")
         Print("  /dxf pos     位置回默认(拖丢了用这个)")
         Print("  /dxf why     它为什么不出现 —— 把整段发给 Doodo")
     end

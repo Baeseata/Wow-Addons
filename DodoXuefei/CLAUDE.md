@@ -51,6 +51,25 @@ canon 那条「同一不变式两份手写实现 = 静默分歧发生器」成�
   而容器跑在 C 层拿真数据 ⇒ **它画得出来**。「绿现在亮着吗」也不能问容器
   (`AuraButton:IsShown()` 是 secret),拿 `IsSpellOverlayed(血沸)` 当代理(明文 bool)
 
+## 🔴 边框:两个数是扒暴雪源码来的,不是调出来的
+
+1.2 加的。`atlas = ui-debuff-border-default-noicon`,尺寸 = **图标的 4/3、居中**。取证(2026-08-23,`Gethe/wow-ui-source` live):
+
+- atlas 名 = `AuraUtil.SetAuraBorderAtlas` 里 `DEBUFF_DISPLAY_INFO["None"].basicAtlas`
+  (`Blizzard_FrameXMLUtil/AuraUtil.lua`)。🔑 **暴雪只给 debuff 画边框,buff 一律不画**
+  (`SetAuraBorderAtlasFromAura`:`if auraData.isHarmful then Show else Hide`)——
+  所以「正常暴雪 aura 边框」指的就是这一张,**没有第二张 buff 版的**。
+- 比例 = `Blizzard_BuffFrame/BuffFrameTemplates.xml` 的 `AuraButtonArtTemplate`:
+  图标 30x30、边框 **40x40 居中** ⇒ 它**故意往外探出**一圈。那是样式的一部分,不是算错了
+  (⇒ 设 48px 的图标,连边框的视觉占地是 64px)。
+- ⚠ `SetAtlas` 第二个参数是 **useAtlasSize**,必须传 **false**。暴雪传的常量叫
+  `TextureKitConstants.IgnoreAtlasSize`,实测 **= false**(`Blizzard_SharedXMLBase/TextureUtil.lua`)。
+  传反了它会用图集自带尺寸,**把玩家设的宽高整个吃掉**,而屏幕上只表现成"边框大小不对"。
+- 🔴 边框住一个**层级更高的子框体**(`+30`),不是 slot 自己的贴图层:绿(容器 button)
+  和红(echo 框)都是独立**框体**,层级天然高于父框体的任何贴图层 ——
+  画在 slot 上的症状是「平时看得见、一亮就没了」,像 bug 不像层级问题。
+  守卫比的是**两个数的大小**而不是断言 30,以后谁调了 echo 的层级它会跟着红。
+
 ## 🔴 尺寸有**三个**消费方,少碰一个就是「半生效」
 
 外框 `slot:SetSize` · 容器的 flow layout(`SetAuraGroupLayout`)· **已经建出来的那些 button**。
@@ -87,7 +106,7 @@ DodoGrid `Auras.lua:474`)—— canon 那条「三个源分工:契约答能不�
 
 ## 面板(`Options.lua`)
 
-ESC → 选项 → 插件 → DodoXuefei。一页:显示 / 解锁移动 / 宽 / 高 / **不触发时的透明度**(后三个都是滑条 + 数字输入框,共用同一份 `Col:Num`)。
+ESC → 选项 → 插件 → DodoXuefei。一页:显示 / 解锁移动 / **边框** / 宽 / 高 / **不触发时的透明度**(后三个都是滑条 + 数字输入框,共用同一份 `Col:Num`)。
 
 - **布局是游标式的(`Col:take`),页面里一个 y 坐标都不许写。** DodoCombatHUD 0.13.0 手写 y
   真机满屏文字互相压 —— 说明文字换行成几行只有运行时才知道,手写 y 等于替一个你算不出来的量猜常数。
@@ -124,6 +143,9 @@ lua tools/test_dxf.lua
 | 右边输入框打 `999` 回车 | 回读成 `128`(被钳住),不是原样收下 |
 | **没 proc 的时候看那一格** | 有一张**灰掉的**血液沸腾图标常驻;proc 一亮换成彩色 |
 | 透明度拉到 **0** | 不触发时**整格透明**(= 1.0 的老行为)。0 是合法值,不是坏值 |
+| **打出被高亮的那发血沸** | 边框要**一直在**(红的亮起来时也在)—— 没了 = 层级被压到 echo 底下 |
+| 拉宽度滑条 | 边框跟着一起变;它比图标大一圈是**暴雪原生比例**,不是画大了 |
+| 取消勾「边框」 | 边框消失,图标本身不动 |
 | 输入框**点进去什么都不改**再点别处 | 值不许变 |
 
 ## ⛔ 别再试的

@@ -215,6 +215,10 @@ local function BuildPage()
     c:Note("解锁期间它**无视专精和天赋**先显示出来,好让你在任何角色上都摆得了位置;" ..
            "取消勾选就按正常规矩来。锁着的时候那一格|cff33ff33不吃鼠标|r,不会挡住你点身后的东西。")
 
+    c:Check("边框", ns.IsBorderOn, ns.SetBorderOn,
+            "暴雪自己给 debuff 画的那张边框(atlas ui-debuff-border-default-noicon)。"
+            .. "它比图标大 1/3、往外探出一圈 —— 暴雪原生就是这个比例,不是画大了。")
+
     c:Num("宽", "width", "px")
     c:Num("高", "height", "px")
     c:Note("滑条和右边那个框是**同一个值**,改哪个都行,当场生效。" ..
