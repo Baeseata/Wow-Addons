@@ -102,7 +102,14 @@ _G.C_Item = {
   -- collapse the whole list to a single row and the row assertions would
   -- be measuring the deduper instead of the draw.
   GetItemInfo = function(itemID) return "Item " .. tostring(itemID) end,
-  GetDetailedItemLevelInfo = function() return 311 end,
+  -- Answers a DIFFERENT number for a link marked LOW, so "keep the
+  -- better copy" is a question the harness can actually pose. A
+  -- constant here would make that assertion pass no matter which copy
+  -- the scan kept.
+  GetDetailedItemLevelInfo = function(link)
+    if type(link) == "string" and link:find("LOW", 1, true) then return 285 end
+    return 311
+  end,
 }
 
 -- Fury warrior: plate, Strength, and its stat priority resolves without
@@ -116,11 +123,35 @@ _G.GetSpecializationInfo = function() return TEST_SPEC end
 -- against whatever happens to be in the season data.
 local equippedLinks, bagLinks = {}, {}
 _G.GetInventoryItemLink = function(_, slotID) return equippedLinks[slotID] end
+-- ns.LootOwnedIndex derives its container list from Enum.BagIndex, so
+-- without this the harness silently took the pre-Enum fallback path and
+-- never exercised the one the live client uses. Only the fields that
+-- function reads are modelled; a name it asks for and does not find is
+-- meant to be skipped, and leaving some out is how that gets tested.
+_G.Enum = { BagIndex = {
+  Backpack = 0, ReagentBag = 5, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4,
+  Bank = -1, Reagentbank = -3,
+  CharacterBankTab_1 = 6, CharacterBankTab_2 = 7,
+  AccountBankTab_1 = 13, AccountBankTab_2 = 14,
+} }
+
+-- bag 0 is carried, container 6 is a character bank tab and 14 is a
+-- WARBAND tab -- the one a hand-written 6..12 range used to miss while
+-- accidentally scanning its neighbour. Everything else answers 0 slots,
+-- which is also how the client reports a bank nobody has opened.
+local BANK_TAB, WARBAND_TAB = 6, 14
+local bankLinks, warbandLinks = {}, {}
+local function containerFor(bag)
+  if bag == 0 then return bagLinks end
+  if bag == BANK_TAB then return bankLinks end
+  if bag == WARBAND_TAB then return warbandLinks end
+  return nil
+end
 _G.C_Container = {
-  GetContainerNumSlots = function(bag) return bag == 0 and 4 or 0 end,
+  GetContainerNumSlots = function(bag) return containerFor(bag) and 4 or 0 end,
   GetContainerItemLink = function(bag, slot)
-    if bag ~= 0 then return nil end
-    return bagLinks[slot]
+    local t = containerFor(bag)
+    return t and t[slot] or nil
   end,
 }
 _G.issecretvalue = function() return false end
@@ -178,6 +209,24 @@ local steps = {
       ns.SetLootPanelMode("raid")
       ns.SelectLootCard(ns.LootCardList("raid")[1])
       local raid = rows[1].bonusID
+      -- Raid card [1] happens to carry no 344 rows, so asserting only on
+      -- it left the GEAR_TOP_BONUS_ID half of DetailBonusID unexecuted.
+      -- Find a card that really does reach 344 and check both halves on
+      -- the SAME card, which is also the only place the difference is
+      -- visible to a player.
+      local sawTop, sawMyth = false, false
+      for _, card in ipairs(ns.LootCardList("raid")) do
+        ns.SelectLootCard(card)
+        for _, row in ipairs(rows) do
+          if row.__shown then
+            if row.bonusID == ns.Config.GEAR_TOP_BONUS_ID then sawTop = true end
+            if row.bonusID == ns.Config.GEAR_MYTH_BONUS_ID then sawMyth = true end
+          end
+        end
+      end
+      assert(sawTop, "no raid row anywhere quoted the 344 ceiling -- the "
+             .. "GEAR_TOP_BONUS_ID branch is never executed")
+      assert(sawMyth, "no raid row quoted the 334 ceiling either")
       -- The whole point of DetailBonusID. A dungeon row rendered on the
       -- Myth track overstates it by an upgrade tier and a half; a raid
       -- row rendered on the dungeon track understates it by 23 or more.
@@ -226,6 +275,44 @@ local steps = {
       ns.RefreshLootPanel()
       assert((rows[1].owned.__text or "") == "",
              "the column still claims ownership after the item is gone")
+    end },
+  { "bank and warband are both found", function()
+      ns.SetLootPanelMode("mythic")
+      ns.SelectLootCard(ns.LootCardList("mythic")[1])
+      local rows = DodoInspectLootPanel.detailRows
+      local a, b, c = rows[1].itemID, rows[2].itemID, rows[3].itemID
+      bankLinks[1]    = "item:" .. a
+      warbandLinks[1] = "item:" .. b
+      bagLinks[1]     = "item:" .. c
+      ns.RefreshLootPanel()
+      local bankWord = rows[1].owned.__text
+      assert((bankWord or "") ~= "", "a character bank tab was not scanned")
+      -- The warband tab is the one a hand-written container range used to
+      -- miss, and missing it looks exactly like not owning the item.
+      assert((rows[2].owned.__text or "") ~= "",
+             "a warband bank tab was not scanned -- whether the column "
+             .. "finds your item must not depend on which tab it is in")
+      assert(rows[2].owned.__text == bankWord,
+             "both bank kinds must read the same -- one of them saying "
+             .. "nothing is the bug this guards")
+      assert(rows[3].owned.__text ~= bankWord, "a bag must not read as a bank")
+
+      -- Precedence: the same item in a bag AND the bank reads as the bag.
+      bankLinks[2] = "item:" .. c
+      ns.RefreshLootPanel()
+      assert(rows[3].owned.__text ~= bankWord,
+             "a bag copy must outrank a bank copy")
+
+      -- Best copy within one place, not the first slot scanned.
+      bagLinks[1] = "item:" .. c .. ":LOW"
+      bagLinks[2] = "item:" .. c .. ":HIGH"
+      ns.RefreshLootPanel()
+      assert((rows[3].owned.__text or ""):find("311", 1, true),
+             "the higher item level of two copies must be the one shown")
+
+      bagLinks[1], bagLinks[2] = nil, nil
+      bankLinks[1], bankLinks[2], warbandLinks[1] = nil, nil, nil
+      ns.RefreshLootPanel()
     end },
   { "nothing truncates this season", function()
       -- MIN_DETAIL_ROWS is headroom, not a measurement, and the only

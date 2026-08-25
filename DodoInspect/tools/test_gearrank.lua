@@ -1217,5 +1217,51 @@ do
                .. "held item, however proficient its class is")
 end
 
+-- Nobody is offered another class's armor.
+--
+-- This filter had no assertion at all until 2026-08-25: seeding
+-- `keep = true` on the armor-type line left BOTH suites green while a
+-- shadow priest's Kings' Rest list went from 13 rows to 34, 21 of them
+-- leather, mail and plate. ns.PrimaryFits cannot cover for it -- this
+-- tier tags plate SI and leather AI, so a cloth Intellect spec "fits"
+-- a plate piece on the primary-stat axis and armor type is the only
+-- thing standing between them.
+do
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+    local SUBCLASS = { [1] = "Cloth", [2] = "Leather", [3] = "Mail", [4] = "Plate" }
+    -- The slots the armor-type rule applies to. Cloaks are deliberately
+    -- absent: the client files them under Cloth for everyone.
+    local TYPED = {
+        INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true,
+        INVTYPE_ROBE = true, INVTYPE_WRIST = true, INVTYPE_HAND = true,
+        INVTYPE_WAIST = true, INVTYPE_LEGS = true, INVTYPE_FEET = true,
+    }
+    local inspected, wrong, example = 0, 0, nil
+    for specID, spec in pairs(ns.SpecGear) do
+        local want = spec[1]
+        for _, mode in ipairs({ "mythic", "raid" }) do
+            for _, card in ipairs(ns.LootCardList(mode)) do
+                for _, row in ipairs(ns.SourceCandidates(card, specID, nil, mode) or {}) do
+                    local shape = shapes[row.id]
+                    local sub = shape and SUBCLASS[shape[3]]
+                    if TYPED[row.equipLoc] and shape and shape[2] == 4 and sub then
+                        inspected = inspected + 1
+                        if sub ~= want then
+                            wrong = wrong + 1
+                            example = example or string.format(
+                                "spec %d wants %s but was offered %s item %d",
+                                specID, want, sub, row.id)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    check(inspected > 200, "armor rows were actually inspected (got "
+          .. inspected .. ") -- a zero would pass the next check for free")
+    checkEqual(wrong, 0, "no spec is offered another armor type"
+               .. (example and (" (" .. example .. ")") or ""))
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)
