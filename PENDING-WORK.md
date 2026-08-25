@@ -37,10 +37,18 @@
    (分三趟正是当初分叉的成因)。
 
 2. **小地图默认角度**:2026-08-24 只消除了「精确叠死」(Airdrop 210→220),
-   **没有**消除视觉重叠 —— 8 个值全挤在 200°–265°,而环上另外 295° 空着;
-   按钮 31px、环半径约 76px ⇒ 不重叠需要约 23° 间隔,现在只有一处够。
+   **没有**消除视觉重叠 —— 多数值挤在环的同一段上。
+   耐久的那个数是几何:按钮 31px、环半径约 76px ⇒ **不重叠需要约 23° 间隔**。
+   现在有哪些角、分别归谁,**跑这条**(别信这里抄一份,它会烂):
+
+       grep -rniE 'minimapAngle|minimap = \{ angle|MINIMAP_ANGLE' --include='*.lua'
+
+   ⚠ **`-i` 和 `MINIMAP_ANGLE` 是 2026-08-24 补的** —— DodoInspect 那天加了按钮,
+   它的默认值叫 `LOOT_MINIMAP_ANGLE`,旧的大小写敏感 pattern **一个都找不到它**,
+   于是这条待办自己的复查命令对最新的那个条目是瞎的。
    真正的修法是 `Dodo/Shared.lua` 加一张角度登记表 + `Dodo.MinimapAngle(ADDON)`。
-   ⚠ 该方案对 **DodoNameplate / DodoInspect 不适用**(它们故意不挂 Dodo,见 DODO_ADDONS.md)。
+   ⚠ 该方案对 **DodoNameplate / DodoInspect 不适用**(它们故意不挂 Dodo,见 DODO_ADDONS.md)——
+   这两个只能继续手挑,所以那条 grep 是它们唯一的防撞手段。
 
 3. **DodoBricks 在 HOME 没装**(repo 有、`D:/World of Warcraft/_retail_/Interface/AddOns/` 下没有)。
    它是 5 个已发布 CF 插件之一 ⇒ HOME 上没法给它做发版前冒烟测。装 = 需要完整重启客户端。

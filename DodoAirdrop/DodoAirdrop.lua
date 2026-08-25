@@ -8,10 +8,17 @@ local DUPLICATE_WINDOW = 60
 
 -- Minimap button default angle: every Dodo addon that draws its own minimap button
 -- has to pick a DIFFERENT one, otherwise two buttons stack perfectly and the lower
--- one is unclickable on a fresh install. Angles in use across the monorepo (grep
--- 'minimapAngle|minimap = { angle' to re-check -- this list rots):
+-- one is unclickable on a fresh install. Angles in use across the monorepo
+-- (this list rots -- re-check with, from the repo root:
+--     grep -rniE 'minimapAngle|minimap = \{ angle|MINIMAP_ANGLE' --include='*.lua'
+-- ):
 --   200 DodoGuanzhu / 200 DodoSays / 205 DodoPool / 210 DodoGatherMate
 --   220 (this addon) / 225 DodoMap / 235 DodoBricks / 265 DodoRush
+--   295 DodoInspect
+-- !! The pattern above gained MINIMAP_ANGLE and -i on 2026-08-24. DodoInspect
+-- names its default LOOT_MINIMAP_ANGLE in Config.lua, and the previous
+-- case-sensitive pattern found ZERO of it -- so the re-check command was
+-- quietly blind to the newest entry, which is the one it exists to catch.
 -- Was 210 until 2026-08-22, which collided exactly with DodoGatherMate.
 -- Only affects fresh installs: the saved value wins (see deepCopy, fill-if-nil).
 local DEFAULTS = {
