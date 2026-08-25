@@ -1,0 +1,11 @@
+## Interface: 120100
+## Group: Dodo
+## Title: DodoSentinel Probe
+## Notes: Entombed Sentinels P0 feasibility probes; not a production raid helper
+## Author: Doodo
+## Version: 0.0.1-probe
+## SavedVariables: DodoSentinelProbeDB
+
+Probe\SecureMarkGate.lua
+Probe\TextureRoute.lua
+Probe\SecretChat.lua
