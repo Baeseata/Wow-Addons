@@ -914,5 +914,308 @@ do
     checkEqual(groupCount, instanceCount, "one heading per raid, no more")
 end
 
+--------------------------------------------------------------------
+-- Loot browser right column: ns.SourceCandidates (GearRank.lua)
+--------------------------------------------------------------------
+-- The sibling of SlotCandidates that keys on a SOURCE instead of a slot.
+-- Every fixture below is FOUND in the season data rather than written
+-- down, and each search asserts that it found something -- a guard that
+-- quietly matches nothing is the one shape that can never go red.
+do
+    local MELEE, CASTER = 72, 258 -- fury (Plate/STR), shadow (Cloth/INT)
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+
+    local dungeon = ns.LootCardList("mythic")[1]
+    local rows = ns.SourceCandidates(dungeon, MELEE, nil, "mythic")
+    check(rows and #rows > 0, "a dungeon card returns candidates at all")
+    local strayInstance = 0
+    for _, row in ipairs(rows or {}) do
+        if row.entry[1] ~= dungeon.instanceID then
+            strayInstance = strayInstance + 1
+        end
+    end
+    checkEqual(strayInstance, 0,
+               "a dungeon card lists only items from that dungeon")
+
+    -- A boss card must narrow to its own encounter. Picked from a raid
+    -- with SIBLINGS: in the one-boss raid "filtered by boss" and
+    -- "filtered by instance" give the same answer, so it proves nothing.
+    local raidCards, multiBoss = ns.LootCardList("raid"), nil
+    for _, card in ipairs(raidCards) do
+        local siblings = 0
+        for _, other in ipairs(raidCards) do
+            if other.instanceID == card.instanceID then
+                siblings = siblings + 1
+            end
+        end
+        if siblings > 1 then multiBoss = card break end
+    end
+    check(multiBoss ~= nil,
+          "found a raid with more than one boss to test the boss filter")
+    if multiBoss then
+        local bossRows = ns.SourceCandidates(multiBoss, MELEE, nil, "raid")
+        check(bossRows and #bossRows > 0, "a boss card returns candidates")
+        local strayEncounter, wholeRaid = 0, 0
+        for _, row in ipairs(bossRows or {}) do
+            if row.entry[2] ~= multiBoss.encounterID then
+                strayEncounter = strayEncounter + 1
+            end
+        end
+        for _, entry in pairs(ns.LootData) do
+            if entry[1] == multiBoss.instanceID then
+                wholeRaid = wholeRaid + 1
+            end
+        end
+        checkEqual(strayEncounter, 0,
+                   "a boss card lists only that boss's drops")
+        check(#(bossRows or {}) < wholeRaid,
+              "a boss card lists FEWER items than its whole raid -- "
+              .. "otherwise it is filtering on the instance by mistake")
+    end
+end
+
+-- unranked / statless / offTrack stay three separate answers.
+--
+-- This panel is the SECOND consumer of those fields. The first one
+-- carried all three on a single `unranked` flag until 1.12.0, where the
+-- trinket simulation gave it a fourth meaning and every uncovered
+-- trinket lost its upgrade bonus id -- the tooltip then rendered the
+-- bare item, which for a returning trinket understates it by hundreds
+-- of item levels. SlotCandidates asks "is this the trinket ROW"; there
+-- are no rows here, so this asks the item's equip location instead, and
+-- these checks are what keep the two answers the same shape.
+do
+    local SPECS = { 72, 258 }
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+
+    local statlessTrinkets, statlessOthers = 0, 0
+    local trinketOffTrack, otherOnTrack = 0, 0
+    for _, mode in ipairs({ "mythic", "raid" }) do
+        for _, card in ipairs(ns.LootCardList(mode)) do
+            for _, spec in ipairs(SPECS) do
+                for _, row in ipairs(ns.SourceCandidates(card, spec, nil, mode) or {}) do
+                    checkEqual(row.statless, not ns.HasSecondaries(row.entry),
+                               "statless answers the ITEM, not the ranking")
+                    if row.statless then
+                        if row.equipLoc == ns.TRINKET_SLOT then
+                            statlessTrinkets = statlessTrinkets + 1
+                            if row.offTrack then
+                                trinketOffTrack = trinketOffTrack + 1
+                            end
+                        else
+                            statlessOthers = statlessOthers + 1
+                            if not row.offTrack then
+                                otherOnTrack = otherOnTrack + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    check(statlessTrinkets > 0,
+          "the season really does contain trinkets with no secondaries "
+          .. "-- without one the next two checks prove nothing")
+    check(statlessOthers > 0,
+          "the season really does contain non-trinkets with no "
+          .. "secondaries (the returning azerite pieces)")
+    checkEqual(trinketOffTrack, 0,
+               "a trinket with no secondaries is on this season's track "
+               .. "and MUST keep its upgrade bonus id (the 1.12.0 bug)")
+    checkEqual(otherOnTrack, 0,
+               "a non-trinket with no secondaries is off-track and must "
+               .. "lose its bonus id, or its tooltip invents a ceiling")
+end
+
+-- The primary-stat filter runs on every item, not just armor and
+-- weapons. SlotCandidates leans on simulation coverage to keep unusable
+-- trinkets off the trinket row; there is no simulation here to lean on.
+do
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+    local CASTER = 258 -- shadow priest: Cloth / INT, cannot use Strength
+    local strInPool, strShown = 0, 0
+    for _, card in ipairs(ns.LootCardList("mythic")) do
+        for _, entry in pairs(ns.LootData) do
+            if entry[1] == card.instanceID and entry[4] == "STR" then
+                strInPool = strInPool + 1
+            end
+        end
+        for _, row in ipairs(ns.SourceCandidates(card, CASTER, nil, "mythic") or {}) do
+            if row.entry[4] == "STR" then strShown = strShown + 1 end
+        end
+    end
+    check(strInPool > 0,
+          "the dungeons really do drop Strength items -- otherwise the "
+          .. "filter below is being asked a question with no wrong answer")
+    checkEqual(strShown, 0,
+               "a Strength item is never offered to an Intellect spec")
+end
+
+-- No stat priority is not the same as no drops.
+do
+    local saved = orderUnderTest
+    orderUnderTest = nil
+    local card = ns.LootCardList("mythic")[1]
+    local rows, _, ranked = ns.SourceCandidates(card, 72, nil, "mythic")
+    check(rows and #rows > 0,
+          "with no stat priority the drops are still LISTED -- an empty "
+          .. "right column would read as 'this dungeon drops nothing'")
+    checkEqual(ranked, false,
+               "and it reports that it could not rank them, so the "
+               .. "display knows not to number the rows")
+    local allStatless = true
+    for _, row in ipairs(rows or {}) do
+        if not row.statless then allStatless = false break end
+    end
+    checkEqual(allStatless, false,
+               "statless must still reflect the ITEMS -- reading it off "
+               .. "the missing score would dash out every row")
+    orderUnderTest = saved
+end
+
+-- The weapon axis is the union of both hands AND both modes.
+--
+-- Checked per SHAPE and over every spec, not on the first ambiguous one
+-- found: an earlier version asserted only "2H and 1H are both there",
+-- which a dual-wield spec satisfies from its main hand alone -- so
+-- dropping the off hand entirely left the guard green. What the off
+-- hand actually contributes is the shield and held-item half, and only
+-- a shield-or-2H spec can show that.
+do
+    local WANT = {
+        DUAL_OR_2H    = { "INVTYPE_2HWEAPON", "INVTYPE_WEAPON" },
+        SHIELD_OR_2H  = { "INVTYPE_2HWEAPON", "INVTYPE_SHIELD" },
+        OFFHAND_OR_2H = { "INVTYPE_2HWEAPON", "INVTYPE_HOLDABLE" },
+        ONEHAND_SHIELD = { "INVTYPE_WEAPON", "INVTYPE_SHIELD" },
+        DUAL_1H       = { "INVTYPE_WEAPON" },
+        TWOHAND       = { "INVTYPE_2HWEAPON" },
+        DUAL_2H       = { "INVTYPE_2HWEAPON" },
+        RANGED        = { "INVTYPE_RANGED" },
+    }
+    local seenShapes, checkedSpecs = {}, 0
+    for specID in pairs(ns.SpecGear) do
+        local shape = ns.WeaponShape(specID)
+        local want = shape and WANT[shape]
+        if want then
+            seenShapes[shape] = true
+            checkedSpecs = checkedSpecs + 1
+            local locs = ns.SpecWeaponLocations(specID) or {}
+            for _, loc in ipairs(want) do
+                check(locs[loc] == true, string.format(
+                      "spec %d (%s) must see %s in a source list",
+                      specID, shape, loc))
+            end
+        end
+    end
+    check(checkedSpecs > 30,
+          "the weapon union was checked across the whole spec table")
+    -- Without this the loop above could pass by covering only the easy
+    -- shapes, which is exactly how the first version of this check
+    -- missed the off hand.
+    check(seenShapes.SHIELD_OR_2H or seenShapes.ONEHAND_SHIELD,
+          "at least one shield-carrying shape was covered -- otherwise "
+          .. "nothing here depends on the off hand at all")
+end
+
+-- ...and SourceCandidates actually USES that union.
+--
+-- The checks above prove ns.SpecWeaponLocations is right. They say
+-- nothing about whether the candidate list calls it -- swapping it for a
+-- single ns.WeaponPool call left them all green, because the seam
+-- between "the helper is correct" and "the caller uses the helper" had
+-- no assertion on either side of it. This walks it, through the real
+-- entry point, and only reports what the season data can support.
+do
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+    local shapesWanted = { SHIELD_OR_2H = "INVTYPE_SHIELD",
+                           OFFHAND_OR_2H = "INVTYPE_HOLDABLE" }
+    local tested = 0
+    for specID in pairs(ns.SpecGear) do
+        local shape = ns.WeaponShape(specID)
+        local offHandLoc = shape and shapesWanted[shape]
+        if offHandLoc then
+            -- Does the season drop both halves for this spec at all? If
+            -- not, this spec cannot answer the question and is skipped
+            -- rather than passed -- `tested` is what keeps the whole
+            -- block from silently covering nothing.
+            local sawTwoHand, sawOffHand = false, false
+            for _, mode in ipairs({ "mythic", "raid" }) do
+                for _, card in ipairs(ns.LootCardList(mode)) do
+                    for _, row in ipairs(ns.SourceCandidates(card, specID, nil, mode) or {}) do
+                        if row.equipLoc == "INVTYPE_2HWEAPON" then sawTwoHand = true end
+                        if row.equipLoc == offHandLoc then sawOffHand = true end
+                    end
+                end
+            end
+            if sawTwoHand then
+                tested = tested + 1
+                check(sawOffHand, string.format(
+                      "spec %d (%s) is offered two-handers, so its %s "
+                      .. "must be listed too -- one hand's pool is not "
+                      .. "the whole answer here", specID, shape, offHandLoc))
+            end
+        end
+    end
+    check(tested > 0,
+          "at least one either-way spec is offered both a two-hander "
+          .. "and an off-hand item somewhere this season -- without "
+          .. "that this block proves nothing")
+end
+
+-- Nothing is offered that this spec's shape does not hold.
+--
+-- The direction the block above cannot see. That one asks "is anything
+-- MISSING"; this asks "is anything EXTRA", and extra is what actually
+-- shipped a bug: shields and held items are filed as ARMOR by the
+-- client, so they skipped the weapon gate entirely and were judged on
+-- proficiency -- which asks CAN, not SHOULD. Every paladin CAN hold a
+-- shield, so a two-hand retribution paladin was offered one, and so was
+-- a fury warrior. Found 2026-08-25 by dumping the per-spec equip
+-- locations, not by any assertion, which is why this one exists.
+do
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+    local OFF_HAND_ARMOR = { INVTYPE_SHIELD = true, INVTYPE_HOLDABLE = true }
+    local inspected, stray, firstStray = 0, 0, nil
+    local twoHandShields = 0
+    for specID in pairs(ns.SpecGear) do
+        local shape = ns.WeaponShape(specID)
+        local allowed = ns.SpecWeaponLocations(specID) or {}
+        for _, mode in ipairs({ "mythic", "raid" }) do
+            for _, card in ipairs(ns.LootCardList(mode)) do
+                for _, row in ipairs(ns.SourceCandidates(card, specID, nil, mode) or {}) do
+                    local loc = row.equipLoc
+                    local isWeaponish = loc and (loc:find("WEAPON")
+                                        or loc:find("RANGED")
+                                        or OFF_HAND_ARMOR[loc])
+                    if isWeaponish then
+                        inspected = inspected + 1
+                        if not allowed[loc] then
+                            stray = stray + 1
+                            firstStray = firstStray or string.format(
+                                "spec %d (%s) was offered %s",
+                                specID, tostring(shape), loc)
+                        end
+                        -- The concrete bug, named. A general invariant
+                        -- can drift into vacuity; this one cannot.
+                        if OFF_HAND_ARMOR[loc]
+                           and (shape == "TWOHAND" or shape == "DUAL_2H") then
+                            twoHandShields = twoHandShields + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    check(inspected > 200,
+          "weapon-shaped rows were actually inspected -- a zero here "
+          .. "would make both checks below pass for free")
+    checkEqual(stray, 0, "no spec is offered a weapon its shape does not "
+               .. "hold" .. (firstStray and (" (" .. firstStray .. ")") or ""))
+    checkEqual(twoHandShields, 0,
+               "a two-hander-only spec is never offered a shield or a "
+               .. "held item, however proficient its class is")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

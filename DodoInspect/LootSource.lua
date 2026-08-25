@@ -214,3 +214,152 @@ function ns.SetupLootSource()
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item,
                                             OnItemTooltip)
 end
+
+--------------------------------------------------------------------
+-- What the player already owns
+--------------------------------------------------------------------
+-- Built fresh on every panel refresh rather than cached. A cache here
+-- would need invalidating on equip, loot, mail, vendor, bank and
+-- void-storage traffic, and the failure mode of missing one is a column
+-- that quietly says you do not own something you are wearing. The scan
+-- is one pass over about two hundred container slots and the panel
+-- refreshes only when it is opened or clicked.
+--
+-- ONLY REAL ITEMS. The design's original fourth column wanted
+-- "owned at Champion / owned at Hero", and that was abandoned with
+-- evidence: there is no per-item-level collection API, and the
+-- transmog tables cannot stand in -- 39 of the season's items
+-- (trinkets, rings, necks) have no appearance at all, so 17.5% of the
+-- column would have answered "no" when the truth was "cannot tell".
+-- Reading the item level off the physical item's own link has no such
+-- blind spot. See MPLUS_LOOT_PANEL_DESIGN_2026-08-22.md.
+--
+-- Bank containers are included and are allowed to answer nothing: the
+-- client only knows their contents once the bank has been opened this
+-- session. "Not found" and "not cached" therefore look the same here,
+-- which is why the column says where an item IS and never claims an
+-- item is missing.
+-- Which containers to walk, and what to CALL each one -- DERIVED from
+-- Enum.BagIndex rather than written out as numbers.
+--
+-- The numbers are not stable and are not guessable: character bank tabs
+-- and warband (account) bank tabs live in one run of ids, and a
+-- hand-written range that stops in the middle of it does something worse
+-- than miss the warband bank -- it scans the FIRST warband tab (because
+-- that id falls inside the character range) and misses the rest, so
+-- whether the column finds your item depends on which tab you happened
+-- to drop it in, and nothing on screen would let you learn that rule.
+-- Nothing on this machine references Enum.BagIndex, so there was no
+-- in-production example to copy the numbers from either.
+--
+-- Asking the client removes the guess: every name it does not have is
+-- simply skipped, so this works on a client that has no warband bank at
+-- all and picks it up on one that does.
+local function OwnedContainers()
+    local out = {}
+    local function add(id, where)
+        if type(id) == "number" then out[#out + 1] = { id = id, where = where } end
+    end
+    local bag = Enum and Enum.BagIndex
+    if bag then
+        add(bag.Backpack, "bags")
+        add(bag.ReagentBag, "bags")
+        for i = 1, 4 do add(bag["Bag_" .. i], "bags") end
+        add(bag.Bank, "bank")
+        add(bag.Reagentbank, "bank")
+        add(bag.Reagentbank or bag.ReagentBank, "bank")
+        for i = 1, 12 do
+            add(bag["BankBag_" .. i], "bank")
+            add(bag["CharacterBankTab_" .. i], "bank")
+            add(bag["AccountBankTab_" .. i], "bank")
+        end
+    else
+        -- Pre-Enum fallback: the classic layout only.
+        add(0, "bags")
+        for i = 1, 4 do add(i, "bags") end
+        add(-1, "bank")
+    end
+    -- The loops above can name the same id twice (Reagentbank spelling,
+    -- or a client where two names alias). Scanning it twice is harmless
+    -- but the ranking below would compare a container against itself.
+    local seen, unique = {}, {}
+    for _, c in ipairs(out) do
+        if not seen[c.id] then seen[c.id] = true; unique[#unique + 1] = c end
+    end
+    return unique
+end
+
+-- Equipment slots worth scanning: 1..19 covers head through off hand.
+-- Shirt and tabard are in that range and never carry season loot, but
+-- excluding them would be a hand-written list that has to stay in step
+-- with a numbering Blizzard owns.
+local EQUIP_SLOT_LAST = 19
+
+local function LinkItemID(link)
+    if type(link) ~= "string" then return nil end
+    return tonumber(link:match("item:(%d+)"))
+end
+
+local function LinkItemLevel(link)
+    if not (C_Item and type(C_Item.GetDetailedItemLevelInfo) == "function") then
+        return nil
+    end
+    local ok, level = pcall(C_Item.GetDetailedItemLevelInfo, link)
+    if ok and type(level) == "number" and level > 0 then return level end
+    return nil
+end
+
+-- itemID -> { where = "equipped" | "bags" | "bank", ilvl = number|nil }
+--
+-- Equipped beats a bag copy, and a bag copy beats a bank copy: the
+-- question the column answers is "have I got this", and the strongest
+-- true answer is the useful one. Within one rank the first copy found
+-- wins -- two copies of the same ring in two bags are the same answer.
+function ns.LootOwnedIndex()
+    local out = {}
+
+    local function record(link, where, rank)
+        local itemID = LinkItemID(link)
+        if not itemID then return end
+        -- Strongest place wins; within one place the BEST copy wins.
+        -- Taking the first found would let physical bag-slot order decide
+        -- the number: two copies of a ring at 285 and 311 would report
+        -- whichever sat in the lower slot, and "Bags 285" against a 311
+        -- ceiling reads as "you still need this".
+        local ilvl = LinkItemLevel(link)
+        local prior = out[itemID]
+        if prior then
+            if prior.rank < rank then return end
+            if prior.rank == rank and (prior.ilvl or 0) >= (ilvl or 0) then return end
+        end
+        out[itemID] = { where = where, rank = rank, ilvl = ilvl }
+    end
+
+    local getInventory = _G.GetInventoryItemLink
+    if type(getInventory) == "function" then
+        for slotID = 1, EQUIP_SLOT_LAST do
+            local ok, link = pcall(getInventory, "player", slotID)
+            if ok and link then record(link, "equipped", 1) end
+        end
+    end
+
+    if C_Container and type(C_Container.GetContainerNumSlots) == "function"
+       and type(C_Container.GetContainerItemLink) == "function" then
+        for _, container in ipairs(OwnedContainers()) do
+            -- Bank ids answer 0 slots until the bank has been opened, so
+            -- this doubles as the "is it readable yet" test.
+            local ok, slots = pcall(C_Container.GetContainerNumSlots, container.id)
+            if ok and type(slots) == "number" and slots > 0 then
+                local where = container.where
+                local rank = (where == "bags") and 2 or 3
+                for slot = 1, slots do
+                    local got, link = pcall(C_Container.GetContainerItemLink,
+                                            container.id, slot)
+                    if got and link then record(link, where, rank) end
+                end
+            end
+        end
+    end
+
+    return out
+end

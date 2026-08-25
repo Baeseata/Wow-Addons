@@ -325,6 +325,12 @@ ns.Config = {
     LOOT_CARD_HOVER_COLOR    = { 1.00, 1.00, 1.00, 1 },
     LOOT_CARD_SELECTED_COLOR = { 1.00, 0.82, 0.20, 1 },
     LOOT_GROUP_COLOR         = { 0.55, 0.55, 0.60, 1 }, -- raid name above its bosses
+    -- Green, because this column answers "you have this one" and green
+    -- is what every other list in this addon uses for a settled fact.
+    -- Rows with nothing in the column print nothing at all rather than a
+    -- greyed "no": the scan cannot see an unopened bank, so silence here
+    -- means "not found", never "you do not own it".
+    LOOT_OWNED_COLOR         = { 0.45, 0.85, 0.45, 1 },
 
     -- secondary stat grid colors (fixed column order: vers, haste,
     -- mastery, crit)

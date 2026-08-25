@@ -112,6 +112,7 @@ local FS, ROW_HEIGHT, STAT_STEP, NAME_W, SOURCE_W, PANEL_WIDTH
 -- item's two secondaries, column 2 the smaller -- position now says which
 -- one dominates, which is what the underline used to be for.
 local STAT_COLS = 2
+ns.GEAR_STAT_COLS = STAT_COLS
 
 local function Layout()
     FS          = ns.SidePanelFontSize()
@@ -185,12 +186,21 @@ local LINK_EMPTY_FIELDS = string.rep(":", 11)
 -- this season's track, and feeding the ranking flag in here stripped the
 -- bonus id off every one of them -- the tooltip then rendered the bare
 -- item, which for a returning trinket is a several-hundred item level lie.
+-- Shared with the loot browser, which quotes a DIFFERENT ceiling: its
+-- Mythic+ side must use GEAR_HERO_BONUS_ID (311), because the two ids
+-- below are the Myth track and that is raid gear. Only the colon count
+-- is shared -- deliberately, since that is the part with the trap in it
+-- and the part that has no business being typed twice.
+function ns.GearTooltipLink(itemID, bonusID)
+    if not (itemID and bonusID) then return nil end
+    return "item:" .. itemID .. LINK_EMPTY_FIELDS .. ":1:" .. bonusID
+end
+
 local function TooltipLink(itemID, top, offTrack)
     if offTrack then return nil end
     local cfg = ns.Config
-    local bonus = top and cfg.GEAR_TOP_BONUS_ID or cfg.GEAR_MYTH_BONUS_ID
-    if not bonus then return nil end
-    return "item:" .. itemID .. LINK_EMPTY_FIELDS .. ":1:" .. bonus
+    return ns.GearTooltipLink(itemID,
+        top and cfg.GEAR_TOP_BONUS_ID or cfg.GEAR_MYTH_BONUS_ID)
 end
 
 local function CreateRow(parent, index)
@@ -277,7 +287,7 @@ end
 -- through untouched rather than dropped: GetItemInfo returns nil until
 -- the item is cached, and treating nil as a name would collapse every
 -- uncached row into one. The panel redraws when the names arrive.
-local function DedupeByName(candidates)
+function ns.DedupeByName(candidates)
     local out, seen = {}, {}
     for _, entryRow in ipairs(candidates) do
         local name = C_Item.GetItemInfo(entryRow.id)
@@ -299,7 +309,11 @@ end
 -- "column one means bigger" is a rule you have to know. Ties get no
 -- underline -- with two equal values there is no bigger one to point at.
 -- Deliberately no percentages; the list order already carries the fit.
-local function SetStatCells(row, entryRow)
+-- fontSize is a PARAMETER, not this file's FS upvalue: FS is only set by
+-- this panel's Layout(), so a caller that has never opened the gear panel
+-- would find it nil and the underline arithmetic below would throw.
+function ns.SetStatCells(row, entryRow, fontSize)
+    local FS = fontSize or 12
     for i = 1, STAT_COLS do
         row.stats[i]:Hide()
         row.statLines[i]:Hide()
@@ -400,7 +414,7 @@ local function SetRow(row, index, entryRow, equippedID)
     -- The two ceiling NUMBERS are gone from Config with the column: the
     -- tooltip renders from bonus ids, so nothing read them any more, and
     -- their values are recorded next to those ids instead.
-    SetStatCells(row, entryRow)
+    ns.SetStatCells(row, entryRow, FS)
 
     row.source:SetText(Colored(ns.LootSourceText(entryRow.id) or "",
                                ns.Config.LOOT_SOURCE_COLOR))
@@ -421,7 +435,7 @@ function ns.RefreshGearPanel()
     local candidates = specID
         and ns.SlotCandidates(state.slotKey, specID, subTree,
                               ns.GearPanelContent(), mode)
-    if candidates then candidates = DedupeByName(candidates) end
+    if candidates then candidates = ns.DedupeByName(candidates) end
 
     -- The two-hand / one-hand switch appears only where there is a real
     -- choice. Its absence is information -- this spec has exactly one

@@ -230,14 +230,28 @@ end
 -- is NOT constant across slots: armor totals about 7000 while rings and
 -- necks total about 17500. Dividing by a fixed number would rank every
 -- ring above every chest.
+-- Does this item carry secondary stats at all?
+--
+-- Stated once and exported, because two callers want it for DIFFERENT
+-- reasons and their answers must never drift: ns.StatFit asks "is there
+-- anything here to score", while the panels ask it for `statless`, which
+-- prints an explicit dash and decides whether the tooltip gets a bonus
+-- id. Reading statless off "StatFit returned nil" folds those together
+-- with a third fact -- "this spec has no stat priority to score against"
+-- -- and then a spec with no priority data makes every item look like it
+-- has no stats. See ns.SourceCandidates, which can be called that way.
+function ns.HasSecondaries(entry)
+    if not entry or not entry[5] then return false end -- azerite-era armor
+    return ((entry[6] or 0) + (entry[8] or 0)) > 0
+end
+
 function ns.StatFit(entry, weights)
     if not entry or not weights then return nil end
+    if not ns.HasSecondaries(entry) then return nil end
     local firstStat, firstValue = entry[5], entry[6]
     local secondStat, secondValue = entry[7], entry[8]
-    if not firstStat then return nil end -- azerite-era armor, no secondaries
 
     local total = (firstValue or 0) + (secondValue or 0)
-    if total <= 0 then return nil end
 
     local score = (firstValue or 0) / total * (weights[firstStat] or MIN_WEIGHT)
     if secondStat then
@@ -506,4 +520,197 @@ function ns.SlotCandidates(slotKey, specID, subTreeID, content, mode)
     end)
 
     return out, unranked
+end
+
+-- Every equip location this spec can put a weapon in, across BOTH hands
+-- and BOTH handedness modes.
+--
+-- WHY THE UNION, when SlotCandidates asks for one hand at a time: that
+-- panel is filling a specific row, so "which hand, one- or two-handed"
+-- is already decided and the pool has to narrow to it. A source list is
+-- not filling anything -- it answers "does this boss drop a weapon I can
+-- use", and for a spec with the two-hand / one-hand switch the honest
+-- answer covers both configurations. Narrowing to whichever mode a
+-- different panel happens to be showing would hide half a boss's drops
+-- based on a toggle the player cannot see from here.
+--
+-- Derived from ns.WeaponPool rather than written out again: a second
+-- hand-written shape table is a silent-divergence generator, and this one
+-- would diverge on exactly the specs whose shape is hardest to remember.
+function ns.SpecWeaponLocations(specID)
+    if not specID then return nil end
+    if not ns.WeaponShape(specID) then return nil end
+    local out, any = {}, false
+    for _, slotKey in ipairs({ "INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPONOFFHAND" }) do
+        for _, mode in ipairs({ "twohand", "onehand" }) do
+            local pool = ns.WeaponPool(specID, slotKey, mode)
+            if pool then
+                for equipLoc in pairs(pool) do
+                    out[equipLoc] = true
+                    any = true
+                end
+            end
+        end
+    end
+    return any and out or nil
+end
+
+-- Candidate list for one LOOT SOURCE -- a Mythic+ dungeon, or one raid
+-- boss -- rather than for one equipment slot. Same row shape as
+-- ns.SlotCandidates, and the same second return value.
+--
+-- card is what ns.LootCardList hands out: kind "dungeon" carries
+-- instanceID, kind "boss" carries encounterID.
+--
+-- THREE DELIBERATE DIFFERENCES from SlotCandidates, each with a reason:
+--
+-- 1. The weapon axis is ns.SpecWeaponLocations (the union) instead of
+--    ns.WeaponPool (one hand, one mode). See that function.
+--
+-- 2. simRank is carried but NEVER SORTED ON. The trinket simulation
+--    ranks trinkets against trinkets and answers an ordinal (1, 2, 3);
+--    ns.StatFit answers a fraction in 0..1. On the trinket ROW only one
+--    of the two is ever in play, so SlotCandidates can sort on simRank
+--    safely. Here a boss drops a trinket and a chest in the same list,
+--    and sorting an ordinal against a fraction prices two incomparable
+--    scales against each other -- the trinket would win every time, for
+--    no reason but that ranks start at 1.
+--
+-- 3. offTrack keys off the item's equip location, NOT off "is this the
+--    trinket row" -- there are no rows here. This is the 1.12.0 bug's
+--    home ground: most trinkets have no secondary stats yet sit on this
+--    season's track, so inferring offTrack from a nil score strips the
+--    bonus id off them and the tooltip renders the bare item, which for
+--    a returning trinket understates it by several hundred item levels.
+--    statless and offTrack stay separately computed, same as over there.
+--
+-- topItemLevel both sorts and displays, and it is NOT constant within a
+-- source: ns.ReachesTopItemLevel wants a primary stat as well as a 344
+-- source, so on the two bosses that reach 344 the armor does and the
+-- rings and necks do not.
+function ns.SourceCandidates(card, specID, subTreeID, content)
+    if not (card and ns.LootData and ns.SpecGear) then return nil end
+    local spec = ns.SpecGear[specID]
+    if not spec then return nil end
+    local armorType, primaryStat = spec[1], spec[2]
+
+    -- A missing stat priority is NOT a reason to answer nothing here.
+    -- SlotCandidates bails, and rightly: that panel exists to rank
+    -- upgrades, so with nothing to rank against it has no answer. This
+    -- list answers "what drops here that I can wear", which stands on its
+    -- own -- the priority only decides the ORDER and the two stat columns.
+    -- Bailing would show an empty right column, which reads as "this boss
+    -- drops nothing for you". That is a lie, and the eight specs whose
+    -- priority is split by hero tree hit it the moment step 5 lets you
+    -- pick a spec that is not your own (there is no tree to pass then).
+    local order = ns.StatPriorityOrder and
+                  ns.StatPriorityOrder(specID, subTreeID, content)
+    local weights = ns.StatWeights(order)
+
+    local weaponLocs = ns.SpecWeaponLocations(specID)
+    local out, unranked = {}, 0
+
+    for itemID, entry in pairs(ns.LootData) do
+        local fromHere
+        if card.kind == "dungeon" then
+            fromHere = card.instanceID ~= nil and entry[1] == card.instanceID
+        else
+            fromHere = card.encounterID ~= nil and entry[2] == card.encounterID
+        end
+        if fromHere then
+            local equipLoc, classID, subclassID = ItemShape(itemID)
+            -- The primary-stat filter runs on EVERYTHING here, which is
+            -- one more place than SlotCandidates runs it. Over there the
+            -- trinket row leans on simulation coverage to hide trinkets
+            -- this spec cannot use; measured, 16 of an arcane mage's 42
+            -- trinket rows carry a primary stat Intellect cannot use, and
+            -- they stay out only because bloodmallet never simulated them.
+            -- This list has no simulation to lean on, so it asks directly.
+            -- Free for rings, necks and cloaks: ns.PrimaryFits answers
+            -- true when the ITEM has no primary stat, which is 30 rows.
+            -- Fail CLOSED on an item whose shape does not resolve.
+            -- ItemShape answers nil when GetItemInfoInstant is missing or
+            -- the id no longer resolves, and with all three nil NONE of
+            -- the branches below fire -- so the item would keep whatever
+            -- ns.PrimaryFits said (true, for anything with no primary
+            -- stat) and land in the list with no slot, no armor-type and
+            -- no weapon-shape filtering at all. SlotCandidates cannot
+            -- reach that state: its slot match needs a positive answer,
+            -- so an unresolved item simply never matches.
+            local keep = (equipLoc ~= nil and equipLoc ~= "")
+                         and ns.PrimaryFits(primaryStat, entry[4])
+            -- Shields and held items are filed as ARMOR by the client
+            -- (class 4), but they are decided by the spec's WEAPON shape
+            -- -- they occupy the off hand. Judging them on proficiency
+            -- alone asks CAN instead of SHOULD, and those differ exactly
+            -- where it matters: every paladin CAN equip a shield, so a
+            -- two-hand retribution paladin was being offered one, and so
+            -- was a fury warrior. The shape's pool already encodes
+            -- SHOULD -- LOC.SHIELD appears only for the shapes that
+            -- really hold one -- so the pool is the gate for all three.
+            local offHandArmor = (equipLoc == "INVTYPE_SHIELD"
+                                  or equipLoc == "INVTYPE_HOLDABLE")
+            if not keep then
+                -- nothing more to ask
+            elseif classID == 2 or offHandArmor then
+                keep = (weaponLocs ~= nil and weaponLocs[equipLoc] == true)
+                       and ns.WeaponProficient(specID, classID, subclassID)
+            elseif ARMOR_TYPE_SLOTS[equipLoc] and classID == 4
+               and ARMOR_SUBCLASS[subclassID] then
+                keep = ARMOR_SUBCLASS[subclassID] == armorType
+            end
+            if keep then
+                local score = weights and ns.StatFit(entry, weights) or nil
+                local isTrinket = (equipLoc == ns.TRINKET_SLOT)
+                -- statless asks the ITEM a question, score asks the
+                -- SPEC one. Kept apart on purpose: with no priority
+                -- data every score is nil while the items still have
+                -- their stats, and a dash on every row would be wrong.
+                local statless = not ns.HasSecondaries(entry)
+                if score == nil then unranked = unranked + 1 end
+                out[#out + 1] = {
+                    id = itemID,
+                    score = score,
+                    entry = entry,
+                    equipLoc = equipLoc,
+                    effect = entry[9] == 1,
+                    unranked = (score == nil),
+                    simRank = nil,
+                    topItemLevel = ns.ReachesTopItemLevel(entry),
+                    statless = statless,
+                    offTrack = (not isTrinket) and statless or false,
+                }
+            end
+        end
+    end
+
+    -- Best stat fit first, unscorable last -- with the item-level tier
+    -- ahead of both, exactly as SlotCandidates orders it.
+    --
+    -- An earlier version dropped that branch, reasoning that topItemLevel
+    -- is constant within one source. IT IS NOT, and the exception lands
+    -- precisely on the two bosses the flag exists for: ns.ReachesTopItem-
+    -- Level demands a primary stat as well as a 344 source, and rings,
+    -- necks and several trinkets have none. So on the last two Venomous
+    -- Abyss bosses the armor reaches 344 while the jewellery stays at
+    -- 334, and without this branch a 334 ring with a tidier stat spread
+    -- sorts above a chest ten item levels above it -- while its tooltip,
+    -- correctly, quotes the lower number.
+    table.sort(out, function(a, b)
+        if a.topItemLevel ~= b.topItemLevel then return a.topItemLevel end
+        if (a.score == nil) ~= (b.score == nil) then return b.score == nil end
+        if a.score and b.score and math.abs(a.score - b.score) > 0.0001 then
+            return a.score > b.score
+        end
+        local aShare = (a.entry[6] or 0) / math.max(1, (a.entry[6] or 0) + (a.entry[8] or 0))
+        local bShare = (b.entry[6] or 0) / math.max(1, (b.entry[6] or 0) + (b.entry[8] or 0))
+        if math.abs(aShare - bShare) > 0.0001 then return aShare > bShare end
+        return a.id < b.id
+    end)
+
+    -- Third value: was this list actually RANKED, or just listed? The
+    -- display needs to know, because numbering rows 1..N asserts an
+    -- order. With no stat priority to score against there is no order --
+    -- only a stable one -- and numbering it anyway would invent a claim.
+    return out, unranked, weights ~= nil
 end

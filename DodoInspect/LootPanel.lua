@@ -85,6 +85,21 @@ end
 local PAD = 10
 local HEADER_H = 26
 local FS, ICON, CARD_H, GROUP_H, LEFT_W, RIGHT_W, TAB_H, BODY_H
+local ROW_H, DETAIL_HEAD_H
+-- Forward-declared: the drop rows are built well above the position
+-- helpers, and a row's OnDragStop needs to save where the window landed.
+-- Without this the closure would capture a GLOBAL of that name -- which
+-- is nil -- and every drag by the right column would throw. luac cannot
+-- see that; it is a perfectly legal call to a nil global.
+local SavePosition
+
+-- Headroom for the right column, in rows. NOT a measurement: the season
+-- with the most drops for one source currently needs 14 (measured across
+-- all 40 specs and all 17 cards), and the card list alone is about that
+-- tall already, so this changes the window by roughly nothing today. It
+-- is here so a bigger season grows the window instead of silently losing
+-- its last rows -- and when it does overflow, the N/M count says so.
+local MIN_DETAIL_ROWS = 16
 
 local function Layout()
     FS       = ns.SidePanelFontSize()
@@ -98,6 +113,10 @@ local function Layout()
     -- heights, and then the list stops scanning as a list.
     LEFT_W   = math.floor(FS * 11)
     RIGHT_W  = math.floor(FS * 26)
+    -- Same row height as the gear panel: the two lists are read the same
+    -- way and a different rhythm on each would look like a mistake.
+    ROW_H         = math.floor(FS * 1.35)
+    DETAIL_HEAD_H = math.floor(FS * 1.6)
 
     -- Height is the TALLER of the two modes, always. Sizing to the
     -- current mode would make the window jump every time the switch is
@@ -112,7 +131,8 @@ local function Layout()
         end
         if h > tallest then tallest = h end
     end
-    BODY_H = math.max(tallest, math.floor(FS * 14))
+    BODY_H = math.max(tallest, math.floor(FS * 14),
+                      DETAIL_HEAD_H + ROW_H * MIN_DETAIL_ROWS)
 end
 
 --------------------------------------------------------------------
@@ -276,13 +296,312 @@ local function ApplyChrome()
     panel.body:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", PAD, PAD)
     panel.body:SetWidth(LEFT_W)
 
+    -- Anchored on all four corners so the container has a real height:
+    -- the rows are capped to what fits inside it, and a frame with no
+    -- bottom would report whatever height it was last given.
     panel.detail:ClearAllPoints()
     panel.detail:SetPoint("TOPLEFT", panel.body, "TOPRIGHT", PAD, 0)
-    panel.detail:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, -(HEADER_H + TAB_H))
+    panel.detail:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -PAD, PAD)
+    ns.SetOverlayFont(panel.detailTitle, FS)
+    panel.detailNote:ClearAllPoints()
+    panel.detailNote:SetPoint("TOPLEFT", panel.detail, "TOPLEFT", 0,
+                              -DETAIL_HEAD_H)
 
     local tabW = math.floor(LEFT_W / 2) - 1
     panel.tabMythic:SetSize(tabW, TAB_H - 4)
     panel.tabRaid:SetSize(tabW, TAB_H - 4)
+end
+
+--------------------------------------------------------------------
+-- Right column: what the selected card drops
+--------------------------------------------------------------------
+
+-- Which upgrade ceiling this row's tooltip should render at.
+--
+-- 🔴 THE ONE THING NOT TO COPY FROM GearPanel. Its TooltipLink quotes
+-- the Myth track (334 / 344), which is RAID gear. Mythic+ dungeon drops
+-- cap at Hero 3/6 = ilvl 311, measured in game 2026-08-22 -- quoting 334
+-- at them overstates every dungeon row by an upgrade tier and a half.
+--
+-- The mirror of that mistake is just as easy from here, and it did not
+-- exist when Config.lua's comment was written: this window grew a RAID
+-- half on 2026-08-24, and rendering a raid boss's drops at 311 would
+-- understate them by 23 to 33 item levels. So the ceiling follows the
+-- CARD, not the panel.
+--
+-- topItemLevel is a boolean ("does this piece reach 344"), not a number.
+local function DetailBonusID(card, entryRow)
+    if entryRow.offTrack then return nil end
+    local cfg = ns.Config
+    if card.kind == "dungeon" then return cfg.GEAR_HERO_BONUS_ID end
+    return entryRow.topItemLevel and cfg.GEAR_TOP_BONUS_ID
+           or cfg.GEAR_MYTH_BONUS_ID
+end
+
+local function NewDetailCell(row, justify)
+    local fs = row:CreateFontString(nil, "OVERLAY")
+    fs:SetJustifyH(justify or "LEFT")
+    fs:SetWordWrap(false)
+    return fs
+end
+
+-- Four columns: name, the two stat cells, and where you already have it.
+-- Widths are derived from the font size like everything else here, and
+-- re-applied on every refresh because the slider can move underneath.
+local function LayoutDetailRow(row, index)
+    local statW  = math.floor(FS * 3.4)
+    local ownedW = math.floor(FS * 6)
+    local nameW  = RIGHT_W - statW * (ns.GEAR_STAT_COLS or 2) - ownedW - 8
+
+    row:SetSize(RIGHT_W, ROW_H)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", panel.detail, "TOPLEFT", 0,
+                 -(DETAIL_HEAD_H + (index - 1) * ROW_H))
+
+    row.name:ClearAllPoints()
+    row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.name:SetWidth(nameW)
+    ns.SetOverlayFont(row.name, FS)
+
+    -- CENTER-anchored at the column's midpoint and deliberately NOT
+    -- given a width. ns.SetStatCells draws the dominant-stat underline
+    -- by anchoring it to this FontString's own BOTTOMLEFT/BOTTOMRIGHT,
+    -- trimmed by a couple of pixels of side bearing -- so a FontString
+    -- stretched to the full column width would underline the whole
+    -- column instead of the two or three glyphs in it. Both other
+    -- callers (the side panel and the gear panel) leave it natural for
+    -- exactly this reason.
+    for i = 1, #row.stats do
+        row.stats[i]:ClearAllPoints()
+        row.stats[i]:SetPoint("CENTER", row, "LEFT",
+                              nameW + (i - 0.5) * statW, 0)
+        ns.SetOverlayFont(row.stats[i], FS)
+    end
+
+    row.owned:ClearAllPoints()
+    row.owned:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.owned:SetWidth(ownedW)
+    ns.SetOverlayFont(row.owned, FS)
+end
+
+local function CreateDetailRow(parent, index)
+    local row = CreateFrame("Frame", nil, parent)
+    row.name = NewDetailCell(row, "LEFT")
+    row.stats, row.statLines = {}, {}
+    for i = 1, (ns.GEAR_STAT_COLS or 2) do
+        row.stats[i] = NewDetailCell(row, "CENTER")
+        local line = row:CreateTexture(nil, "OVERLAY")
+        line:SetHeight(1)
+        line:Hide()
+        row.statLines[i] = line
+    end
+    row.owned = NewDetailCell(row, "RIGHT")
+    LayoutDetailRow(row, index)
+
+    -- The real item tooltip is where item level, sockets and on-item
+    -- effects live; the two stat cells deliberately do not fold those in.
+    row:EnableMouse(true)
+    row:SetScript("OnEnter", function(self)
+        if not self.itemID then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        local link = self.bonusID and ns.GearTooltipLink
+                     and ns.GearTooltipLink(self.itemID, self.bonusID)
+        if link then
+            GameTooltip:SetHyperlink(link)
+        else
+            GameTooltip:SetItemByID(self.itemID)
+        end
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- The window has no title bar -- it is dragged by grabbing the frame
+    -- itself. Up to sixteen mouse-enabled rows cover the whole right
+    -- half, and a mouse-enabled child swallows the button rather than
+    -- passing it up, so without this the right half stops moving the
+    -- window. Forwarded rather than disabled: the mouse is what puts the
+    -- item tooltip on screen.
+    row:RegisterForDrag("LeftButton")
+    row:SetScript("OnDragStart", function()
+        if panel and panel.StartMoving then panel:StartMoving() end
+    end)
+    row:SetScript("OnDragStop", function()
+        if not panel then return end
+        panel:StopMovingOrSizing()
+        SavePosition()
+    end)
+    return row
+end
+
+local function Colored(text, color)
+    if not color then return text end
+    return string.format("|cff%02x%02x%02x%s|r", math.floor(color[1] * 255),
+                         math.floor(color[2] * 255), math.floor(color[3] * 255),
+                         text)
+end
+
+-- "Bags 305". The word and the number are kept apart rather than run
+-- through one format string, because the item level can legitimately be
+-- missing (an uncached link answers nothing) and a format string would
+-- then print the word with a hole in it.
+local function OwnedText(owned)
+    if not owned then return "" end
+    local L = ns.L or {}
+    local word = (owned.where == "equipped" and L.lootOwnedEquipped)
+              or (owned.where == "bank" and L.lootOwnedBank)
+              or L.lootOwnedBags
+    if not word then return "" end
+    if owned.ilvl then return word .. " " .. owned.ilvl end
+    return word
+end
+
+-- The item level every row in this list is being rendered at, READ BACK
+-- off the very link the tooltips use rather than stated as a constant.
+-- Config carries the bonus id; the item level that id produces is the
+-- client's business, and writing "311" here as well would be the same
+-- fact in two hand-written places, free to drift at the season roll.
+--
+-- Dungeons only: every M+ row shares one ceiling, so one number is
+-- honest. A raid boss's drops do NOT -- armor from the last two
+-- Venomous Abyss bosses reaches 344 while its rings and necks stay at
+-- 334 -- so there is no single number to print and this says nothing.
+local function DetailCeiling(card, list)
+    if card.kind ~= "dungeon" then return nil end
+    if not (C_Item and type(C_Item.GetDetailedItemLevelInfo) == "function") then
+        return nil
+    end
+    for _, entryRow in ipairs(list) do
+        local bonusID = DetailBonusID(card, entryRow)
+        local link = bonusID and ns.GearTooltipLink
+                     and ns.GearTooltipLink(entryRow.id, bonusID)
+        if link then
+            local ok, level = pcall(C_Item.GetDetailedItemLevelInfo, link)
+            if ok and type(level) == "number" and level > 0 then return level end
+        end
+    end
+    return nil
+end
+
+-- Draws the right column for one card. Returns true when it drew rows,
+-- so the caller can tell "there is a list" from "there is a sentence".
+-- Returns whether anything is still waiting on the item cache, so the
+-- caller can fold it into the same retry the card labels already use.
+--
+-- C_Item.GetItemInfo answers nil until the client has the item, and for
+-- season loot the player has never seen that is the NORMAL state on the
+-- first open after login: without a retry the whole column sits on
+-- "item:230187" strings, the ceiling label never appears (an uncached
+-- link has no detailed item level either) and ns.DedupeByName cannot
+-- collapse the returning dungeons' duplicate names, so the legacy twins
+-- show up beside the modern ones. None of it repairs itself, because
+-- nothing else redraws this panel.
+local function RefreshDetail(card)
+    panel.detailRows = panel.detailRows or {}
+    local rows = panel.detailRows
+    local cold = false
+
+    local function Note(text)
+        for i = 1, #rows do rows[i]:Hide() end
+        panel.detailNote:SetText(text or "")
+        panel.detailNote:Show()
+        return false, false
+    end
+
+    local L = ns.L or {}
+    if not card then
+        panel.detailTitle:SetText("")
+        return Note(L.lootPickSource)
+    end
+
+    -- Built as a local and set once at the end. Reading it back off the
+    -- FontString later would make the heading depend on what a widget
+    -- hands back, which is a round trip through the UI for a string this
+    -- function already has.
+    local heading = CardTooltip(card) or CardLabel(card) or ""
+    panel.detailTitle:SetText(heading)
+
+    -- The player's own spec, and their own hero tree with it. Eight of
+    -- the forty specs split their stat priority by hero tree and cannot
+    -- be resolved without one -- and SourceCandidates lists the drops
+    -- either way, it just cannot rank them.
+    local specID = ns.PlayerSpecID and ns.PlayerSpecID()
+    if not specID then return Note(L.lootNoSpec) end
+    local subTree = ns.PlayerHeroSubTree and ns.PlayerHeroSubTree()
+    local content = (card.kind == "dungeon") and "mythic" or "raid"
+
+    local list, _, ranked = ns.SourceCandidates(card, specID, subTree, content)
+    -- Two different item ids can carry the same name: the three
+    -- returning dungeons still list their legacy pieces beside the
+    -- modern namesakes, and one name printed twice reads as a bug.
+    if list and ns.DedupeByName then list = ns.DedupeByName(list) end
+    if not list or #list == 0 then return Note(L.lootNoDrops) end
+    panel.detailNote:Hide()
+
+    -- Capped to what fits, the same way the gear panel caps to its
+    -- anchor -- rows drawn past the bottom edge do not error, they are
+    -- just not there. Computed from BODY_H rather than asked of
+    -- panel.detail: the container is anchored to exactly that height, so
+    -- the widget can only ever agree, and asking it adds a way to be
+    -- wrong (a frame that has not been laid out yet answers 0, which
+    -- would silently cut the list to a single row).
+    local cap = math.floor((BODY_H - DETAIL_HEAD_H) / math.max(1, ROW_H))
+    if cap < 1 then cap = 1 end
+    local shown = math.min(#list, cap)
+
+    local owned = ns.LootOwnedIndex and ns.LootOwnedIndex() or {}
+
+    for i = 1, shown do
+        local entryRow = list[i]
+        local row = rows[i]
+        if not row then
+            row = CreateDetailRow(panel.detail, i)
+            rows[i] = row
+        end
+        LayoutDetailRow(row, i)
+        row.itemID  = entryRow.id
+        row.bonusID = DetailBonusID(card, entryRow)
+
+        local name = C_Item.GetItemInfo(entryRow.id)
+        if not name then
+            cold = true
+            -- Ask for it rather than only waiting: an item nobody has
+            -- looked at is not loading on its own.
+            if C_Item.RequestLoadItemDataByID then
+                pcall(C_Item.RequestLoadItemDataByID, entryRow.id)
+            end
+        end
+        -- Numbered only when there is a ranking behind the order.
+        local label = ranked and string.format("%d. %s", i,
+                                               name or ("item:" .. entryRow.id))
+                      or (name or ("item:" .. entryRow.id))
+        if entryRow.effect then
+            label = label .. " " .. Colored("*", ns.Config.GEAR_EFFECT_COLOR)
+        end
+        row.name:SetText(label)
+
+        local have = owned[entryRow.id]
+        row.owned:SetText(Colored(OwnedText(have),
+                                  have and ns.Config.LOOT_OWNED_COLOR or nil))
+
+        ns.SetStatCells(row, entryRow, FS)
+        row:Show()
+    end
+    for i = shown + 1, #rows do rows[i]:Hide() end
+
+    local cap311 = DetailCeiling(card, list)
+    if cap311 and L.lootCeiling then
+        heading = heading .. "  " ..
+                  Colored(string.format(L.lootCeiling, cap311),
+                          ns.Config.LOOT_GROUP_COLOR)
+    end
+    -- Truncation has to be visible: a list quietly cut to fit reads as
+    -- "these are all of them", which is the one thing it is not.
+    if shown < #list then
+        heading = heading .. string.format("  |cff808080%d/%d|r", shown, #list)
+    end
+    panel.detailTitle:SetText(heading)
+    -- The ceiling label is read off a link, which is equally cold.
+    if not cap311 and card.kind == "dungeon" then cold = true end
+    return true, cold
 end
 
 function ns.RefreshLootPanel()
@@ -383,11 +702,16 @@ function ns.RefreshLootPanel()
     for i = usedCards + 1, #panel.cards do panel.cards[i]:Hide() end
     for i = usedGroups + 1, #panel.groups do panel.groups[i]:Hide() end
 
-    -- Right column is step 4. Until then it says what it is waiting for
-    -- rather than sitting blank, which reads as a broken window.
-    ns.SetOverlayFont(panel.detail, FS)
-    panel.detail:SetText((ns.L and ns.L.lootPickSource) or "")
+    local _, detailCold = RefreshDetail(selection)
+    if detailCold then cold = true end
 
+    -- Listen for item data only while something is actually waiting on
+    -- it. This event fires for every item the client resolves anywhere,
+    -- so leaving it registered would redraw the panel constantly.
+    if panel.RegisterEvent then
+        if cold then panel:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+        else panel:UnregisterEvent("GET_ITEM_INFO_RECEIVED") end
+    end
     if cold then ScheduleRetry() end
 end
 
@@ -398,7 +722,7 @@ end
 -- Where the window was left. Stored as the full anchor tuple rather than
 -- an offset from centre, so a UI scale or resolution change moves it the
 -- same way Blizzard's own frames move.
-local function SavePosition()
+function SavePosition()
     if not (panel and DodoInspectDB) then return end
     local point, _, relPoint, x, y = panel:GetPoint(1)
     if not point then return end
@@ -483,13 +807,49 @@ function ns.SetupLootPanel()
     panel.divider:SetPoint("TOPLEFT", panel.body, "TOPRIGHT", PAD / 2, 0)
     panel.divider:SetPoint("BOTTOMLEFT", panel.body, "BOTTOMRIGHT", PAD / 2, 0)
 
-    panel.detail = panel:CreateFontString(nil, "OVERLAY")
-    ns.SetOverlayFont(panel.detail, FS)
-    panel.detail:SetJustifyH("LEFT")
+    -- A real Frame, because the drop rows are its children. In step 3
+    -- this was a FontString holding a "pick something on the left"
+    -- placeholder; that line now lives in panel.detailNote.
+    panel.detail = CreateFrame("Frame", nil, panel)
+
+    panel.detailTitle = panel.detail:CreateFontString(nil, "OVERLAY")
+    panel.detailTitle:SetJustifyH("LEFT")
+    -- Anchored on both sides, so it has a fixed width -- and FontStrings
+    -- wrap by default. The header reserve is one line tall, so a wrapped
+    -- second line would draw straight over the first drop row.
+    panel.detailTitle:SetWordWrap(false)
+    panel.detailTitle:SetPoint("TOPLEFT", panel.detail, "TOPLEFT", 0, 0)
+    panel.detailTitle:SetPoint("TOPRIGHT", panel.detail, "TOPRIGHT", 0, 0)
+
+    -- Every "there is nothing to draw" answer, in one place. Which
+    -- sentence it carries is the caller's business; a blank right column
+    -- reads as a broken window whichever reason produced it.
+    panel.detailNote = panel.detail:CreateFontString(nil, "OVERLAY",
+                                                    "GameFontDisableSmall")
+    panel.detailNote:SetJustifyH("LEFT")
+    panel.detailNote:Hide()
 
     panel.empty = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     panel.empty:SetPoint("TOPLEFT", panel.body, "TOPLEFT", 0, 0)
     panel.empty:Hide()
+
+    -- The right column is derived from things that change underneath it
+    -- while the window is open: what is in your bags, what you are
+    -- wearing, and which spec you are. Without this you equip a piece
+    -- out of your bags and the column still reads "Bags 305" -- forever,
+    -- because nothing else redraws this panel.
+    --
+    -- Only ever acts while shown, so a closed browser costs nothing.
+    -- GET_ITEM_INFO_RECEIVED is registered on demand instead (see the
+    -- refresh): it fires constantly, and it is only interesting for as
+    -- long as something in the list is still uncached.
+    panel:RegisterEvent("BAG_UPDATE_DELAYED")
+    panel:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+    panel:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    panel:RegisterEvent("PLAYER_TALENT_UPDATE")
+    panel:SetScript("OnEvent", function(self)
+        if self:IsShown() then ns.RefreshLootPanel() end
+    end)
 
     RestorePosition()
     return panel
