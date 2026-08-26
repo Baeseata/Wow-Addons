@@ -222,11 +222,21 @@
   照抄插件已有的 lazy 模式(`LoadAddOn` + `pcall` + 缓存,`LootSource.lua` 现成)。
   ⚠ 冷登录时它们会**先答 nil**;别画占位符,画能画的然后**有限次**重试 ——
   无上限重试 = 一个永远转下去的定时器,而且屏幕上不会有任何东西说它在转。
+- ✅ **`Blizzard_ChallengesUI` 不需要 lazy 加载 —— 2026-08-25 HOME 真机实测关掉了。**
+  Jerry 开窗口,**8 张大秘境卡片全有图标**,而代码里从没加载过那个 addon
+  ⇒ `C_ChallengeMode.GetMapUIInfo` 的 **texture 那一格是引擎侧给的**。
+  ⚠ 这一枪值钱的地方在于**它之前有三条互相矛盾的类推**(原设计说要、改版时我说不要、
+  本机三个在产插件都不加载它但**没有一个取第 4/5 个返回值**)—— 三条都不是读数。
+  canon「结论是『这个 API 可用』必须有一次真机读数」在这儿又对了一次。
+  <details><summary>当初那段未验的记录</summary>
+
 - ⚠ **`Blizzard_ChallengesUI` 要不要 lazy 加载 —— 两个方向都没人验过。**
   原设计说「要」(照 `Blizzard_InspectUI` 类推的);改版时我写过「不用,`C_ChallengeMode.*`
   是引擎侧 C API」—— **那同样是类推,不是读数**。代码两边都不赌:图标拿不到就不画那个图标,
   然后有限次重试(canon:结论是「这个 API 可用」必须有一次真机读数,契约只配用来否定)。
   真机第一次开窗口时顺手看一眼卡片有没有图 —— **没图就是它需要那个 addon**,补一句 lazy load。
+
+  </details>
 - ~~高度锚 `ChallengesFrame`、`SetParent` 跟随隐藏~~ —— 自由窗口没有宿主可跟随。
 
 **右栏(掉落列表)**

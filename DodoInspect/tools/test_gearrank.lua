@@ -1263,5 +1263,48 @@ do
                .. (example and (" (" .. example .. ")") or ""))
 end
 
+-- Trinkets lead the list, and are ordered among themselves.
+--
+-- Owner's call 2026-08-25. It reverses what the stat sort does on its
+-- own: 33 of the season's 42 trinkets carry no secondaries, so they
+-- score nil and sink to the bottom -- burying the drop people open a
+-- boss card to look for.
+do
+    orderUnderTest = { "crit", "haste", "mastery", "versatility" }
+    local mixed, outOfBlock, simInversions = 0, 0, 0
+    for specID in pairs(ns.SpecGear) do
+        for _, mode in ipairs({ "mythic", "raid" }) do
+            for _, card in ipairs(ns.LootCardList(mode)) do
+                local rows = ns.SourceCandidates(card, specID, nil, mode) or {}
+                local trinkets, others, seenOther = 0, 0, false
+                local lastRank
+                for _, row in ipairs(rows) do
+                    if row.equipLoc == ns.TRINKET_SLOT then
+                        trinkets = trinkets + 1
+                        -- A trinket AFTER a non-trinket is the failure.
+                        if seenOther then outOfBlock = outOfBlock + 1 end
+                        if row.simRank and lastRank and row.simRank < lastRank then
+                            simInversions = simInversions + 1
+                        end
+                        lastRank = row.simRank or lastRank
+                    else
+                        others = others + 1
+                        seenOther = true
+                    end
+                end
+                -- Only a list holding BOTH kinds can answer the question.
+                if trinkets > 0 and others > 0 then mixed = mixed + 1 end
+            end
+        end
+    end
+    check(mixed > 100, "lists holding both a trinket and something else "
+          .. "were actually seen (got " .. mixed .. ") -- a zero would "
+          .. "make the next check pass for free")
+    checkEqual(outOfBlock, 0, "every trinket sorts ahead of every "
+               .. "non-trinket in the same list")
+    checkEqual(simInversions, 0, "inside the trinket block the "
+               .. "simulation order is respected")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

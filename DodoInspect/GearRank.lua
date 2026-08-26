@@ -567,14 +567,11 @@ end
 -- 1. The weapon axis is ns.SpecWeaponLocations (the union) instead of
 --    ns.WeaponPool (one hand, one mode). See that function.
 --
--- 2. simRank is carried but NEVER SORTED ON. The trinket simulation
---    ranks trinkets against trinkets and answers an ordinal (1, 2, 3);
---    ns.StatFit answers a fraction in 0..1. On the trinket ROW only one
---    of the two is ever in play, so SlotCandidates can sort on simRank
---    safely. Here a boss drops a trinket and a chest in the same list,
---    and sorting an ordinal against a fraction prices two incomparable
---    scales against each other -- the trinket would win every time, for
---    no reason but that ranks start at 1.
+-- 2. simRank sorts INSIDE the trinket block only. The simulation
+--    answers an ordinal (1, 2, 3) while ns.StatFit answers a fraction
+--    in 0..1, so comparing the two across slots prices two incomparable
+--    scales against each other. Trinkets leading as their own block
+--    removes that: within it, every row is on the ordinal scale.
 --
 -- 3. offTrack keys off the item's equip location, NOT off "is this the
 --    trinket row" -- there are no rows here. This is the 1.12.0 bug's
@@ -608,6 +605,11 @@ function ns.SourceCandidates(card, specID, subTreeID, content)
     local weights = ns.StatWeights(order)
 
     local weaponLocs = ns.SpecWeaponLocations(specID)
+    -- Trinkets lead the list and are ordered against EACH OTHER, so the
+    -- simulation order is wanted here after all. nil is a real answer
+    -- (23 of 40 specs have no trinket data); unlike SlotCandidates, that
+    -- must not empty the block -- a boss still drops those trinkets.
+    local trinketRank = ns.TrinketOrder and ns.TrinketOrder(specID) or nil
     local out, unranked = {}, 0
 
     for itemID, entry in pairs(ns.LootData) do
@@ -675,7 +677,8 @@ function ns.SourceCandidates(card, specID, subTreeID, content)
                     equipLoc = equipLoc,
                     effect = entry[9] == 1,
                     unranked = (score == nil),
-                    simRank = nil,
+                    simRank = isTrinket and trinketRank
+                              and trinketRank[itemID] or nil,
                     topItemLevel = ns.ReachesTopItemLevel(entry),
                     statless = statless,
                     offTrack = (not isTrinket) and statless or false,
@@ -697,6 +700,28 @@ function ns.SourceCandidates(card, specID, subTreeID, content)
     -- sorts above a chest ten item levels above it -- while its tooltip,
     -- correctly, quotes the lower number.
     table.sort(out, function(a, b)
+        -- Trinkets first, whole block (owner's call 2026-08-25). They
+        -- are the drop people scan a boss for, and most of them cannot
+        -- be stat-ranked at all -- 33 of the season's 42 carry no
+        -- secondaries -- so the stat sort was burying exactly the rows
+        -- worth looking at.
+        local aTrinket = (a.equipLoc == ns.TRINKET_SLOT)
+        local bTrinket = (b.equipLoc == ns.TRINKET_SLOT)
+        if aTrinket ~= bTrinket then return aTrinket end
+        -- Inside the trinket block simRank is legitimate: it compares
+        -- trinkets against trinkets, which is exactly what the
+        -- simulation measured. Mixing it with the stat score across
+        -- slots is what had to be avoided, and a block cannot mix.
+        -- BOTH, not just a. Requiring only `aTrinket` happens to be
+        -- safe today because the branch above already guarantees the
+        -- two are the same kind by the time we get here -- but that is
+        -- an invariant held at a distance, and if it ever stops holding
+        -- the comparator becomes non-transitive and table.sort raises
+        -- "invalid order function" rather than merely sorting oddly.
+        if aTrinket and bTrinket and a.simRank ~= b.simRank then
+            if a.simRank and b.simRank then return a.simRank < b.simRank end
+            return a.simRank ~= nil
+        end
         if a.topItemLevel ~= b.topItemLevel then return a.topItemLevel end
         if (a.score == nil) ~= (b.score == nil) then return b.score == nil end
         if a.score and b.score and math.abs(a.score - b.score) > 0.0001 then

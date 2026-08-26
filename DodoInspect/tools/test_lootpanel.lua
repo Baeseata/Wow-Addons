@@ -314,6 +314,35 @@ local steps = {
       bankLinks[1], bankLinks[2], warbandLinks[1] = nil, nil, nil
       ns.RefreshLootPanel()
     end },
+  { "slot column", function()
+      ns.SetLootPanelMode("mythic")
+      ns.SelectLootCard(ns.LootCardList("mythic")[1])
+      local rows = DodoInspectLootPanel.detailRows
+      local drawn, labelled, distinct = 0, 0, {}
+      local n = 0
+      for _, row in ipairs(rows) do
+        if row.__shown then
+          drawn = drawn + 1
+          local text = row.slot.__text or ""
+          if text ~= "" then
+            labelled = labelled + 1
+            if not distinct[text] then distinct[text] = true; n = n + 1 end
+          end
+        end
+      end
+      assert(drawn > 0, "no rows were drawn")
+      assert(labelled == drawn, string.format(
+             "%d of %d rows have no slot label", drawn - labelled, drawn))
+      -- More than one distinct value, or a hard-coded constant would
+      -- satisfy the check above just as well.
+      assert(n > 1, "every row shows the SAME slot label (" .. n .. ")")
+      -- Trinkets lead, so row 1 must carry the trinket abbreviation --
+      -- which also proves the column is keyed off the item and not the
+      -- row index.
+      assert(rows[1].slot.__text == ns.L.slots.INVTYPE_TRINKET,
+             "row 1 is not a trinket, or the slot column is wrong: got "
+             .. tostring(rows[1].slot.__text))
+    end },
   { "nothing truncates this season", function()
       -- MIN_DETAIL_ROWS is headroom, not a measurement, and the only
       -- thing that says whether it is still enough is this. If a season

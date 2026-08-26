@@ -351,7 +351,13 @@ end
 local function LayoutDetailRow(row, index)
     local statW  = math.floor(FS * 3.4)
     local ownedW = math.floor(FS * 6)
-    local nameW  = RIGHT_W - statW * (ns.GEAR_STAT_COLS or 2) - ownedW - 8
+    -- The slot column carries the two-glyph abbreviation out of
+    -- ns.L.slots (TR / RG / 1H ...), which is already translated in all
+    -- four locales -- the CJK ones are one glyph wide, the Latin ones
+    -- two, so this is sized for the wider of them.
+    local slotW  = math.floor(FS * 2.4)
+    local nameW  = RIGHT_W - slotW - statW * (ns.GEAR_STAT_COLS or 2)
+                   - ownedW - 8
 
     row:SetSize(RIGHT_W, ROW_H)
     row:ClearAllPoints()
@@ -371,10 +377,14 @@ local function LayoutDetailRow(row, index)
     -- column instead of the two or three glyphs in it. Both other
     -- callers (the side panel and the gear panel) leave it natural for
     -- exactly this reason.
+    row.slot:ClearAllPoints()
+    row.slot:SetPoint("CENTER", row, "LEFT", nameW + slotW / 2, 0)
+    ns.SetOverlayFont(row.slot, FS)
+
     for i = 1, #row.stats do
         row.stats[i]:ClearAllPoints()
         row.stats[i]:SetPoint("CENTER", row, "LEFT",
-                              nameW + (i - 0.5) * statW, 0)
+                              nameW + slotW + (i - 0.5) * statW, 0)
         ns.SetOverlayFont(row.stats[i], FS)
     end
 
@@ -387,6 +397,7 @@ end
 local function CreateDetailRow(parent, index)
     local row = CreateFrame("Frame", nil, parent)
     row.name = NewDetailCell(row, "LEFT")
+    row.slot = NewDetailCell(row, "CENTER")
     row.stats, row.statLines = {}, {}
     for i = 1, (ns.GEAR_STAT_COLS or 2) do
         row.stats[i] = NewDetailCell(row, "CENTER")
@@ -581,6 +592,16 @@ local function RefreshDetail(card)
         local have = owned[entryRow.id]
         row.owned:SetText(Colored(OwnedText(have),
                                   have and ns.Config.LOOT_OWNED_COLOR or nil))
+
+        -- Resolved from the client's own equip location, so no new
+        -- strings: ns.L.slots already carries every one of these in all
+        -- four languages, and the bag overlays have been printing them
+        -- for months.
+        local slots = ns.L and ns.L.slots
+        row.slot:SetText((slots and entryRow.equipLoc
+                          and slots[entryRow.equipLoc]) or "")
+        local sc = ns.Config.LOOT_GROUP_COLOR
+        row.slot:SetTextColor(sc[1], sc[2], sc[3], sc[4])
 
         ns.SetStatCells(row, entryRow, FS)
         row:Show()
