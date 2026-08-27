@@ -16,8 +16,9 @@
 -- ns.LootCardList in LootSource.lua. This file only draws it.
 --
 -- SECRET VALUES: nothing in this file reads unit data. The spec filter
--- (step 5) will read the PLAYER's own spec, which is never secret out of
--- combat, and there is no inspect path into this window at all.
+-- reads the PLAYER's own spec and hero tree, which are never secret,
+-- and every other spec it offers is a plain number out of ns.SpecGear.
+-- There is no inspect path into this window at all.
 
 local _, ns = ...
 
@@ -74,6 +75,77 @@ function ns.SelectLootCard(card)
 end
 
 --------------------------------------------------------------------
+-- Which specialization the right column answers for
+--------------------------------------------------------------------
+
+-- Stored as an OVERRIDE, never as "the current spec".
+--
+-- An absent key means "whoever is logged in", so a fresh character is
+-- shown its own drops without anyone touching the dropdowns. Persisting
+-- the spec itself would mean logging in on an alt and being handed the
+-- last character's list -- with the window looking completely normal,
+-- because the code would be doing exactly what it was told. That is the
+-- failure where the code is right and the STATE is wrong, and the cure
+-- is to store the departure from the default rather than the default.
+--
+-- Second return value: is this the player's own spec? Only then can the
+-- hero tree be read, and only then does it describe the spec on screen.
+function ns.LootPanelSpec()
+    local own = ns.PlayerSpecID and ns.PlayerSpecID() or nil
+    local db = DodoInspectDB
+    local stored = db and db.lootPanelSpec
+    if stored then
+        -- Validated against the index, not trusted: a saved-variables
+        -- file can outlive a spec being removed from ns.SpecGear, and
+        -- an unknown id would show an empty column forever.
+        local index = ns.LootSpecIndex and ns.LootSpecIndex()
+        if index and index.byID[stored] then return stored, stored == own end
+    end
+    return own, own ~= nil
+end
+
+-- Picking your OWN spec clears the override instead of storing it, so a
+-- later respec is followed rather than frozen. The stored key then only
+-- ever means one thing: "I am looking at somebody else's spec".
+function ns.SetLootPanelSpec(specID)
+    if DodoInspectDB then
+        local own = ns.PlayerSpecID and ns.PlayerSpecID() or nil
+        if specID == nil or specID == own then
+            DodoInspectDB.lootPanelSpec = nil
+        else
+            DodoInspectDB.lootPanelSpec = specID
+        end
+    end
+    retries = 0
+    ns.RefreshLootPanel()
+end
+
+function ns.LootPanelClass()
+    local specID = ns.LootPanelSpec()
+    if not specID then return nil end
+    local index = ns.LootSpecIndex and ns.LootSpecIndex()
+    return index and index.classOf[specID] or nil
+end
+
+-- Changing class has to land on SOME spec, and which one is a real
+-- choice. Landing on your own spec when you pick your own class is the
+-- one that matches intent -- that click means "back to me" far more
+-- often than it means "show me Arms". Everything else takes the class's
+-- first spec.
+function ns.SelectLootClass(classID)
+    local index = ns.LootSpecIndex and ns.LootSpecIndex()
+    local entry = index and index.byClass[classID]
+    if not entry then return end
+    if ns.LootPanelClass() == classID then return end
+    local own = ns.PlayerSpecID and ns.PlayerSpecID() or nil
+    if own and index.classOf[own] == classID then
+        ns.SetLootPanelSpec(own)
+    elseif entry.specs[1] then
+        ns.SetLootPanelSpec(entry.specs[1].id)
+    end
+end
+
+--------------------------------------------------------------------
 -- Geometry
 --------------------------------------------------------------------
 
@@ -85,7 +157,11 @@ end
 local PAD = 10
 local HEADER_H = 26
 local FS, ICON, CARD_H, GROUP_H, LEFT_W, RIGHT_W, TAB_H, BODY_H
-local ROW_H, DETAIL_HEAD_H
+local ROW_H, DETAIL_HEAD_H, DROP_H, DROP_W
+-- The dropdown template draws a fixed-height frame and a caret; below
+-- roughly this it stops looking like a control you can open. The tab
+-- row is the only thing that has to clear it, so the floor lives there.
+local DROP_MIN_H = 20
 -- Forward-declared: the drop rows are built well above the position
 -- helpers, and a row's OnDragStop needs to save where the window landed.
 -- Without this the closure would capture a GLOBAL of that name -- which
@@ -106,7 +182,11 @@ local function Layout()
     ICON     = math.floor(FS * 1.7)
     CARD_H   = ICON + 4
     GROUP_H  = math.floor(FS * 1.5)
-    TAB_H    = math.floor(FS * 1.9)
+    -- The tab row now also carries the class and spec dropdowns, so it
+    -- has a floor: at the smallest font size FS * 1.9 is 15 pixels, and
+    -- a 15-pixel dropdown is a sliver. Only the bottom of the slider
+    -- range moves -- at the default size this is unchanged.
+    TAB_H    = math.max(math.floor(FS * 1.9), DROP_MIN_H + 4)
     -- Wide enough for a boss name, not just a four-letter dungeon tag.
     -- Anything longer still clips on one line and the tooltip carries
     -- the full name; a wrapping card would make the rows different
@@ -117,6 +197,10 @@ local function Layout()
     -- way and a different rhythm on each would look like a mistake.
     ROW_H         = math.floor(FS * 1.35)
     DETAIL_HEAD_H = math.floor(FS * 1.6)
+    -- Sized like the mode tabs so the whole row reads as one strip, and
+    -- split across the right column because that is what they filter.
+    DROP_H = math.max(TAB_H - 4, DROP_MIN_H)
+    DROP_W = math.floor((RIGHT_W - PAD) / 2)
 
     -- Height is the TALLER of the two modes, always. Sizing to the
     -- current mode would make the window jump every time the switch is
@@ -310,6 +394,22 @@ local function ApplyChrome()
     local tabW = math.floor(LEFT_W / 2) - 1
     panel.tabMythic:SetSize(tabW, TAB_H - 4)
     panel.tabRaid:SetSize(tabW, TAB_H - 4)
+
+    -- The filters live in the tab row above the RIGHT column, not above
+    -- the cards: they change what the right column lists, and the strip
+    -- over there was empty anyway. Anchored off panel.body's top-right
+    -- corner so they share one origin with panel.detail below them --
+    -- two independent offsets from the frame would be two chances to
+    -- disagree with a height that is recomputed on every refresh.
+    if panel.classDrop then
+        panel.classDrop:SetSize(DROP_W, DROP_H)
+        panel.classDrop:ClearAllPoints()
+        panel.classDrop:SetPoint("TOPLEFT", panel.body, "TOPRIGHT",
+                                 PAD, TAB_H - 2)
+        panel.specDrop:SetSize(DROP_W, DROP_H)
+        panel.specDrop:ClearAllPoints()
+        panel.specDrop:SetPoint("LEFT", panel.classDrop, "RIGHT", PAD, 0)
+    end
 end
 
 --------------------------------------------------------------------
@@ -530,13 +630,22 @@ local function RefreshDetail(card)
     local heading = CardTooltip(card) or CardLabel(card) or ""
     panel.detailTitle:SetText(heading)
 
-    -- The player's own spec, and their own hero tree with it. Eight of
-    -- the forty specs split their stat priority by hero tree and cannot
-    -- be resolved without one -- and SourceCandidates lists the drops
-    -- either way, it just cannot rank them.
-    local specID = ns.PlayerSpecID and ns.PlayerSpecID()
+    -- Whichever spec the filter is on -- the player's own unless they
+    -- picked another. Eight of the forty specs split their stat priority
+    -- by hero tree, and SourceCandidates lists the drops either way; it
+    -- just cannot rank them without one.
+    local specID, isOwn = ns.LootPanelSpec()
     if not specID then return Note(L.lootNoSpec) end
-    local subTree = ns.PlayerHeroSubTree and ns.PlayerHeroSubTree()
+    -- Written as a statement, not `isOwn and X and X() or nil`: that
+    -- idiom collapses to the last branch the moment the middle term is
+    -- falsy, and a hero tree legitimately IS nil before one is picked.
+    local subTree
+    if isOwn and ns.PlayerHeroSubTree then
+        -- Only your own tree is readable, and it only describes your own
+        -- spec. Handing it to somebody else's spec would rank their
+        -- drops against your talents and never look wrong.
+        subTree = ns.PlayerHeroSubTree()
+    end
     local content = (card.kind == "dungeon") and "mythic" or "raid"
 
     local list, _, ranked = ns.SourceCandidates(card, specID, subTree, content)
@@ -614,6 +723,16 @@ local function RefreshDetail(card)
                   Colored(string.format(L.lootCeiling, cap311),
                           ns.Config.LOOT_GROUP_COLOR)
     end
+    -- Say WHY the rows lost their numbers. Without this, picking a spec
+    -- whose priority splits by hero tree silently drops the ranking and
+    -- the list still looks like a ranked one -- which reads as the
+    -- numbering being broken rather than as an honest "there is no order
+    -- to assert here". Eight of the forty specs land on this the moment
+    -- you look at somebody else's.
+    if not ranked and L.lootUnranked then
+        heading = heading .. "  " ..
+                  Colored(L.lootUnranked, ns.Config.LOOT_GROUP_COLOR)
+    end
     -- Truncation has to be visible: a list quietly cut to fit reads as
     -- "these are all of them", which is the one thing it is not.
     if shown < #list then
@@ -623,6 +742,79 @@ local function RefreshDetail(card)
     -- The ceiling label is read off a link, which is equally cold.
     if not cap311 and card.kind == "dungeon" then cold = true end
     return true, cold
+end
+
+-- Show and mouse-enable together, always. A Hidden frame is not
+-- reliably out of the way of the cursor, and half of this pair is
+-- exactly the kind of thing that gets forgotten at one of two call
+-- sites -- so there is only one call site.
+local function ShowDrop(drop, on)
+    drop:SetShown(on)
+    drop:EnableMouse(on)
+end
+
+-- Menu contents are rebuilt here rather than once at construction, the
+-- same way DodoGuanzhu's list dropdown does it: the spec menu depends on
+-- which class is selected, so "set it up once" would need the generator
+-- to close over live state anyway, and the shipped-and-proven sequence
+-- is SetupMenu -> SetDefaultText -> GenerateMenu.
+--
+-- Both radio callbacks read the selection back through the accessors
+-- instead of closing over what it was when the menu was built. A menu
+-- built before a respec would otherwise keep checking the old row.
+local function RefreshDropdowns()
+    local classDrop, specDrop = panel.classDrop, panel.specDrop
+    -- Absent when the dropdown template could not be created; the rest
+    -- of the window works without them and follows the player's spec.
+    -- True, not nil: with no dropdowns there is nothing here for the
+    -- retry to wait on, and answering "incomplete" would spend the
+    -- whole retry budget on a question nobody asked.
+    if not (classDrop and specDrop) then return true end
+
+    local index, complete = ns.LootSpecIndex()
+    if #index.classes == 0 then
+        -- Nothing to choose between. Two empty controls invite clicks
+        -- that do nothing, which is worse than no controls at all.
+        ShowDrop(classDrop, false)
+        ShowDrop(specDrop, false)
+        return complete
+    end
+    ShowDrop(classDrop, true)
+    ShowDrop(specDrop, true)
+
+    local L = ns.L or {}
+    local specID = ns.LootPanelSpec()
+    local classID = ns.LootPanelClass()
+
+    classDrop:SetupMenu(function(_, root)
+        for _, entry in ipairs(index.classes) do
+            local id = entry.classID
+            root:CreateRadio(Colored(entry.name, entry.color),
+                function() return ns.LootPanelClass() == id end,
+                function() ns.SelectLootClass(id) end)
+        end
+    end)
+    local classEntry = classID and index.byClass[classID]
+    classDrop:SetDefaultText(classEntry
+        and Colored(classEntry.name, classEntry.color) or L.lootClass or "")
+    classDrop:GenerateMenu()
+
+    specDrop:SetupMenu(function(_, root)
+        -- Read at OPEN time, not captured: the class can change between
+        -- two openings of this menu and the entries have to follow.
+        local current = ns.LootPanelClass()
+        local entry = current and index.byClass[current]
+        for _, spec in ipairs(entry and entry.specs or {}) do
+            local id = spec.id
+            root:CreateRadio(spec.name,
+                function() return (ns.LootPanelSpec()) == id end,
+                function() ns.SetLootPanelSpec(id) end)
+        end
+    end)
+    local specEntry = specID and index.byID[specID]
+    specDrop:SetDefaultText(specEntry and specEntry.name or L.lootSpec or "")
+    specDrop:GenerateMenu()
+    return complete
 end
 
 function ns.RefreshLootPanel()
@@ -723,6 +915,10 @@ function ns.RefreshLootPanel()
     for i = usedCards + 1, #panel.cards do panel.cards[i]:Hide() end
     for i = usedGroups + 1, #panel.groups do panel.groups[i]:Hide() end
 
+    -- Before the detail: the right column asks LootPanelSpec, which
+    -- validates a stored override against this same index.
+    if not RefreshDropdowns() then cold = true end
+
     local _, detailCold = RefreshDetail(selection)
     if detailCold then cold = true end
 
@@ -817,6 +1013,28 @@ function ns.SetupLootPanel()
     panel.tabRaid:SetScript("OnClick", function()
         ns.SetLootPanelMode("raid")
     end)
+
+    -- Class and specialization filters. Named and templated exactly the
+    -- way DodoGuanzhu's shipping dropdown is -- WowStyle1DropdownTemplate
+    -- with SetupMenu and CreateRadio, not the deprecated
+    -- UIDropDownMenu_* family, which still works and so gives no signal
+    -- at all when you write against it by mistake.
+    --
+    -- pcall'd because this is the one control here built from a Blizzard
+    -- template that can be renamed out from under us: CreateFrame throws
+    -- on an unknown template, and taking the whole window down over a
+    -- filter would trade a missing convenience for a missing feature.
+    -- Without them the panel simply follows the player's own spec, which
+    -- is what it did before this step.
+    local ok, classDrop = pcall(CreateFrame, "DropdownButton",
+                                "DodoInspectLootClassDropdown", panel,
+                                "WowStyle1DropdownTemplate")
+    local okSpec, specDrop = pcall(CreateFrame, "DropdownButton",
+                                   "DodoInspectLootSpecDropdown", panel,
+                                   "WowStyle1DropdownTemplate")
+    if ok and okSpec and classDrop and specDrop then
+        panel.classDrop, panel.specDrop = classDrop, specDrop
+    end
 
     -- Card container, so every card anchors to one origin instead of to
     -- the frame plus a running header offset.

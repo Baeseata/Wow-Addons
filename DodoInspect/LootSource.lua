@@ -363,3 +363,168 @@ function ns.LootOwnedIndex()
 
     return out
 end
+
+--------------------------------------------------------------------
+-- Class / specialization list for the loot browser's filter
+--------------------------------------------------------------------
+
+-- WHICH specs exist is answered by ns.SpecGear, not by the client.
+--
+-- That direction matters. ns.SpecGear is what ns.SourceCandidates
+-- actually needs -- with no entry there it answers nil and the right
+-- column says "nothing here for this specialization". Building the
+-- dropdown by walking the client's own spec list instead would offer
+-- specs this panel cannot serve, and the only feedback would be an
+-- empty column that reads as "this boss drops nothing for you". Taking
+-- the membership from our own table makes that state unreachable: you
+-- can only pick a spec the panel can answer for.
+--
+-- The client is asked only for things it alone knows -- which class a
+-- spec belongs to, and what the two are CALLED in the player's
+-- language. Every one of those lookups is guarded and allowed to fail:
+-- on a cold login the answers can arrive a moment late, which is what
+-- the second return value is for.
+--
+-- ORDER inside a class is spec id ascending, and that is deliberate,
+-- not a stand-in for something better. Blizzard handed out spec ids in
+-- each class's display order, so the two agree everywhere except monk
+-- (Brewmaster / Windwalker / Mistweaver instead of Brewmaster /
+-- Mistweaver / Windwalker). Fixing that one row would mean a
+-- hand-written order table beside a derived one -- a second copy of a
+-- fact, free to drift at the next class added -- for one swap nobody
+-- has to hunt for in a three-item list. If a future class really is
+-- misordered, take the order from the client's own enumeration; do not
+-- write it out here.
+
+local function ClassIDForSpec(specID)
+    local api = C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID
+    if type(api) ~= "function" then return nil end
+    local ok, classID = pcall(api, specID)
+    if ok and type(classID) == "number" and classID > 0 then return classID end
+    return nil
+end
+
+-- Localized class name + the CLASSFILE token the colour tables are
+-- keyed by. C_CreatureInfo is the documented path; the bare global is
+-- the older one, still what several shipping addons on this machine
+-- call, so both are tried.
+local function ClassInfoFor(classID)
+    local api = C_CreatureInfo and C_CreatureInfo.GetClassInfo
+    if type(api) == "function" then
+        local ok, info = pcall(api, classID)
+        if ok and type(info) == "table" and info.className then
+            return info.className, info.classFile
+        end
+    end
+    if type(_G.GetClassInfo) == "function" then
+        local ok, name, file = pcall(_G.GetClassInfo, classID)
+        if ok and name then return name, file end
+    end
+    return nil
+end
+
+-- Name and icon for one spec id. Namespaced first, bare global second:
+-- the generated API documentation only covers C_SpecializationInfo, and
+-- the global is not in it -- but it is what Plater and NorthernSky call
+-- on this same client build, so its absence from the documentation is
+-- not evidence that it is missing. Whichever exists wins; if neither
+-- does the caller falls back to the id and the retry says so.
+local function SpecInfoFor(specID)
+    local api = (C_SpecializationInfo
+                 and C_SpecializationInfo.GetSpecializationInfoByID)
+                or _G.GetSpecializationInfoByID
+    if type(api) ~= "function" then return nil end
+    local ok, _, name, _, icon = pcall(api, specID)
+    if ok and name then return name, icon end
+    return nil
+end
+
+local function ClassColorFor(classFile)
+    if not classFile then return nil end
+    if C_ClassColor and type(C_ClassColor.GetClassColor) == "function" then
+        local ok, color = pcall(C_ClassColor.GetClassColor, classFile)
+        if ok and type(color) == "table" and color.r then
+            return { color.r, color.g, color.b, 1 }
+        end
+    end
+    local raid = _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[classFile]
+    if type(raid) == "table" and raid.r then
+        return { raid.r, raid.g, raid.b, 1 }
+    end
+    return nil
+end
+
+-- Cached only once COMPLETE. A partial index is exactly what a cold
+-- login produces, and caching that would freeze half the classes out of
+-- the dropdown for the rest of the session with nothing on screen
+-- saying why -- the same shape as a card list cached before the
+-- Encounter Journal answered.
+local specIndex
+
+-- Returns the index, and whether every spec resolved. The panel folds
+-- the second value into the same bounded retry the card labels use.
+function ns.LootSpecIndex()
+    if specIndex then return specIndex, true end
+
+    local ids = {}
+    for specID in pairs(ns.SpecGear or {}) do ids[#ids + 1] = specID end
+    table.sort(ids)
+
+    local classes, byClass, byID, classOf = {}, {}, {}, {}
+    local named = 0
+    for _, specID in ipairs(ids) do
+        local classID = ClassIDForSpec(specID)
+        if classID then
+            local entry = byClass[classID]
+            if not entry then
+                local className, classFile = ClassInfoFor(classID)
+                entry = {
+                    classID = classID,
+                    -- A class whose name has not arrived still gets a
+                    -- row: dropping it would hide its specs entirely,
+                    -- and an ugly label is recoverable where a missing
+                    -- class is not.
+                    name = className or ("#" .. classID),
+                    named = className ~= nil,
+                    file = classFile,
+                    color = ClassColorFor(classFile),
+                    specs = {},
+                }
+                byClass[classID] = entry
+                classes[#classes + 1] = entry
+            end
+            local name, icon = SpecInfoFor(specID)
+            if name and entry.named then named = named + 1 end
+            local spec = {
+                id = specID,
+                name = name or ("#" .. specID),
+                icon = icon,
+                classID = classID,
+            }
+            entry.specs[#entry.specs + 1] = spec
+            byID[specID] = spec
+            classOf[specID] = classID
+        end
+    end
+
+    -- Alphabetical by the name the player actually reads, with the id
+    -- as the tie-break so the order is TOTAL: pairs() is unordered and
+    -- two classes sharing a label would otherwise let the list reshuffle
+    -- between two openings.
+    table.sort(classes, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        return a.classID < b.classID
+    end)
+
+    local index = {
+        classes = classes,
+        byClass = byClass,
+        byID = byID,
+        classOf = classOf,
+    }
+    -- Complete means every spec we ship got a class AND both names.
+    -- Anything less is a cold client, not a smaller game.
+    local complete = (#ids > 0) and (named == #ids)
+    if complete then specIndex = index end
+    return index, complete
+end

@@ -682,6 +682,82 @@ end
 loadAddonFile("Locales.lua")
 local officialNames = assert(loadfile("tools/fixture_dungeonnames.lua"))()
 
+--------------------------------------------------------------------
+-- Every locale carries every key
+--
+-- A string added to en and forgotten in the other three does not throw
+-- and does not log: ns.L.whatever is nil, the caller prints "" and the
+-- label is simply absent. On a Chinese client that is a blank control
+-- with no way to learn what it was for -- the failure mode where the
+-- normal state and the broken one look identical.
+--
+-- Two keys really are per-locale, and they are named rather than
+-- pattern-matched so the exemption cannot quietly widen to cover a
+-- fourth. The reverse check below fails if either stops being needed,
+-- because an exemption nobody removes is how this kind of guard turns
+-- into a green light for the thing it was meant to catch.
+--------------------------------------------------------------------
+
+do
+    local PER_LOCALE = {
+        -- cn overrides the acronyms; every other locale falls through to
+        -- the shared ns.DungeonShort on purpose.
+        dungeonShort = true,
+        -- Only cn needs a font the Latin client font cannot supply.
+        font = true,
+    }
+
+    local locales = ns.LocaleOrder
+    check(type(locales) == "table" and #locales >= 2,
+          "there are at least two locales to compare")
+
+    local everyKey = {}
+    for _, key in ipairs(locales) do
+        for name in pairs(ns.Locales[key]) do everyKey[name] = true end
+    end
+    local total = 0
+    for _ in pairs(everyKey) do total = total + 1 end
+    -- Reverse assertion: with an empty key set every loop below passes
+    -- while comparing nothing at all.
+    check(total > 20, "the locale tables actually carry keys (got "
+          .. total .. ")")
+
+    local missing, mistyped, exemptStillNeeded = 0, 0, {}
+    for name in pairs(everyKey) do
+        local shape
+        for _, key in ipairs(locales) do
+            local value = ns.Locales[key][name]
+            if value == nil then
+                if PER_LOCALE[name] then
+                    exemptStillNeeded[name] = true
+                else
+                    missing = missing + 1
+                    print("FAIL  locale '" .. key .. "' is missing '"
+                          .. name .. "'")
+                end
+            else
+                -- A key that is a string in one locale and a table in
+                -- another reaches its caller as the wrong kind of thing,
+                -- which is a crash rather than a blank.
+                shape = shape or type(value)
+                if type(value) ~= shape then
+                    mistyped = mistyped + 1
+                    print("FAIL  locale '" .. key .. "' has '" .. name
+                          .. "' as " .. type(value) .. ", not " .. shape)
+                end
+            end
+        end
+    end
+    checkEqual(missing, 0, "every locale carries every shared key")
+    checkEqual(mistyped, 0, "a shared key has the same type in every locale")
+
+    for name in pairs(PER_LOCALE) do
+        check(exemptStillNeeded[name], "the per-locale exemption for '"
+              .. name .. "' is still needed -- it is now present in every "
+              .. "locale, so remove it rather than leaving a hole open")
+    end
+end
+
 do
     local dungeons = {}
     for instanceID in pairs(ns.LootMeta.dungeons) do

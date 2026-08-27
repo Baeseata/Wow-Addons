@@ -290,7 +290,9 @@
    (Jerry 当次要的就是「四列」)。数据层 `ns.SourceCandidates` 住 `GearRank.lua`,
    持有扫描 `ns.LootOwnedIndex` 住 `LootSource.lua`;**做到哪儿了以 `git log` 为准**,
    坑和真机验收清单在 CLAUDE.md「第 4 步落地」那节。
-5. **筛选**:职业 + 专精下拉(需求是两级,不是一个下拉)。
+5. ~~**筛选**:职业 + 专精下拉~~ ✅ **2026-08-27 落地**(两级:职业 → 专精)。
+   数据层 `ns.LootSpecIndex` 住 `LootSource.lua`;**做到哪儿了以 `git log` 为准**,
+   坑和真机验收清单在 CLAUDE.md「第 5 步落地」那节。下面这条警告仍然成立:
    ⚠ **开工前先读**:40 个专精里有 8 个的属性优先级**按英雄天赋分**,选**别人**的专精时
    拿不到英雄树 ⇒ 排不了序。`ns.SourceCandidates` 已经能在那种情况下照常**列出**掉落
    (第三个返回值 `ranked` 会是 false,UI 据此不编号),所以这一步不必再解决它,**别把它当 bug 修**。

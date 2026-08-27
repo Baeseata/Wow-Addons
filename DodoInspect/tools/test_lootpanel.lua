@@ -54,6 +54,17 @@ function stubFrame()
     -- addon is unreachable from here -- which is how a handler that
     -- calls a nil global (a local declared further down the file) can
     -- sit in the tree with luac perfectly happy about it.
+    -- SetShown is a real setter, not a no-op: the catch-all would hand
+    -- back the frame and leave __shown alone, so a control that was
+    -- never shown and one that was hidden on purpose would read the
+    -- same -- which is the state the "hidden dropdowns" check is about.
+    if key == "SetShown" then
+      return function(_, v) f.__shown = (v == true) end
+    end
+    -- Recorded so "shown and mouse-enabled move together" is checkable.
+    if key == "EnableMouse" then
+      return function(_, v) f.__mouse = (v == true) end
+    end
     if key == "SetScript" then
       return function(_, name, fn) f.__scripts = f.__scripts or {}
                                    f.__scripts[name] = fn end
@@ -70,11 +81,37 @@ function stubFrame()
     return function() return f end
   end })
 end
+-- A DropdownButton really does carry menu methods a plain Frame does
+-- not, so it gets its own shape here. SetupMenu STORES the generator and
+-- GenerateMenu RUNS it -- if the catch-all swallowed those two, the
+-- whole menu-building closure would sit in the file unexecuted while the
+-- suite reported green, which is the one thing this file exists to stop.
+local function stubDropdown()
+  local f = stubFrame()
+  f.SetupMenu = function(self, generator) self.__generator = generator end
+  f.SetDefaultText = function(self, text) self.__defaultText = text end
+  f.GenerateMenu = function(self)
+    local radios = {}
+    local root = {}
+    -- Returns the entry, as the real menu API returns an element
+    -- description; callers may chain off it.
+    function root:CreateRadio(text, isSelected, setSelected)
+      radios[#radios + 1] = {
+        text = text, isSelected = isSelected, setSelected = setSelected,
+      }
+      return radios[#radios]
+    end
+    if self.__generator then self.__generator(self, root) end
+    self.__radios = radios
+  end
+  return f
+end
+
 -- A NAMED frame becomes a global, exactly as the real CreateFrame does.
 -- That is how the tests below reach the panel without the addon having
 -- to export a hook that exists only for them.
-_G.CreateFrame = function(_, name)
-  local f = stubFrame()
+_G.CreateFrame = function(frameType, name)
+  local f = (frameType == "DropdownButton") and stubDropdown() or stubFrame()
   if type(name) == "string" then _G[name] = f end
   return f
 end
@@ -117,6 +154,81 @@ _G.C_Item = {
 local TEST_SPEC = 72
 _G.GetSpecialization = function() return 1 end
 _G.GetSpecializationInfo = function() return TEST_SPEC end
+
+-- The class / spec tree the filter dropdowns are built from.
+--
+-- The GROUPING is not invented here: it is lifted from the class
+-- sections of Data/StatPriority.lua, which files every one of these
+-- forty spec ids under a class heading. The CLASS IDS are ordinals
+-- assigned right here and are deliberately not the game's -- nothing
+-- under test reads their value, only that they are distinct and stable,
+-- and claiming to know Blizzard's numbering would be an assertion this
+-- harness cannot back up.
+--
+-- The coverage check below is what keeps this from rotting: add a spec
+-- to ns.SpecGear without adding it here and the suite says so, rather
+-- than quietly dropping it out of a dropdown nobody is looking at.
+local CLASS_SPECS = {
+  { "Death Knight", { 250, 251, 252 } },
+  { "Demon Hunter", { 577, 581, 1480 } },
+  { "Druid",        { 102, 103, 104, 105 } },
+  { "Evoker",       { 1467, 1468, 1473 } },
+  { "Hunter",       { 253, 254, 255 } },
+  { "Mage",         { 62, 63, 64 } },
+  { "Monk",         { 268, 269, 270 } },
+  { "Paladin",      { 65, 66, 70 } },
+  { "Priest",       { 256, 257, 258 } },
+  { "Rogue",        { 259, 260, 261 } },
+  { "Shaman",       { 262, 263, 264 } },
+  { "Warlock",      { 265, 266, 267 } },
+  { "Warrior",      { 71, 72, 73 } },
+}
+-- Two ids that are NOT in ns.SpecGear, filed under a real class and
+-- under a class of their own. Without them "the dropdown only offers
+-- servable specs" would be asserted against a client that never offered
+-- anything else -- the filter would be untested and the check free.
+local ALIEN_SPEC, ALIEN_CLASS_SPEC = 9001, 9002
+table.insert(CLASS_SPECS[13][2], ALIEN_SPEC)
+CLASS_SPECS[#CLASS_SPECS + 1] = { "Tinker", { ALIEN_CLASS_SPEC } }
+
+local classOfSpec, classNames, specNames = {}, {}, {}
+for classID, row in ipairs(CLASS_SPECS) do
+  classNames[classID] = row[1]
+  for _, specID in ipairs(row[2]) do
+    classOfSpec[specID] = classID
+    specNames[specID] = row[1] .. " " .. specID
+  end
+end
+
+_G.C_SpecializationInfo = {
+  GetClassIDFromSpecID = function(specID) return classOfSpec[specID] end,
+}
+_G.C_CreatureInfo = {
+  GetClassInfo = function(classID)
+    local name = classNames[classID]
+    if not name then return nil end
+    return { className = name, classFile = name:upper(), classID = classID }
+  end,
+}
+_G.GetSpecializationInfoByID = function(specID)
+  local name = specNames[specID]
+  if not name then return nil end
+  return specID, name, "desc", 12345, "DAMAGER"
+end
+_G.C_ClassColor = {
+  GetClassColor = function() return { r = 0.5, g = 0.6, b = 0.7 } end,
+}
+
+-- A hero tree that is really there, so "passed for my own spec, withheld
+-- for anybody else's" is a difference the harness can see. With this
+-- unstubbed both sides answer nil and the check passes for free.
+_G.C_ClassTalents = {
+  GetActiveHeroTalentSpec = function() return 31 end,
+  GetActiveConfigID = function() return 1 end,
+}
+_G.C_Traits = {
+  GetSubTreeInfo = function() return { name = "Test Tree" } end,
+}
 
 -- Planted inventory. Both tables are filled by the steps below, so the
 -- ownership column is asserted against items the test chose rather than
@@ -167,6 +279,16 @@ for line in toc:lines() do
   if line:match("%.lua$") then assert(loadfile(line))("DodoInspect", ns) end
 end
 toc:close()
+
+-- Fire a menu entry the way a click does, so the radio's own callback
+-- is what moves the selection. Calling ns.SelectLootClass directly would
+-- leave the closure in the generator untested.
+local function pickRadio(drop, needle)
+  for _, radio in ipairs(drop.__radios or {}) do
+    if radio.text:find(needle, 1, true) then radio.setSelected() return end
+  end
+  error("no menu entry matching " .. needle)
+end
 
 local steps = {
   { "setup", function() ns.SetupLootPanel() end },
@@ -393,6 +515,222 @@ local steps = {
       row.bonusID = nil
       row:GetScript("OnEnter")(row)
       row.bonusID = saved
+    end },
+  { "spec index is servable-only", function()
+      local index, complete = ns.LootSpecIndex()
+      assert(complete, "the index reported itself incomplete with every "
+             .. "client lookup stubbed -- nothing would ever stop retrying")
+      -- Reverse assertion first: every loop below walks these, and an
+      -- empty index would let the whole step pass proving nothing.
+      assert(#index.classes == 13, "expected 13 classes with servable "
+             .. "specs, got " .. #index.classes)
+
+      local n = 0
+      for specID in pairs(ns.SpecGear) do
+        n = n + 1
+        assert(index.byID[specID], "ns.SpecGear carries spec " .. specID
+               .. " but the filter does not offer it -- either the index "
+               .. "dropped it or CLASS_SPECS in this file is stale")
+      end
+      assert(n == 40, "expected 40 servable specs, got " .. n)
+
+      -- The filter half. ALIEN_SPEC sits inside a real class, so it
+      -- tests per-spec filtering; ALIEN_CLASS_SPEC is a whole class of
+      -- its own, so it tests that a class with nothing servable does not
+      -- get an empty row. Offering either would mean a dropdown entry
+      -- whose only feedback is an empty right column.
+      assert(not index.byID[ALIEN_SPEC],
+             "a spec absent from ns.SpecGear was offered anyway")
+      assert(not index.byID[ALIEN_CLASS_SPEC], "same, for the lone spec "
+             .. "of a class with nothing servable")
+      for _, entry in ipairs(index.classes) do
+        assert(entry.name ~= "Tinker",
+               "a class with no servable spec still got a dropdown row")
+        assert(#entry.specs > 0, "class " .. entry.name .. " has an empty "
+               .. "spec list")
+      end
+
+      -- Total order. pairs() is unordered, and a filter that reshuffles
+      -- between two openings is a bug nobody can reproduce on demand.
+      --
+      -- Checked as a PROPERTY of the one list, not by calling twice and
+      -- comparing: the index caches itself once complete, so a second
+      -- call hands back the very same table and would compare it to
+      -- itself. Sorted-by-name plus the id tie-break fully determines
+      -- the order for a given set, so monotonicity says the same thing
+      -- and actually looks at something.
+      for i = 2, #index.classes do
+        local prev, this = index.classes[i - 1], index.classes[i]
+        assert(prev.name < this.name
+               or (prev.name == this.name and prev.classID < this.classID),
+               "class order is not sorted by the name the player reads: "
+               .. prev.name .. " came before " .. this.name)
+      end
+      assert(index.classes[1].name == "Death Knight",
+             "classes are not sorted by the name the player reads (got "
+             .. tostring(index.classes[1].name) .. ")")
+    end },
+  { "dropdowns offer the current class", function()
+      DodoInspectDB.lootPanelSpec = nil
+      ns.SetLootPanelMode("mythic")
+      ns.SelectLootCard(ns.LootCardList("mythic")[1])
+      local panel = DodoInspectLootPanel
+      local classDrop, specDrop = panel.classDrop, panel.specDrop
+      assert(classDrop and specDrop, "the dropdowns were never built")
+      -- Shown and mouse-enabled move together; half of that pair going
+      -- missing leaves an invisible control still taking clicks.
+      assert(classDrop.__shown and classDrop.__mouse,
+             "the class dropdown is not both shown and mouse-enabled")
+      assert(specDrop.__shown and specDrop.__mouse,
+             "the spec dropdown is not both shown and mouse-enabled")
+
+      assert(#(classDrop.__radios or {}) == 13,
+             "the class menu built " .. #(classDrop.__radios or {})
+             .. " entries, expected 13 -- the generator never ran if 0")
+      -- Exactly one checked, in each menu. Zero means the radio cannot
+      -- show you where you are; two means it is checking on the wrong
+      -- thing entirely.
+      local function checked(drop)
+        local hits = 0
+        for _, radio in ipairs(drop.__radios or {}) do
+          if radio.isSelected() then hits = hits + 1 end
+        end
+        return hits
+      end
+      assert(checked(classDrop) == 1,
+             "class menu has " .. checked(classDrop) .. " checked entries")
+      -- The player is a Fury warrior, so the spec menu must be the
+      -- warrior's three -- NOT all forty, and not another class's.
+      assert(#(specDrop.__radios or {}) == 3,
+             "the spec menu listed " .. #(specDrop.__radios or {})
+             .. " specs, expected the current class's 3")
+      assert(checked(specDrop) == 1,
+             "spec menu has " .. checked(specDrop) .. " checked entries")
+    end },
+  { "picking another class redraws the column", function()
+      DodoInspectDB.lootPanelSpec = nil
+      ns.SetLootPanelMode("mythic")
+      ns.SelectLootCard(ns.LootCardList("mythic")[1])
+      local panel = DodoInspectLootPanel
+      local rows = panel.detailRows
+
+      local before = {}
+      for _, row in ipairs(rows) do
+        if row.__shown then before[#before + 1] = row.itemID end
+      end
+      assert(#before > 0, "nothing was drawn to compare against")
+      -- The player is plate/Strength; arcane mage is cloth/Intellect, so
+      -- an unchanged list would mean the spec never reached the query.
+      pickRadio(panel.classDrop, "Mage")
+
+      local specID, isOwn = ns.LootPanelSpec()
+      assert(specID == 62, "picking Mage did not land on its first spec "
+             .. "(got " .. tostring(specID) .. ")")
+      assert(not isOwn, "somebody else's spec is reported as your own")
+      assert(DodoInspectDB.lootPanelSpec == 62,
+             "the override was not persisted")
+
+      local after, same = {}, 0
+      for _, row in ipairs(rows) do
+        if row.__shown then after[#after + 1] = row.itemID end
+      end
+      assert(#after > 0, "the right column went empty for another spec -- "
+             .. "SourceCandidates must LIST for a spec it cannot rank")
+      for _, id in ipairs(after) do
+        for _, old in ipairs(before) do
+          if id == old then same = same + 1 end
+        end
+      end
+      assert(same < #after, "a cloth caster was shown the plate list -- "
+             .. "the filter never reached the query")
+    end },
+  { "unranked says so, ranked does not", function()
+      local panel = DodoInspectLootPanel
+      -- 62 is one of the eight specs whose priority splits by hero tree,
+      -- and it is not the player's, so no tree can be read for it.
+      ns.SetLootPanelSpec(62)
+      local unranked = ns.L.lootUnranked
+      assert(unranked and unranked ~= "", "the locale has no lootUnranked")
+      assert((panel.detailTitle.__text or ""):find(unranked, 1, true),
+             "a list that could not be ranked did not say so")
+      assert(not (panel.detailRows[1].name.__text or ""):match("^1%. "),
+             "rows are numbered while nothing ranked them -- numbering "
+             .. "asserts an order that is not there")
+
+      -- The other half. Without this the marker could be permanently on
+      -- and every check above would still pass.
+      ns.SetLootPanelSpec(63)
+      assert(not (panel.detailTitle.__text or ""):find(unranked, 1, true),
+             "a spec that ranks fine was still labelled unranked")
+      assert((panel.detailRows[1].name.__text or ""):match("^1%. "),
+             "a ranked list lost its numbering")
+    end },
+  { "hero tree only for your own spec", function()
+      local seen = {}
+      local real = ns.SourceCandidates
+      ns.SourceCandidates = function(card, specID, subTree, content)
+        seen[#seen + 1] = { spec = specID, tree = subTree }
+        return real(card, specID, subTree, content)
+      end
+
+      DodoInspectDB.lootPanelSpec = nil
+      ns.RefreshLootPanel()
+      ns.SetLootPanelSpec(62)
+      ns.SourceCandidates = real
+
+      assert(#seen >= 2, "the query ran " .. #seen .. " times, need both")
+      local own, other = seen[1], seen[#seen]
+      assert(own.spec == TEST_SPEC and other.spec == 62,
+             "the two probes did not land on the specs expected")
+      -- Reverse assertion: with C_ClassTalents unstubbed BOTH sides
+      -- answer nil and the real check below passes for free.
+      assert(own.tree == 31, "no hero tree reached your own spec (got "
+             .. tostring(own.tree) .. ") -- the check below proves nothing")
+      assert(other.tree == nil, "your hero tree was handed to somebody "
+             .. "else's spec, which would rank their drops against your "
+             .. "talents and never look wrong")
+    end },
+  { "your own class snaps back to you", function()
+      ns.SetLootPanelSpec(62)
+      assert(DodoInspectDB.lootPanelSpec == 62, "setup did not take")
+      local panel = DodoInspectLootPanel
+      pickRadio(panel.classDrop, "Warrior")
+      local specID, isOwn = ns.LootPanelSpec()
+      assert(specID == TEST_SPEC, "picking your own class landed on "
+             .. tostring(specID) .. " instead of the spec you are in")
+      assert(isOwn, "your own spec is not reported as your own")
+      -- The whole point of storing the departure rather than the state:
+      -- with nothing stored, a respec is followed instead of frozen.
+      assert(DodoInspectDB.lootPanelSpec == nil,
+             "picking your own spec stored an override, so a later "
+             .. "respec would leave the window on the old spec")
+    end },
+  { "a stale stored spec falls back to you", function()
+      DodoInspectDB.lootPanelSpec = 999999
+      local specID, isOwn = ns.LootPanelSpec()
+      assert(specID == TEST_SPEC and isOwn,
+             "an id no longer in ns.SpecGear was used anyway, which "
+             .. "shows an empty column forever (got "
+             .. tostring(specID) .. ")")
+      DodoInspectDB.lootPanelSpec = nil
+      ns.RefreshLootPanel()
+    end },
+  { "the window works without dropdowns", function()
+      -- The degraded path taken when the Blizzard template cannot be
+      -- created. It has to behave exactly like the panel did before this
+      -- step: follow the player's own spec and keep drawing.
+      local panel = DodoInspectLootPanel
+      local savedClass, savedSpec = panel.classDrop, panel.specDrop
+      panel.classDrop, panel.specDrop = nil, nil
+      ns.SetLootPanelMode("mythic")
+      ns.SelectLootCard(ns.LootCardList("mythic")[1])
+      local drawn = 0
+      for _, row in ipairs(panel.detailRows) do
+        if row.__shown then drawn = drawn + 1 end
+      end
+      assert(drawn > 0, "losing the dropdowns took the drop list with it")
+      panel.classDrop, panel.specDrop = savedClass, savedSpec
+      ns.RefreshLootPanel()
     end },
   { "show / hide / toggle", function()
       ns.ShowLootPanel(); assert(ns.LootPanelShown(), "show did not show")
