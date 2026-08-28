@@ -274,16 +274,31 @@ ns.StatPriority = {
     -- Paladin
     ------------------------------------------------------------------
     [65] = { -- Holy; healing throughput baseline
+        -- 2026-08-28: the raid rows below are Icy Veins verbatim and stay.
+        -- The M+ bucket is the part that was wrong: it resolved to
+        -- mastery-first for BOTH trees (tree 49 from Icy Veins' own "Mythic+"
+        -- widget, tree 50 by falling back to its raid row for want of a
+        -- mythic one), and two of the three sources we cite contradict that
+        -- specific claim. Method (upd. 08-27): "Since Mastery does not
+        -- contribute any damage, the value is decreased significantly in
+        -- Mythic+" and "Versatility takes precedence over mastery in M+".
+        -- WingsIsUp's Meta Mythic+ build opens on Haste (~25% floor) and
+        -- trails "Vers / Crit / Mastery" as a group. Icy Veins is the lone
+        -- mastery-first holdout for M+, so it loses 2-to-1 on that point.
+        -- Both trees now carry an explicit mythic row -- neither may fall
+        -- back to raid, because the fallback is what hid this.
         current = true,
-        source = "Icy Veins / Method / WingsIsUp",
-        date = "2026-08-13",
+        provisional = true,
+        source = "Method / WingsIsUp (M+) / Icy Veins (raid)",
+        date = "2026-08-28",
         builds = {
             [50] = { -- Herald of the Sun
                 raid = { "mastery", "haste", "crit", "versatility" },
+                mythic = { "haste", "versatility", { "crit", "mastery" } },
             },
             [49] = { -- Lightsmith
                 raid = { "mastery", "crit", "haste", "versatility" },
-                mythic = { "mastery", "haste", "crit", "versatility" },
+                mythic = { "haste", "versatility", { "crit", "mastery" } },
             },
         },
     },
@@ -327,10 +342,30 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [258] = { -- Shadow
+        -- 2026-08-28: the order was haste-first, attributed to "Warcraft
+        -- Priests" -- but that site is a links hub whose own inline stat text
+        -- is a stale Wrath-era leftover (it still names Idol of Yogg-Saron),
+        -- i.e. it never sourced this row. Icy Veins (upd. 08-10) and Method
+        -- (upd. 08-27) both lead with Mastery for single-target, on both hero
+        -- trees. Decisive detail: the goalBuilds rating bands below already
+        -- matched Icy Veins EXACTLY, per tree and per content -- the numbers
+        -- had been transcribed and only the order string was left behind.
+        -- Orders now come from the same source as the goals, so the two can
+        -- no longer silently disagree. (Haste carries a higher rating target
+        -- than Mastery while ranking below it; a target is not a ranking.)
         current = true,
-        raid = { "haste", "mastery", "crit", "versatility" },
-        source = "Warcraft Priests",
-        date = "2026-08-13",
+        source = "Icy Veins / Method",
+        date = "2026-08-28",
+        builds = {
+            [19] = { -- Archon
+                raid = { "mastery", "crit", "haste", "versatility" },
+                mythic = { "mastery", "haste", "crit", "versatility" },
+            },
+            [18] = { -- Voidweaver
+                raid = { "mastery", "haste", "crit", "versatility" },
+                mythic = { "haste", "mastery", "crit", "versatility" },
+            },
+        },
         goalBuilds = {
             [19] = { -- Archon
                 contentGoals = {
@@ -377,14 +412,24 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [260] = { -- Outlaw
+        -- 2026-08-28: two live sources disagree and have since before this
+        -- row was first written. Wowhead (JustGuy, upd. 08-12) leads with
+        -- Haste; Icy Veins (Seliathan, upd. 08-10) leads with Critical
+        -- Strike -- "Item Level, Critical Strike to 40%, Haste to 25%,
+        -- Versatility, Mastery" -- and states it applies to both raid and
+        -- M+. Taking Icy Veins for the order. Stays provisional: this is a
+        -- source conflict that has not resolved, not a settled answer.
+        -- NOTE the haste goal below is still Wowhead's 23%; Icy Veins says
+        -- 25% (M+) / 30% (raid). Goals never change an order, so it is left
+        -- alone here rather than half-migrated -- revisit as its own call.
         current = true,
         provisional = true,
-        raid = { "haste", "crit", "versatility", "mastery" },
+        raid = { "crit", "haste", "versatility", "mastery" },
         goals = {
             { stat = "haste", value = 23, unit = "percent" },
         },
-        source = "Wowhead (JustGuy)",
-        date = "2026-08-13",
+        source = "Icy Veins (Seliathan) / Wowhead (JustGuy)",
+        date = "2026-08-28",
     },
     [261] = { -- Subtlety
         -- 2026-08-22: page was rewritten 08-19 into a 2x2 grid (Deathstalker /
