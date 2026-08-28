@@ -5,8 +5,8 @@
 	<Binding name="DODOSAYS_TAP_SQUARE" category="DodoSays">
 		DodoSays_Tap("square")
 	</Binding>
-	<Binding name="DODOSAYS_TAP_TRIANGLE" category="DodoSays">
-		DodoSays_Tap("triangle")
+	<Binding name="DODOSAYS_TAP_DIAMOND" category="DodoSays">
+		DodoSays_Tap("diamond")
 	</Binding>
 	<Binding name="DODOSAYS_TAP_CIRCLE" category="DodoSays">
 		DodoSays_Tap("circle")

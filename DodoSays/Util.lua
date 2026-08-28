@@ -133,12 +133,26 @@ end
 -- `angle` is degrees clockwise from up, which is how the board lays them out.
 -- `marker` is Blizzard's raid target index -- the icon comes from it.
 -- --------------------------------------------------------------------------
+-- 🔴 The third one is the purple DIAMOND (3) and not the green triangle (4),
+-- and that is not a style choice. Venomfall Deeps has a green floor, and a
+-- player reported the green marker being close to invisible on it -- which is
+-- the one failure this addon cannot absorb, since the marker on the ground is
+-- the only thing naming a quarter. Purple, red, blue and orange are four
+-- colours that survive that floor; a "tidier" all-shapes set does not.
+-- The order is still clockwise from Cross; only which icon sits at 180 moved.
 local QUADRANTS = {
-	{ id = "cross",    marker = 7, label = "Cross",    angle =   0 },
-	{ id = "square",   marker = 6, label = "Square",   angle =  90 },
-	{ id = "triangle", marker = 4, label = "Triangle", angle = 180 },
-	{ id = "circle",   marker = 2, label = "Circle",   angle = 270 },
+	{ id = "cross",   marker = 7, label = "Cross",   angle =   0 },
+	{ id = "square",  marker = 6, label = "Square",  angle =  90 },
+	{ id = "diamond", marker = 3, label = "Diamond", angle = 180 },
+	{ id = "circle",  marker = 2, label = "Circle",  angle = 270 },
 }
+
+-- Quarter ids that used to exist, mapped to what they are now. A macro sitting
+-- on somebody's action bar says `/dodosays triangle` and keeps saying it after
+-- the upgrade -- nothing rewrites a macro body -- so without this the tap is
+-- swallowed mid-fight and the sequence is silently one short. That is the
+-- expensive kind of quiet: no error, and the wrong quarter called later.
+local LEGACY_QUADRANT_IDS = { triangle = "diamond" }
 
 -- Inline icon for a font string. Blizzard ships one file per marker, which is
 -- cheaper to reason about than atlas coordinates when it goes in text.
@@ -173,9 +187,9 @@ local SOUND_MODES = {
 	{ key = "beep", label = "Chime",
 	  tip = "Blizzard's raid-warning chime. This is the long-standing default." },
 	{ key = "zh",   label = "Voice (Chinese)", voice = true,
-	  tip = "Speaks the marker: cross, square, triangle, circle." },
+	  tip = "Speaks the marker: cross, square, diamond, circle." },
 	{ key = "en",   label = "Voice (English)", voice = true,
-	  tip = "Speaks the marker: cross, square, triangle, circle." },
+	  tip = "Speaks the marker: cross, square, diamond, circle." },
 }
 
 local SOUND_MODE_BY_KEY = {}
@@ -229,6 +243,7 @@ ns.describe       = describe
 ns.nameKey        = nameKey
 ns.QUADRANTS      = QUADRANTS
 ns.QUADRANT_BY_ID = QUADRANT_BY_ID
+ns.LEGACY_QUADRANT_IDS = LEGACY_QUADRANT_IDS
 ns.markerIcon     = markerIcon
 ns.SOUND_MODES       = SOUND_MODES
 ns.SOUND_MODE_BY_KEY = SOUND_MODE_BY_KEY

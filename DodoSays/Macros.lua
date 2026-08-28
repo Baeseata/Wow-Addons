@@ -29,7 +29,7 @@ local RAID_ICON_BASE = 137000
 -- EditMacro on a name collision rewrites whatever was there, and what was there
 -- could be the player's own macro -- so the names have to be ours beyond doubt.
 -- Nothing here measures length, and the reason is our own names: the longest is
--- "Dodo Triangle" at 13 characters. It is *not* that the client caps names at
+-- "Dodo Diamond" at 12 characters. It is *not* that the client caps names at
 -- 16 -- that was the old claim here and it is wrong. A DodoProbe run on 12.1.0
 -- build 120100 renamed a macro to 12 Chinese code points (32 bytes) and read it
 -- back through C_Macro.GetMacroName intact, so the real ceiling is at least 32
@@ -60,6 +60,22 @@ function Macros.Create()
 	-- the button is not the only thing that will ever call this.
 	if type(InCombatLockdown) == "function" and InCombatLockdown() then
 		return 0, 0, "combat"
+	end
+
+	-- A quarter that was renamed leaves a macro behind under the old name, and
+	-- that macro is very likely sitting on an action bar. Creating the new one
+	-- beside it would leave the player pressing the stale button -- still
+	-- working, thanks to the legacy fold in the slash handler, but wearing the
+	-- green icon this change exists to get rid of. Editing the old entry in
+	-- place keeps the bar slot, so the button on the bar simply becomes the new
+	-- one. Skipped if the new name already exists, since that would be two
+	-- macros collapsing into one and losing a slot the player filled.
+	for old, new in pairs(ns.LEGACY_QUADRANT_IDS) do
+		local q = ns.QUADRANT_BY_ID[new]
+		local stale = GetMacroIndexByName("Dodo " .. old:sub(1, 1):upper() .. old:sub(2))
+		if q and stale and stale > 0 and (GetMacroIndexByName(Macros.NameFor(q)) or 0) <= 0 then
+			pcall(EditMacro, stale, Macros.NameFor(q), Macros.IconFor(q), Macros.BodyFor(q))
+		end
 	end
 
 	local made, updated = 0, 0
@@ -110,5 +126,5 @@ function Macros.Report(made, updated, err)
 	else
 		what = ("refreshed %d, already there"):format(updated)
 	end
-	return ("|cff88ccffDodoSays|r %s: Dodo Cross / Square / Triangle / Circle. Drag them from the macro window onto a bar, or point a ring addon at them."):format(what)
+	return ("|cff88ccffDodoSays|r %s: Dodo Cross / Square / Diamond / Circle. Drag them from the macro window onto a bar, or point a ring addon at them."):format(what)
 end

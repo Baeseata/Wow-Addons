@@ -259,7 +259,7 @@ local function buildPanel()
 	macros:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:SetText("Create 4 macros", 1, 1, 1)
-		GameTooltip:AddLine("Dodo Cross / Square / Triangle / Circle, each carrying its own " ..
+		GameTooltip:AddLine("Dodo Cross / Square / Diamond / Circle, each carrying its own " ..
 			"raid marker as the icon. Drag them from the macro window onto a bar, or point " ..
 			"a ring addon such as OPie at them. Pressing this again refreshes them; it never " ..
 			"makes more than four.", nil, nil, nil, true)

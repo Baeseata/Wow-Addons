@@ -61,7 +61,7 @@ angle / waypoint / navigation / compass / location / proximity / nearest / range
 (`C_WorldMarker` 全仓库不存在)。
 
 ⚠ 唯一没实测的是 `UnitDistanceSquared`。就算它能用:按「红叉朝 boss」的约定,
-到 boss 的距离最多分出 **cross(最近)/ triangle(最远)/ {square, circle}(不分伯仲)**
+到 boss 的距离最多分出 **cross(最近)/ diamond(最远)/ {square, circle}(不分伯仲)**
 —— **4 类里 3 类,而剩下那两个是 50/50**。对踩错就死的机制来说比没有更坏。
 
 ## 4. 连带确认 / 推翻

@@ -102,7 +102,7 @@ for _, q in ipairs(ns.QUADRANTS) do
 	order[#order + 1] = ("%s/%d@%d"):format(q.id, q.marker, q.angle)
 end
 check("clockwise from cross", table.concat(order, " "),
-	"cross/7@0 square/6@90 triangle/4@180 circle/2@270")
+	"cross/7@0 square/6@90 diamond/3@180 circle/2@270")
 check("icon escape points at the right file",
 	ns.markerIcon(7, 40),
 	"|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_7:40|t")
@@ -130,7 +130,7 @@ check("round opened", (lastOf("round") or {})[1], "round")
 check("unreadable channel falls back to the round table",
 	(lastOf("round") or {})[2], 3)
 
-ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
+ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("diamond")
 check("three taps recorded", #ns.Board.Sequence(), 3)
 
 H.channelStop("boss1")
@@ -159,7 +159,7 @@ check("measured channel overrode the seed", (lastOf("round") or {})[2], 7)
 -- ---------------------------------------------------------------------------
 io.write("Fence: the ?? add must not steal calls\n")
 -- ---------------------------------------------------------------------------
-for _, q in ipairs({ "cross", "square", "triangle", "circle", "cross" }) do
+for _, q in ipairs({ "cross", "square", "diamond", "circle", "cross" }) do
 	ns.Board.Tap(q)
 end
 check("five taps recorded", #ns.Board.Sequence(), 5)
@@ -200,7 +200,7 @@ H.encounterStart(3508)
 H.channelStart("boss1")
 check("round opened with nothing readable at all", (lastOf("round") or {})[2], 3)
 
-ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
+ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("diamond")
 H.channelStop("boss1")
 
 local base = countOf("call")
@@ -282,7 +282,7 @@ check("and the real boss still gets through", countOf("call"), g0 + 2)
 H.plainGUIDs(true)
 H.encounterStart(3508)
 H.channelStart("boss1")
-ns.Board.Tap("triangle"); ns.Board.Tap("circle")
+ns.Board.Tap("diamond"); ns.Board.Tap("circle")
 H.channelStop("boss1")
 
 local p0 = countOf("call")
@@ -290,7 +290,7 @@ H.cast("boss2")
 check("with readable GUIDs the add is refused BY GUID", countOf("call"), p0)
 H.cast("boss1")
 check("and the boss is recognised by it", countOf("call"), p0 + 1)
-check("calling the right quarter", (lastOf("call") or {})[3], "triangle")
+check("calling the right quarter", (lastOf("call") or {})[3], "diamond")
 H.plainGUIDs(false)
 
 -- ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ check("tappable while preaching", ns.Board.Tap("cross"), true)
 ns.Board.Tap("square")
 H.channelStop("boss1")
 
-check("NOT tappable once he is echoing", ns.Board.Tap("triangle"), false)
+check("NOT tappable once he is echoing", ns.Board.Tap("diamond"), false)
 check("and the sequence did not grow", #ns.Board.Sequence(), 2)
 
 H.cast("boss1")
@@ -349,36 +349,36 @@ end
 ns.Board.Reset()
 ns.Board.SetPersistent(false)
 check("idle: nothing is coloured", shades(),
-	"cross=idle square=idle triangle=idle circle=idle")
+	"cross=idle square=idle diamond=idle circle=idle")
 
 H.encounterStart(3508)
 H.channelStart("boss1")
 check("preaching, nothing tapped: no traffic light yet", shades(),
-	"cross=armed square=armed triangle=armed circle=armed")
+	"cross=armed square=armed diamond=armed circle=armed")
 
-ns.Board.Tap("cross"); ns.Board.Tap("triangle"); ns.Board.Tap("square")
+ns.Board.Tap("cross"); ns.Board.Tap("diamond"); ns.Board.Tap("square")
 check("preaching: tapped ones are BLUE, not green", shades(),
-	"cross=recorded square=recorded triangle=recorded circle=armed")
+	"cross=recorded square=recorded diamond=recorded circle=armed")
 
 -- 🔴 The lock, before any echo has been announced. CHANNEL_STOP and the first
 -- echo land on the same hundredth of a second, so if the light waited to be
 -- told about wave one it would light up after the wave that needs it most.
 H.channelStop("boss1")
 check("at the lock the light is ALREADY on wave one", shades(),
-	"cross=now square=unsafe triangle=next circle=unsafe")
+	"cross=now square=unsafe diamond=next circle=unsafe")
 check("and the headline agrees with the green wedge", ns.Board.Phase(), "calling")
 
 H.cast("boss1")   -- wave 1 announced; the board was already saying this
 check("wave 1 announced: nothing moved, it was right already", shades(),
-	"cross=now square=unsafe triangle=next circle=unsafe")
+	"cross=now square=unsafe diamond=next circle=unsafe")
 
 H.cast("boss1")   -- wave 2
-check("wave 2: green walks to the triangle, yellow to the square", shades(),
-	"cross=unsafe square=next triangle=now circle=unsafe")
+check("wave 2: green walks to the diamond, yellow to the square", shades(),
+	"cross=unsafe square=next diamond=now circle=unsafe")
 
 H.cast("boss1")   -- wave 3, the last one
 check("last wave: one green, three red, NO yellow", shades(),
-	"cross=unsafe square=now triangle=unsafe circle=unsafe")
+	"cross=unsafe square=now diamond=unsafe circle=unsafe")
 
 -- 🔴 "finish" arrives on the LAST wave's START, with a whole cast still to run.
 -- The light must survive it: that wave has no next quarter to fall back on.
@@ -386,12 +386,12 @@ check("last wave: one green, three red, NO yellow", shades(),
 -- caught it -- the last wave was the only one that never turned green.)
 ns.Board.Finish(0.1)
 check("finish fired, and the last wave is STILL green", shades(),
-	"cross=unsafe square=now triangle=unsafe circle=unsafe")
+	"cross=unsafe square=now diamond=unsafe circle=unsafe")
 
 H.now = H.now + 1
 H.runTimers()
 check("the light goes out once that wave has landed", shades(),
-	"cross=idle square=idle triangle=idle circle=idle")
+	"cross=idle square=idle diamond=idle circle=idle")
 check("and it did not restart at wave one", ns.Board.Phase(), "idle")
 
 -- Nothing tapped at all. The round locks straight to done -- there is no wave
@@ -401,7 +401,7 @@ ns.Board.Reset()
 H.channelStart("boss1")
 H.channelStop("boss1")
 check("nothing recorded: greyed out, not a wall of red", shades(),
-	"cross=done square=done triangle=done circle=done")
+	"cross=done square=done diamond=done circle=done")
 
 -- Same quarter twice in a row. Green wins; no wedge is yellow. This pins the
 -- BRANCH ORDER inside PaintPlan -- ask "now" first -- because swapping those
@@ -415,11 +415,11 @@ H.channelStart("boss1")
 ns.Board.Tap("circle"); ns.Board.Tap("circle"); ns.Board.Tap("cross")
 H.channelStop("boss1")
 check("repeat: green wins and no wedge is yellow", shades(),
-	"cross=unsafe square=unsafe triangle=unsafe circle=now")
+	"cross=unsafe square=unsafe diamond=unsafe circle=now")
 H.cast("boss1")   -- wave 1: the board was already showing it
 H.cast("boss1")   -- wave 2, the second circle
 check("second of the pair: yellow appears again for what follows", shades(),
-	"cross=next square=unsafe triangle=unsafe circle=now")
+	"cross=next square=unsafe diamond=unsafe circle=now")
 
 -- ---------------------------------------------------------------------------
 io.write("...and the light actually reaches the wedges\n")
@@ -439,7 +439,7 @@ end
 
 ns.Board.Reset()
 H.channelStart("boss1")
-ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
+ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("diamond")
 H.channelStop("boss1")
 
 H.clearVertexColors()
@@ -502,7 +502,7 @@ check("idle: none dimmed", alphaCounts()[0.62], nil)
 
 -- Mid-round, the traffic light is on: two bright, two dim -- still in colour.
 H.channelStart("boss1")
-ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("triangle")
+ns.Board.Tap("cross"); ns.Board.Tap("square"); ns.Board.Tap("diamond")
 H.channelStop("boss1")
 H.clearVertexColors()
 ns.Board.Show()
@@ -535,12 +535,12 @@ io.write("Square board: which triangle took the click\n")
 local QA = ns.Board.QuadrantAt
 check("straight up    -> cross",    QA(0, 50),   "cross")
 check("straight right -> square",   QA(50, 0),   "square")
-check("straight down  -> triangle", QA(0, -50),  "triangle")
+check("straight down  -> diamond", QA(0, -50),  "diamond")
 check("straight left  -> circle",   QA(-50, 0),  "circle")
 check("up, leaning right, still north", QA(20, 50), "cross")
 check("right, leaning up, still east",  QA(50, 20), "square")
 check("exactly on the NE diagonal",     QA(30, 30), "cross")
-check("exactly on the SW diagonal",     QA(-30, -30), "triangle")
+check("exactly on the SW diagonal",     QA(-30, -30), "diamond")
 check("dead centre does not error",     QA(0, 0), "cross")
 
 -- The wedges are alpha masks generated by tools/gen_wedges.py. If they are not
@@ -614,12 +614,12 @@ H.encounterStart(3508)
 H.channelStart("boss1")
 
 local pv = countOf("preview")
-ns.Board.Tap("triangle")
+ns.Board.Tap("diamond")
 check("nothing on the first tap of three", countOf("preview"), pv)
 ns.Board.Tap("cross")
 check("heads-up on the second of three", countOf("preview"), pv + 1)
 check("it points at the FIRST tap, not the newest",
-	(lastOf("preview") or {})[2], "triangle")
+	(lastOf("preview") or {})[2], "diamond")
 
 -- ---------------------------------------------------------------------------
 io.write("Standing board while inside the delve\n")
@@ -673,7 +673,7 @@ check("every quarter reaches the board", #ns.Board.Sequence(), #ns.QUADRANTS)
 -- round, each of them a lie, and every other check here still green.
 check("a tap that counted keeps quiet", #H.printed, 0)
 check("in the order it was typed",
-	table.concat(ns.Board.Sequence(), ","), "cross,square,triangle,circle")
+	table.concat(ns.Board.Sequence(), ","), "cross,square,diamond,circle")
 
 run("SQUARE")
 check("case is not a trap for whoever writes the macro", #ns.Board.Sequence(), 5)
@@ -683,6 +683,26 @@ run("cirlce")
 check("a typo taps nothing at all", #ns.Board.Sequence(), 6)
 run("undo")
 check("and undo is still the subcommand, not a quarter", #ns.Board.Sequence(), 5)
+
+-- The retired name. 0.14 moved the 180-degree quarter from the green triangle
+-- to the purple diamond, and nothing rewrites a macro body -- so every bar that
+-- had `Dodo Triangle` on it is still sending the word "triangle" today. Without
+-- the fold it matches no quarter, falls through to the help text and records
+-- nothing: one wave short, every call after it off by one, no error anywhere.
+-- Asserted on WHICH quarter it lands in, not just that the count went up: a
+-- fold pointing at the wrong quadrant would pass a count check and kill people.
+local beforeLegacy = #ns.Board.Sequence()
+run("triangle")
+check("a retired quarter name still taps", #ns.Board.Sequence(), beforeLegacy + 1)
+check("and it lands on what replaced it",
+	ns.Board.Sequence()[beforeLegacy + 1], "diamond")
+check("the fold is declared, not spelled out twice",
+	ns.LEGACY_QUADRANT_IDS.triangle, "diamond")
+-- ...and it must not have become a quarter in its own right, which would put a
+-- fifth wedge on the board and a fifth macro on the account.
+check("the retired name is not a quadrant", ns.QUADRANT_BY_ID.triangle, nil)
+check("there are still four quarters", #ns.QUADRANTS, 4)
+run("undo")
 
 -- Outside the sermon half nothing records either way; what differs is whether
 -- it says so. In a city that line is the entire point -- somebody has just
@@ -719,7 +739,7 @@ check("and no complaint", err, nil)
 
 local byName = {}
 for _, m in ipairs(H.macros()) do byName[m.name] = m end
-check("named after the marker, Dodo-prefixed", byName["Dodo Triangle"] ~= nil, true)
+check("named after the marker, Dodo-prefixed", byName["Dodo Diamond"] ~= nil, true)
 check("icon is the raid marker's own file id", byName["Dodo Cross"].icon, 137007)
 check("and the big orange one for circle",    byName["Dodo Circle"].icon, 137002)
 
@@ -728,6 +748,31 @@ for _, q in ipairs(ns.QUADRANTS) do
 	longest = math.max(longest, #ns.Macros.NameFor(q))
 end
 check("every name fits the client's 16 characters", longest <= 16, true)
+
+-- Upgrading an account that already had the old four. The one that matters is
+-- the retired name: it is on an action bar, and a bar slot remembers a macro by
+-- INDEX -- so the old entry has to be edited in place. Creating the new one
+-- beside it would leave the player pressing a button still wearing the green
+-- icon this whole change exists to retire, and burn a macro slot doing it.
+H.clearMacros()
+CreateMacro("Keeper", 1, "/say hi")               -- somebody else's macro, slot 1
+CreateMacro("Dodo Triangle", 137004, "/dodosays triangle")
+local staleIndex = GetMacroIndexByName("Dodo Triangle")
+check("the old macro is where we put it", staleIndex, 2)
+
+ns.Macros.Create()
+local upgraded = {}
+for i, m in ipairs(H.macros()) do upgraded[m.name] = i end
+check("the retired macro is gone by name", upgraded["Dodo Triangle"], nil)
+check("and its slot became the new one", upgraded["Dodo Diamond"], staleIndex)
+check("the body was rewritten too",
+	H.macros()[staleIndex].body, "/dodosays diamond")
+check("so was the icon -- purple, not green",
+	H.macros()[staleIndex].icon, 137003)
+check("somebody else's macro was not touched", H.macros()[1].name, "Keeper")
+check("and the account holds four of ours plus theirs", #H.macros(), 5)
+H.clearMacros()
+ns.Macros.Create()
 
 local made2, updated2 = ns.Macros.Create()
 check("pressing it twice makes nothing new", made2, 0)
@@ -756,7 +801,7 @@ for _, q in ipairs(ns.QUADRANTS) do
 	if handler then handler(rest) end
 end
 check("and all four bodies land on the board",
-	table.concat(ns.Board.Sequence(), ","), "cross,square,triangle,circle")
+	table.concat(ns.Board.Sequence(), ","), "cross,square,diamond,circle")
 
 H.inCombat(true)
 local _, _, combatErr = ns.Macros.Create()
@@ -882,6 +927,21 @@ check("an install that had sound on keeps its chime", ns.migrateDB({ sound = tru
 check("one that had it off stays off",                ns.migrateDB({ sound = false }).sound, "off")
 check("a real mode is left alone",                    ns.migrateDB({ sound = "en" }).sound, "en")
 check("and an untouched install is left to defaults", ns.migrateDB({}).sound, nil)
+
+-- The 0.14 marker swap. Renaming a quarter takes the keybinding with it -- the
+-- client keys saved bindings on a name that no longer exists -- and that is
+-- silent, in the two seconds this addon exists for. So the upgrade gets told
+-- once. The half worth pinning is the OTHER one: a first-time install must not
+-- be greeted with instructions to re-bind a key it never had, and the only
+-- thing separating the two cases is that the check runs before applyDefaults
+-- has made every table look populated.
+check("an existing install is told the markers moved",
+	ns.migrateDB({ sound = "en" }).markersChanged, true)
+check("a fresh one is not",     ns.migrateDB({}).markersChanged, nil)
+check("and it is still stamped so it never asks twice",
+	ns.migrateDB({}).markers, "diamond")
+check("a table already stamped is left alone",
+	ns.migrateDB({ markers = "diamond" }).markersChanged, nil)
 
 -- normalizeSound, and the bug it was written for. 0.12 shipped with `sound`
 -- still listed in Minimap.lua's toggle table, whose shared OnClick writes

@@ -25,6 +25,25 @@ function ns.migrateDB(db)
 	if type(db.sound) == "boolean" then
 		db.sound = db.sound and "beep" or "off"
 	end
+
+	-- 0.14 moved the 180-degree quarter off the green triangle onto the purple
+	-- diamond. Two things break for an install that already existed, and both
+	-- break QUIETLY, which is why this speaks up once rather than trusting the
+	-- changelog: the keybinding is keyed on a name that no longer exists, so it
+	-- comes back unbound; and the marker painted on the floor is still a green
+	-- triangle while the board and the voice now say diamond.
+	--
+	-- `next(db) ~= nil` is the whole test for "this is an upgrade", and it is
+	-- read into a local BEFORE anything is written -- asking after the write
+	-- would answer "populated" for every install, fresh ones included, and
+	-- greet first-time users with instructions to re-bind a key they never had.
+	-- This also has to run before applyDefaults, for the same reason.
+	local existingInstall = next(db) ~= nil
+	if db.markers == nil then
+		db.markers = "diamond"
+		if existingInstall then db.markersChanged = true end
+	end
+
 	return db
 end
 
@@ -136,11 +155,15 @@ function ns.RefreshPresence()
 end
 
 BINDING_HEADER_DODOSAYS = "DodoSays"
-BINDING_NAME_DODOSAYS_TAP_CROSS    = "Safe: Cross"
-BINDING_NAME_DODOSAYS_TAP_SQUARE   = "Safe: Square"
-BINDING_NAME_DODOSAYS_TAP_TRIANGLE = "Safe: Triangle"
-BINDING_NAME_DODOSAYS_TAP_CIRCLE   = "Safe: Circle"
-BINDING_NAME_DODOSAYS_UNDO         = "Undo last tap"
+BINDING_NAME_DODOSAYS_TAP_CROSS   = "Safe: Cross"
+BINDING_NAME_DODOSAYS_TAP_SQUARE  = "Safe: Square"
+-- Renamed from _TAP_TRIANGLE in 0.14. The client keys saved bindings on this
+-- name, so anyone who had a key on the old one comes back unbound -- which is
+-- silent, and silent in exactly the two seconds this addon exists for. That is
+-- what the one-time notice in migrateDB is there to say out loud.
+BINDING_NAME_DODOSAYS_TAP_DIAMOND = "Safe: Diamond"
+BINDING_NAME_DODOSAYS_TAP_CIRCLE  = "Safe: Circle"
+BINDING_NAME_DODOSAYS_UNDO        = "Undo last tap"
 
 local function inCombat()
 	if type(InCombatLockdown) ~= "function" then return false end
@@ -149,7 +172,7 @@ end
 
 local HELP = {
 	"|cff88ccffDodoSays|r  -- Azta'rec memory game",
-	"  |cffffd100/ds cross|r|cffffd100 square triangle circle|r   tap that quarter",
+	"  |cffffd100/ds cross|r|cffffd100 square diamond circle|r   tap that quarter",
 	"  |cffffd100/ds show|r / |cffffd100hide|r    the board",
 	"  |cffffd100/ds sim [n]|r        rehearse a round of n waves (no boss needed)",
 	"  |cffffd100/ds go|r             lock the tapped run and play it back",
@@ -160,7 +183,7 @@ local HELP = {
 	"  |cffffd100/ds config|r         options",
 	"  |cffffd100/ds trace|r          record every event the fight fires, then /reload",
 	"  |cffffd100before the pull|r drop raid markers on the floor, clockwise:",
-	"    cross -> square -> triangle -> circle",
+	"    cross -> square -> diamond -> circle",
 	"  three ways to tap: click a wedge, bind keys under Key Bindings > DodoSays,",
 	"    or put |cffffd100/dodosays cross|r in a macro -- that is the one a ring",
 	"    addon such as OPie can hold, since those take macros and not bindings.",
@@ -177,8 +200,16 @@ local function slash(msg)
 	-- a city. tools/test_detector.lua pins the direction that matters.
 	--
 	-- The names are read off QUADRANT_BY_ID rather than written out again here:
-	-- a second copy of cross/square/triangle/circle is a second thing to keep
+	-- a second copy of cross/square/diamond/circle is a second thing to keep
 	-- in step with the board.
+	--
+	-- Retired names resolve to what replaced them, and this line is worth more
+	-- than it looks: `/dodosays triangle` is sitting on action bars right now,
+	-- inside macros that no upgrade rewrites. Without the fold the word matches
+	-- nothing, falls through to the help text, and the tap never lands -- one
+	-- wave missing from the sequence and every call after it off by one.
+	cmd = ns.LEGACY_QUADRANT_IDS[cmd] or cmd
+
 	if ns.QUADRANT_BY_ID[cmd] then
 		if DodoSays_Tap(cmd) then return end
 
@@ -288,6 +319,18 @@ boot:SetScript("OnEvent", function(self, event, name)
 		ns.ApplyPosition()
 		ns.Announce.ApplyPosition()
 		ns.Mini.Build()
+
+		-- Said once, then never again -- the flag is cleared here rather than
+		-- on a timer, so a client that crashes before the chat frame exists
+		-- still gets told on the next login instead of losing the message.
+		if ns.db.markersChanged then
+			ns.db.markersChanged = nil
+			print("|cff88ccffDodoSays|r the third quarter is now the |cffff40ffpurple diamond|r "
+				.. ns.markerIcon(3, 0) .. " instead of the green triangle -- green was hard to see "
+				.. "on the green floor down there. Two things to redo: paint a diamond where the "
+				.. "triangle was, and re-set that key under |cffffd100Key Bindings > DodoSays|r "
+				.. "(|cffffd100Safe: Diamond|r). Existing macros keep working.")
+		end
 		return
 	end
 

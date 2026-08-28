@@ -21,11 +21,16 @@ GAP = 3.0           # half-width of the seam along each diagonal
 AA = 1.5
 
 BG = (18, 18, 22)
-QUAD = {            # clockwise from the top, matching QUADRANTS in Util.lua
-    "n": (206, 58, 54),      # cross    - red
-    "e": (74, 140, 226),     # square   - blue
-    "s": (76, 186, 88),      # triangle - green
-    "w": (233, 150, 40),     # circle   - orange
+# Clockwise from the top, matching QUADRANTS in Util.lua. The 180-degree
+# quarter went from the green triangle to the purple diamond in 0.14 because
+# Venomfall Deeps has a green floor and a player could not pick the green
+# marker out against it -- so this file has to move with it, or the listing
+# icon keeps advertising a marker the addon no longer names.
+QUAD = {
+    "n": (206, 58, 54),      # cross   - red
+    "e": (74, 140, 226),     # square  - blue
+    "s": (176, 88, 216),     # diamond - purple
+    "w": (233, 150, 40),     # circle  - orange
 }
 
 HERE = os.path.dirname(os.path.abspath(__file__))

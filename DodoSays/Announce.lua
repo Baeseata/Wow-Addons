@@ -196,7 +196,7 @@ end
 -- rehearsal, invisible in every test):
 --
 --   * It fires while the player is still tapping quarters, so a spoken
---     "cross" lands on top of them pressing triangle -- it reads as feedback
+--     "cross" lands on top of them pressing diamond -- it reads as feedback
 --     on the tap they just made, naming a different quarter.
 --   * Board.lua emits it on `>= expected - 1`, so the last two taps each
 --     trigger one. Identical Flash content made that invisible on screen;
