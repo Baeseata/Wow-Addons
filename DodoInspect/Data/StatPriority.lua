@@ -68,10 +68,23 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [581] = { -- Vengeance; survival baseline
+        -- 2026-08-25 15:00: the author ADDED a chart (H > C > V > M) and in
+        -- the same breath wrote that "all secondary stats are roughly
+        -- equal, closer to the difference between .95 and 1 in value rather
+        -- than .1 and 1", that Versatility "is equally as good as Critical
+        -- Strike", and that Mastery "is also equal ... slightly better than
+        -- Crit outside of Meta and slightly worse during it". The prose did
+        -- not change; only the chart is new. Shipping the chart literally
+        -- would assert a precision the author explicitly disclaims, so the
+        -- three near-equal stats stay tied and only Haste leads.
+        -- Icy Veins (dated 08-26) ranks them H > M > V > C for damage and
+        -- says item level dominates defensively. Two sources of record that
+        -- put Mastery second and last respectively => provisional.
         current = true,
-        raid = { "haste", { "crit", "versatility" }, "mastery" },
-        source = "Wowhead (Itamae)",
-        date = "2026-08-13",
+        provisional = true,
+        raid = { "haste", { "crit", "versatility", "mastery" } },
+        source = "Wowhead (Itamae) / Icy Veins",
+        date = "2026-08-25",
     },
     [1480] = { -- Devourer
         current = true,
@@ -401,10 +414,27 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [263] = { -- Enhancement
+        -- 2026-08-22 23:48: the author split the trees. Season-start crit
+        -- gear lost its stats, so Stormbringer moved onto Crit and off
+        -- Haste; Totemic did not move and still matches what shipped as
+        -- the single row. Single-target and AoE stay identical, so this is
+        -- 2 trees x 1 content, not 2x2.
+        -- Icy Veins (same author, page dated 08-23) agrees on the split and
+        -- on the top two of each tree but writes them strictly rather than
+        -- tied: Stormbringer M > C > H > V, Totemic M > H > C > V. Same
+        -- author on both sites means that is not independent confirmation,
+        -- so the tie form -- the weaker claim both pages support -- ships.
         current = true,
-        raid = { { "mastery", "haste" }, "crit", "versatility" },
-        source = "Wowhead / Icy Veins (Wordup)",
-        date = "2026-08-13",
+        source = "Wowhead (Wordup)",
+        date = "2026-08-22",
+        builds = {
+            [54] = { -- Totemic
+                raid = { { "mastery", "haste" }, "crit", "versatility" },
+            },
+            [55] = { -- Stormbringer
+                raid = { { "crit", "mastery" }, "haste", "versatility" },
+            },
+        },
     },
     [264] = { -- Restoration; healing throughput baseline
         current = true,
