@@ -925,8 +925,26 @@ OBSERVED secondary-stat distribution of ranked players, vs what we ship.
 This is an OBSERVATION, and it is admissible as COUNTER-EVIDENCE ONLY. What
 people wear is a confound of the same guides we read, of loot RNG, and of item
 level dominating secondaries. "They stack X" therefore does not argue for X.
-"We lead with X and out there X is last" is worth a second look, and that --
-and nothing else -- is what a FLAG means here.
+
+A FLAG is raised by exactly these shapes and nothing else:
+  FLAG   their top stat is not one we put first AND leads our best by more
+         than MIN_MARGIN AND their own gems and enchants pick that same stat.
+         Gear is supply-constrained, gems are not -- when the gems side with
+         US instead, the verdict is `loot?`, which is a different fact about
+         the world, not a weaker FLAG.
+  FLAG   we tie two or more stats for first and one of that tie is observed
+         LAST, more than MIN_MARGIN behind the one on top. This one can only
+         ever fire for a spec whose shipped order ties in first place, so it
+         is the rare probe, not the definition.
+  FLAG?  the gear disagrees past the margin and there is no gem or enchant
+         data at all, so the second gate could not be applied.
+
+This paragraph used to say the tie shape was the ONLY meaning of a FLAG,
+which is not what verdict() has ever done: measured 2026-08-28, that branch
+is reachable for 9 of the 49 spec+bucket pairs we ship and fired zero times
+on the last full run, while every FLAG actually reported came from the first
+shape. Printing a definition narrower than the code is worse than printing
+none, because the printed one is the only one anybody reads.
 
 n is the number of ranked players whose gear actually resolved. Below n=%d no
 verdict is issued at all.

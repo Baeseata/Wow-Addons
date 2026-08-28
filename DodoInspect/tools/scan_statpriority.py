@@ -4,6 +4,7 @@
     python tools/scan_statpriority.py                # fetch + report
     python tools/scan_statpriority.py --cached       # reuse the last fetch
     python tools/scan_statpriority.py --only 263     # one spec
+    python tools/scan_statpriority.py --verify       # offline branch checks
 
 This replaces the hand-run curl loop described in CLAUDE.md 1.13.1. The
 prose version was run by hand three times and got a different answer each
@@ -42,6 +43,10 @@ FIVE ASSERTIONS THAT MUST NOT BE REMOVED (each is a measured trap):
      ChrClasses) and cross-checked against ns.SpecGear in Data/Loot.lua.
      A hand-typed slug that is wrong and a spec that genuinely has no
      guide both return 404.
+
+Assertions 6-9 are stated next to the code they constrain, because each one
+is about a single function: hero_trees (6), parse_page (7), box_label (8) and
+BUCKET_TOKENS (9). Same standing -- none of them may be removed either.
 """
 
 import argparse
@@ -401,6 +406,189 @@ def render(order):
     return " > ".join("=".join(g) for g in order)
 
 
+
+
+# --- how a guide box maps onto our (hero tree, bucket) grid ---------------
+#
+# ASSERTION 9 (added 2026-08-28). Until this date the only exact comparison
+# in this file read mine.get((tree_key, "raid")), and the word "mythic" did
+# not occur anywhere in the file -- so the mythic half of StatPriority.lua
+# was never compared to anything, in EITHER direction:
+#   * a shipped mythic row could not go red. It could only be satisfied by
+#     the any-key fallback, which printed `same*`. Measured: 270 Mistweaver
+#     ships a mythic row that is character-for-character the guide's Mythic+
+#     box, and the scanner still called it `same*` -- the right answer was
+#     in hand and the vocabulary could not say it.
+#   * guide boxes headed Mythic+ were diffed against our raid row.
+# A/B: shuffling every shipped mythic row found nothing before this, and one
+# finding per shuffled row after.
+#
+# The buckets are DEFINED in Data/StatPriority.lua's header, not here:
+#     raid   : Raid / single-target order
+#     mythic : M+ / AoE order; omit when identical to raid
+# and the "omit" half is real runtime behaviour, not a comment --
+# StatPriority.lua:307 resolves M+ as `data.mythic or data.raid`. A Mythic+
+# box against a spec that ships no mythic row is therefore compared to the
+# raid row and reported `same-fb`, so "we agree about M+" and "we never
+# expressed an M+ opinion" cannot print as the same word.
+#
+# Tank guides split on a THIRD axis this data model does not have --
+# Survivability vs DPS (Monk writes it Defensive vs Offensive). The addon
+# ships the survival order for tanks by standing decision (CLAUDE.md 1.13.1),
+# so Survivability maps and DPS is reported `no-model` and counted, instead
+# of being quietly diffed against a row that never claimed to answer it.
+#
+# Measured label census, all 40 pages 2026-08-28: 84 boxes, every one of them
+# either carries one of these tokens or is a bare "<Hero Tree> Stat Priority".
+BUCKET_TOKENS = [
+    ("mythic+", "mythic"), ("aoe", "mythic"),
+    ("raid", "raid"), ("single-target", "raid"), ("all situations", "raid"),
+    ("survivability", "raid"), ("defensive", "raid"),
+    ("dps", None), ("offensive", None),
+]
+
+
+def alpha(s):
+    return re.sub(r"[^a-z]", "", (s or "").lower())
+
+
+def bucket_of(label, slug):
+    """-> ("raid" | "mythic" | None, complaint). None = an axis we do not model.
+
+    A heading that matches no token counts as the general order ONLY if
+    nothing is left once the hero-tree name and the words "stat priority"
+    come out. Anything else is reported rather than folded into `raid`:
+    silently folding an unknown heading into raid is the exact bug this
+    assertion exists to undo, and a new Wowhead heading must not be able to
+    re-enter through the default.
+    """
+    low = (label or "").lower()
+    for token, bucket in BUCKET_TOKENS:
+        if token in low:
+            return bucket, None
+    rest = alpha(label).replace(alpha(slug), "", 1)
+    for word in ("statpriority", "priority", "stat"):
+        rest = rest.replace(word, "", 1)
+    if not rest:
+        return "raid", None
+    return None, "unrecognised box heading, not compared: %r" % label
+
+
+def tiers(text):
+    """The order as comparable tiers, ties as sets. Used ONLY to tell a real
+    disagreement apart from a tie group we happen to have written in another
+    sequence -- that gets its own verdict, it is never silently equated. The
+    addon's own ElemEqual (StatPriority.lua:208) is positional, so equating
+    them here would put the two implementations quietly out of step."""
+    return [frozenset(g.split("=")) for g in text.split(" > ")]
+
+
+def verdict_for(mine, tree_key, bucket, guide):
+    """-> (verdict, detail, the shipped row this actually got compared to).
+
+    Resolution order mirrors ResolveDefault in StatPriority.lua: hero tree
+    FIRST, then bucket. A spec ships either per-tree `builds` rows or one
+    flat row, never both (the shape guard in test_statpriority.lua enforces
+    that), so a flat row is the answer for every hero tree -- reporting it as
+    "some other hero tree agrees" would be nonsense, and that is exactly what
+    the old any-key fallback did for 38 of the 84 boxes.
+    """
+    if bucket is None:
+        return "no-model", "", None
+    if not mine:
+        return "NEW", "", None
+    split = any(k[0] != "0" for k in mine)
+    tk = tree_key if split else "0"
+    if split and not any(k[0] == tk for k in mine):
+        return "no-row", "we ship no row for hero tree %s" % tk, None
+    key = (tk, bucket)
+    fb = bucket == "mythic" and key not in mine and (tk, "raid") in mine
+    if fb:
+        key = (tk, "raid")
+    want = mine.get(key)
+    if want == guide:
+        return ("same-fb" if fb else "same"), "", key
+    if want is not None and tiers(want) == tiers(guide):
+        return "tie-order", "same tiers; we write it %s" % want, key
+    hits = [k for k, v in mine.items() if v == guide]
+    if not hits:
+        return "DIFFERS", "", key if want is not None else None
+    same_tree = sorted(k[1] for k in hits if k[0] == tk)
+    if same_tree:
+        return "bucket?", "our %s row for this tree says it" % "/".join(same_tree), key
+    same_bucket = sorted(k[0] for k in hits if k[1] == bucket)
+    if same_bucket:
+        return "tree?", "hero tree %s says it" % "/".join(same_bucket), key
+    return "else?", "only %s says it" % "/".join(
+        sorted("%s|%s" % k for k in hits)), key
+
+
+# --- offline self-check ---------------------------------------------------
+FLAT = {("0", "raid"): "a > b > c > d", ("0", "mythic"): "d > c > b > a"}
+SPLIT = {("18", "raid"): "a > b > c > d", ("18", "mythic"): "b > a > c > d",
+         ("19", "raid"): "c > a > b > d"}
+
+
+def verify():
+    """`--verify`. Every verdict below is a branch that live data may not
+    reach today (`same-fb` and `no-row` reach it zero times as of
+    2026-08-28), and an unexercised branch is a claim nobody has checked.
+    The last two checks are the A/B for assertion 9 itself, kept runnable
+    instead of living only in a commit message."""
+    bad = []
+
+    def check(name, ok, note=""):
+        bad.append(name) if not ok else None
+        print("  %-52s %s  %s" % (name, "PASS" if ok else "FAIL", note))
+
+    print()
+    print("negative controls")
+    for label, slug, want in (
+            ("Voidweaver Stat Priority", "voidweaver", "raid"),
+            ("Preservation Mythic+ Stat Priority", None, "mythic"),
+            ("Dark Ranger Stat Priority / AoE:", "dark-ranger", "mythic"),
+            ("Survivability Stat Priority", None, "raid"),
+            ("DPS Stat Priority", None, None),
+            ("Shado-Pan Offensive Priority", "shado-pan", None)):
+        got = bucket_of(label, slug)[0]
+        check("heading %-38.38s -> %s" % (label, want), got == want, "got %r" % got)
+    check("an unknown heading is NOT folded into raid",
+          bucket_of("Delve Stat Priority", "voidweaver")[0] is None)
+
+    for name, mine, tk, bucket, guide, want in (
+            ("flat row answers every hero tree", FLAT, "18", "raid", "a > b > c > d", "same"),
+            ("mythic box hits the mythic row", FLAT, "18", "mythic", "d > c > b > a", "same"),
+            ("no mythic row -> runtime raid fallback", {("0", "raid"): "a > b > c > d"},
+             "0", "mythic", "a > b > c > d", "same-fb"),
+            ("tie written in another sequence", {("0", "raid"): "a=b > c > d"},
+             "0", "raid", "b=a > c > d", "tie-order"),
+            ("our other bucket says it", SPLIT, "18", "raid", "b > a > c > d", "bucket?"),
+            ("another hero tree says it", SPLIT, "19", "raid", "a > b > c > d", "tree?"),
+            # First written as guide "b > a > c > d", which is 18|mythic --
+            # same bucket as the box asks about, so the code correctly said
+            # `tree?` and the expectation was the thing that was wrong. An
+            # `else?` needs the only hit to differ in BOTH tree and bucket.
+            ("only a different tree AND bucket says it", SPLIT, "19", "mythic",
+             "a > b > c > d", "else?"),
+            ("nothing we ship says it", SPLIT, "18", "raid", "d > c > b > a", "DIFFERS"),
+            ("spec ships trees but not this one", SPLIT, "20", "raid", "a > b > c > d", "no-row"),
+            ("spec ships nothing", {}, "0", "raid", "a > b > c > d", "NEW"),
+            ("axis we do not model", FLAT, "0", None, "a > b > c > d", "no-model")):
+        got = verdict_for(mine, tk, bucket, guide)[0]
+        check("verdict: %-45.45s -> %s" % (name, want), got == want, "got %r" % got)
+
+    # A/B for assertion 9, both arms. `old` is the exact pre-2026-08-28 line.
+    corrupt = dict(FLAT)
+    corrupt[("0", "mythic")] = "a > b > c > d"          # a real, shippable edit
+    old = lambda m: m.get(("0", "raid")) == "d > c > b > a"
+    check("OLD comparison cannot see a corrupted mythic row",
+          old(FLAT) == old(corrupt) is False, "both False, in both arms")
+    check("NEW comparison can (this is the load-bearing one)",
+          verdict_for(FLAT, "0", "mythic", "d > c > b > a")[0] == "same"
+          and verdict_for(corrupt, "0", "mythic", "d > c > b > a")[0] == "DIFFERS")
+    print()
+    print("%d checks, %d failures" % (7 + 11 + 2, len(bad)))
+    return len(bad)
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cached", action="store_true",
@@ -408,7 +596,12 @@ def main():
     ap.add_argument("--only", type=int, action="append",
                     help="limit to these specIDs")
     ap.add_argument("--json", metavar="PATH", help="also write the raw result")
+    ap.add_argument("--verify", action="store_true",
+                    help="run the offline branch checks and exit")
     args = ap.parse_args()
+
+    if args.verify:
+        return 1 if verify() else 0
 
     if not args.cached and os.path.isdir(CACHE):
         for f in os.listdir(CACHE):
@@ -437,9 +630,9 @@ def main():
     print()
     print("=" * 100)
     print("%-5s %-13s %-15s %-10s %-6s %s" %
-          ("spec", "class", "spec", "modified", "shape", "guide order  ->  VERDICT   box heading   tree"))
+          ("spec", "class", "spec", "modified", "shape", "guide order  ->  VERDICT    box heading   tree(subTree/bucket)"))
     print("=" * 100)
-    changed = []
+    tally, touched, unverified = {}, set(), []
     for r in sorted(results, key=lambda r: r["spec"]["id"]):
         s = r["spec"]
         shape = "%dx%d" % (max(1, len(r["trees"])), max(1, r["tabs"]))
@@ -450,20 +643,33 @@ def main():
         for o in r["orders"]:
             guide = render(o["order"])
             tree_key = str(o["subTreeID"]) if o["subTreeID"] else "0"
-            exact = mine.get((tree_key, "raid")) == guide
-            anywhere = [k for k in mine if mine[k] == guide]
-            verdict = "same" if exact else (
-                "same*" if anywhere else ("NEW" if not mine else "DIFFERS"))
-            print("%s %-34s %-8s %-26.26s %s(%s)" %
+            bucket, complaint = bucket_of(o.get("label"), o.get("tree"))
+            verdict, detail, key = verdict_for(mine, tree_key, bucket, guide)
+            if key:
+                touched.add((s["id"],) + key)
+            tally[verdict] = tally.get(verdict, 0) + 1
+            print("%s %-34s %-9s %-26.26s %s(%s/%s)" %
                   (head if first else " " * 57, guide, verdict,
-                   o.get("label") or "-", o["tree"] or "no-tree", tree_key))
+                   o.get("label") or "-", o["tree"] or "no-tree", tree_key,
+                   bucket or "?"))
             first = False
-            if not exact:
-                changed.append((s, o, guide, verdict))
+            if complaint or detail:
+                print("%s   -> %s" % (" " * 57, complaint or detail))
+            if bucket is None:
+                # An exemption that is not counted is an exemption nobody
+                # ever re-reads. Both kinds land in UNVERIFIED below.
+                unverified.append("%-5s %-13s %s: %s" % (
+                    s["id"], s["spec"],
+                    "unrecognised heading" if complaint
+                    else "guide box on an axis we do not model",
+                    o.get("label")))
         if not r["orders"]:
             print("%s %s" % (head, "(no usable stat list; %d lists skipped)" % r["skipped"]))
         for n in r["notes"]:
             print("%s  ! %s" % (" " * 57, n))
+            if n.startswith("NOT the 4"):
+                unverified.append("%-5s %-13s guide box dropped by assertion 4: %s"
+                                  % (s["id"], s["spec"], n.split(": ", 1)[-1]))
         if r["foreign"]:
             print("%s  ~ ignored foreign hero symbols: %s"
                   % (" " * 57, ", ".join(r["foreign"])))
@@ -471,9 +677,24 @@ def main():
     print("--- dateModified clusters (same minute = one Wowhead republish, not N authors) ---")
     for d in sorted(dates, key=lambda d: (d or "")):
         print("   %-30s %2d specs  %s" % (d, len(dates[d]), sorted(dates[d])))
+    for r in results:
+        sid = r["spec"]["id"]
+        for k in sorted(have.get(sid, {})):
+            if (sid,) + k not in touched:
+                unverified.append(
+                    "%-5s %-13s %s|%-6s never compared -- no guide box maps to it"
+                    % (sid, r["spec"]["spec"], k[0], k[1]))
     print()
-    print("scanned %d, errors %d, rows differing from shipped %d"
-          % (len(results), len(errors), len(changed)))
+    print("--- UNVERIFIED: nothing above this line has an opinion about these ---")
+    for u in unverified:
+        print("   " + u)
+    print("   (%d)   -- before assertion 9 this list did not exist, and the"
+          " shipped mythic rows were all in it" % len(unverified))
+    print()
+    print("scanned %d, errors %d;  %s;  unverified %d"
+          % (len(results), len(errors),
+             "  ".join("%s=%d" % kv for kv in sorted(tally.items())),
+             len(unverified)))
     if args.json:
         with io.open(args.json, "w", encoding="utf-8") as f:
             json.dump([{k: v for k, v in r.items()} for r in results], f,

@@ -900,6 +900,7 @@ git diff --stat "DodoInspect-v$V"..HEAD -- DodoInspect/
 python tools/scan_statpriority.py            # 抓 40 页 + 跟 Data/StatPriority.lua 逐行 diff
 python tools/scan_statpriority.py --cached   # 复用上次抓的,改解析器时用
 python tools/scan_statpriority.py --only 263 # 单个专精
+python tools/scan_statpriority.py --verify   # 20 条离线分支检查,不联网也不读缓存
 ```
 
 它吐一张表:每个专精的 `dateModified` · 形状 · 每条 order · **box 标题** · **subTreeID** ·
@@ -1122,12 +1123,76 @@ WCL 干的事是**把我该回头看的 7 个位置指出来**,定案靠的是�
   于是它的 M+ 框**每一次都报 `DIFFERS`** —— 把一个已拍板的决定,永久报成分歧。
 
 ⇒ 后果不是「少查了点东西」,是**这两档的读数都被污染了**:`same*` 里混着真的对上了的,
-`DIFFERS` 里混着按设计就该不一样的。**修法 + A/B 要求写在仓库根 `PENDING-WORK.md`。**
+`DIFFERS` 里混着按设计就该不一样的。**下一节是同日的修法与 A/B。**
 
 ⚠ **顺带一个共用缓存的脚**:`tools/.scan-cache` 两个脚本共用,而 `scan_statpriority.py`
 **不带 `--cached` 时会先删光全部 40 个 `guide-*.html` 再重抓**(`scan_statpriority.py:413-416`)。
 并行两个 session 各跑一次,后一个会把前一个正在读的 guide 缓存抽走。
 (`scan_wcl_stats.py` 从不删任何文件,它的 `wcl-*` 和 DB2 csv 不受影响 —— **撞的是自己人**。)
+
+#### ✅ 同日修好了(`scan_statpriority.py`,**assertion 9**)
+
+一句话:**比对现在先解英雄树、再解 bucket,跟运行时的 `ResolveDefault` 同一条路**
+(`StatPriority.lua:307` 的 `data.mythic or data.raid` 也照抄了),
+而**「对不上但在别处找到了」不再共用一个 `same*`** —— 它裂成了几个各自命名一件事的词。
+
+| verdict | 它说的那件事 |
+|---|---|
+| `same` | 跟我们这条 (英雄树, bucket) 行逐字相同 |
+| `same-fb` | Mythic+ 框,而我们**没发** mythic 行 ⇒ 照运行时落到 raid 行,且相同 |
+| `tie-order` | 分档完全一致,只是并列组的**书写顺序**不同。⚠ **不当成相同** —— 插件自己的 `ElemEqual`(`StatPriority.lua:208`)是按位比的,在这儿悄悄划等号就是让两份实现开始漂 |
+| `bucket?` | 本树本 bucket 对不上,而**本树的另一个 bucket** 正好这么说 |
+| `tree?` | ……**另一棵英雄树**这么说 |
+| `else?` | ……只有一条既不同树、也不同 bucket 的行这么说 |
+| `DIFFERS` | 我们发的东西里没有任何一条这么说 |
+| `no-model` | 这个框在一条**我们没建模的轴**上(坦克的 DPS / Offensive;我们按既定口径只发生存向) |
+| `no-row` / `NEW` | 这棵树 / 这个专精我们一行都没发 |
+
+🔑 **最值钱的不是多出来的词,是末尾新增的 `UNVERIFIED` 段** —— 它把
+「**攻略页压根没提到、因此没有任何东西在替它背书**」的行**逐条列出来**:
+没有对应 M+ 框的 mythic 行 · 被断言 4 丢掉的框 · 落在没建模那条轴上的框。
+**这个数以前不存在**,而它是唯一能回答「我这份数据里有多少是没人核过的」的东西。
+⚠ `no-model` 也算进去了 —— **一个不计数的豁免,等于一个没人会再读的豁免**。
+
+🧪 **`--verify`(新增;离线,不联网、不读缓存)**:20 条,把上表**每一个 verdict 各走一遍**
+—— `same-fb` 和 `no-row` 在真数据上**开火 0 次**,而一个从没被执行过的分支
+等于一句没人核过的话;末尾两条就是 assertion 9 的 A/B 本身,留成**可重跑**的,
+别只活在 commit message 里。
+⚠ 头一次跑它 **红了 1 条,而红的是我写的期望、不是代码** —— 那条用例我按
+「不同树 + 不同 bucket」构造,实际命中的那行**跟提问的框同 bucket**,代码答 `tree?` 更准。
+**照 canon:A/B 红了要先读红的是哪一条**,别默认「红了 = 我猜对了」。
+
+**2026-08-28 实测(跑 `python tools/scan_statpriority.py --cached` 现看,别抄这几个数)**:
+84 个框 `same 56 / DIFFERS 16 / no-model 5 / bucket? 2 / else? 2 / tie-order 2 / tree? 1`,
+**UNVERIFIED 19**。改之前是 `same 18 / same* 47 / DIFFERS 19` —— 那 47 里混着上面六种不同的事。
+
+🔴 **A/B(把 9 条 mythic 行整个倒序种回去,`lua tools/dump_statpriority.lua` 断言 9 行真的变了)**:
+
+| | `same`(读的人当权威的那一档) | 弱档 |
+|---|---|---|
+| 旧逻辑 · 干净 | 18 | `same*` 47 · DIFFERS 19 |
+| 旧逻辑 · 种了违规 | **18(纹丝不动)** | `same*` 40 · DIFFERS 26 |
+| 新逻辑 · 干净 | 56 | UNVERIFIED 19 |
+| 新逻辑 · 种了违规 | **54** | DIFFERS 22 |
+
+⚠ **交接里写的「打乱 mythic 行 → 0 失败,什么都不会发现」复现不出来,要按上表读**:
+旧逻辑的**总数确实动了**(7 行从 `same*` 掉进 `DIFFERS`)—— 但那是**别的行**失去了一个顺手的
+`anywhere` 命中,**指向的专精是错的**;真正的判据是 **`same` 恒为 18**:
+它**结构上不可能**因为一条 mythic 数据被改坏而变。**「数字动了」和「它指对了」是两回事。**
+
+⚠ **新逻辑只抓到 2 条,而这正是重点**:9 条里只有 `253|44` 和 `270|0` 有对应的 M+ 框,
+**其余 7 条攻略页从没表过态** ⇒ 任何拿 Wowhead 当源的扫描器都**不可能**核它们。
+以前这 7 条印 `same*`;现在它们进 `UNVERIFIED`。**没变的是覆盖面,变的是它不再假装。**
+(数据文件跑完 `cmp` 与备份逐字节相同,`lua tools/test_statpriority.lua` 556 checks 0 failures。)
+
+#### 顺带:`scan_wcl_stats.py` 的 BANNER 声称的 FLAG 定义比代码窄,改的是 BANNER
+
+原文写 "that -- and nothing else -- is what a FLAG means here",而它描述的那条路
+(`top in firsts and obs[-1] in firsts`)**要求观察到的第一名也是我们排第一的**
+⇒ 只有**并列第一**的专精走得到,49 个 spec+bucket 组合里只有 9 组,上次全量**开火 0 次**;
+真正报出来的 FLAG 全从另一条路来。**没动 `verdict()`** —— 那两道闸是本轮最值钱的设计,
+`loot?` 说的是「掉落供给」这件另外的事,不能为了迁就一句话把它拆了。
+⇒ 改成如实列出三种形状。`--verify --offline` 8 PASS / 1 SKIP(那条 SKIP 要联网,**SKIP 不是 PASS**)。
 
 ## 1.13.0:属性优先级可自定义(**未上过真机**)
 
