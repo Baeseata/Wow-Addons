@@ -1078,6 +1078,57 @@ A/B 实测:在 252 里种一个 `"critt"`,`test_statpriority.lua` + `test_gearra
 A/B 三种**真实**手改失败模式各精确红一条:打错 stat key(`data[252].raid: unknown stat key "critt"`)·
 重排时漏一个(`got 3, expected 4`)· 忘了 `current=true`。
 
+### 2026-08-28 第三轮:WCL 那 7 条 `FLAG` 逐条回源(3 条真是数据错)
+
+上一节那 7 条 `FLAG` 逐条回到原文对读(Wowhead / Icy Veins / Method / WingsIsUp / Kyrasis)。
+**FLAG 7 → 3**,而剩下的 3 条恰好就是判定「忠于源」的那几条。
+
+| spec | 处置 | 依据 |
+|---|---|---|
+| **258 暗牧** | 改 order | 我们当初的源是个**死链站**;Icy Veins + Method 都把**精通**排第一,而 `goalBuilds` 早就逐格抄了 Icy Veins ——**只有 order 没跟** |
+| **260 狂徒** | 取 Icy Veins(暴击第一) | Wowhead 与 Icy Veins 分歧,**Jerry 拍板取后者** ⇒ 这是拍板不是机械修复,保持 `provisional` |
+| **65 神圣骑** | 两个天赋各补一条**显式 mythic 行** | 原来靠 fallback 兜,堵掉它 |
+| 250 / 1473 / 1480(共 4 行) | **不动** | 忠于源。250 的 versatility 出自 **Kyrasis 文档**,不是无源编辑 |
+
+🔴 **决策:不给 `FLAG` 加新档(强 / 弱)。** 三个互相独立的 lens 得出同一个结论 ——
+按 bootstrap 强度排,**最强的那两条(250 / 1480)恰好一个字都不用改**,
+而三条真订正的反而偏弱。⇒ **`FLAG` 的强度预测不了哪条数据错**,分档只会给一个假的排序。
+而且它违反上面 §5 立的规矩:**一个档要命名另一个事实,不是同一个事实的强弱** ——
+`loot?` 之所以立得住,正因为它说的是「掉落供给」这件**另外的事**。
+
+🔑 **本轮最值钱的一条,而且它恰好是断言 7 的实证**:
+**3 条订正全部来自「攻略 vs 攻略」的分歧,WCL 一条都没定案。**
+WCL 干的事是**把我该回头看的 7 个位置指出来**,定案靠的是回原文逐句对读。
+⇒ 「只许当反证」不是保守措辞,是它实际能做到的**全部**。
+
+### 🔴 同轮发现:`scan_statpriority.py` 从来没比过 `mythic` 那一半数据
+
+`tools/scan_statpriority.py:453` 是**唯一**做精确比对的那一行,而它把 bucket 写死成 `raid`:
+
+    exact = mine.get((tree_key, "raid")) == guide
+
+**整个文件里 `mythic` 出现 0 次**(`grep -c mythic tools/scan_statpriority.py`)。两个方向都漏:
+
+- 我们发的 `mythic` 行**结构上不可能变红** —— 只会经下一行的 `anywhere`
+  (匹配**任意** tree、**任意** bucket)拿一个 `same*`;
+- guide 上标着 `Mythic+` 的框,**被拿去跟我们的 `raid` 行对**。
+
+**两个 live 实例(2026-08-28 `--cached` 实测,不用重抓)**:
+
+- **270 织雾**:guide 的 `Mythic+ Stat Priority` 框是 `haste > mastery > crit > versatility`,
+  我们发的 `270|0|mythic` **一个字符都不差** —— 而它印的是 `same*`。
+  **正确答案就躺在 `mine` 里,脚本说不出口。**
+- **1468 恩护**:我们**故意**不发 mythic 行(M+ 取治疗向 = raid 序,见上面 1.13.1 那节),
+  于是它的 M+ 框**每一次都报 `DIFFERS`** —— 把一个已拍板的决定,永久报成分歧。
+
+⇒ 后果不是「少查了点东西」,是**这两档的读数都被污染了**:`same*` 里混着真的对上了的,
+`DIFFERS` 里混着按设计就该不一样的。**修法 + A/B 要求写在仓库根 `PENDING-WORK.md`。**
+
+⚠ **顺带一个共用缓存的脚**:`tools/.scan-cache` 两个脚本共用,而 `scan_statpriority.py`
+**不带 `--cached` 时会先删光全部 40 个 `guide-*.html` 再重抓**(`scan_statpriority.py:413-416`)。
+并行两个 session 各跑一次,后一个会把前一个正在读的 guide 缓存抽走。
+(`scan_wcl_stats.py` 从不删任何文件,它的 `wcl-*` 和 DB2 csv 不受影响 —— **撞的是自己人**。)
+
 ## 1.13.0:属性优先级可自定义(**未上过真机**)
 
 侧栏顶部那行右侧的齿轮 → 开编辑窗:4 项绿字属性排序(`>` / `=`)、团/米各一条、
