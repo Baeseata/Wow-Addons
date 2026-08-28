@@ -1194,6 +1194,51 @@ WCL 干的事是**把我该回头看的 7 个位置指出来**,定案靠的是�
 `loot?` 说的是「掉落供给」这件另外的事,不能为了迁就一句话把它拆了。
 ⇒ 改成如实列出三种形状。`--verify --offline` 8 PASS / 1 SKIP(那条 SKIP 要联网,**SKIP 不是 PASS**)。
 
+### 2026-08-28 第四轮:那三条「我们并列、攻略拆开」—— **73 / 1473 保留,253 拆**
+
+上一节的 `tie-order` / `bucket?` / `tree?` 裂出来之后,PENDING 登记了三条同一形状的:
+**我们发并列,而攻略现在给了先后**(73 防战 · 253 兽王 · 1473 增辉)。
+
+🔑 **判据只有一句:这个并列当初是「读来的」还是「我们自己判的」。**
+读来的就不能因为另一个源拆开了跟着拆;我们自己判的就得说得出理由,说不出就是数据错。
+**逐条回原文对读之后,三条分成了两类** —— 共同形状**不是**共同根因。
+
+| spec | 处置 | 依据(原文,已逐句抄进 `Data/StatPriority.lua` 的注释) |
+|---|---|---|
+| **73 防战** | **不动** | Icy Veins(08-10, Mwahi)"Versatility is roughly equal to Critical Strike",控件在这两个之间画的是**等号图标**(别处全是箭头);Method(08-11, Nate)"Haste > Crit = Vers"。Wowhead 的列表虽拆,**它自己的正文却是 2+2 分组**("prefers Haste and Crit with a good balance of Vers and Mastery")⇒ 它跟自己都对不上,不构成干净的反证 |
+| **1473 增辉** | **不动** | 那个**不对称**(38 拆 / 36 并列)整条来自 Icy Veins 逐树的两句:Chronowarden "Crit is very slightly better than Haste"、Scalecommander "they are equivalent"。Wowhead 给两棵树发的是**同一份**列表 ⇒ 它结构上不可能是这个不对称的来源,而它的正文还说两棵树 "may differ" |
+| **253 兽王** | **改 raid + 挂 `provisional`** | 三个源**没有一个**说并列,仓库里也从没记过理由 —— 253 只出现在两份 research doc 的「还没做」清单里,然后直接进了发布矩阵 |
+
+**73 的旁证**:它的 raid/M+ 分开也是读来的(Icy Veins "Critical Strike increases in value for
+Mythic+"),而 Wowhead 对这个专精**根本没有 M+ 框** ⇒ `0|mythic` 落进 `UNVERIFIED` 是对的:
+**没有源反对它,只是有一个源从没就它表过态。** 扫描器现在报 `bucket?`(Survivability 框正好等于
+我们的 mythic 行)—— 那是 PENDING 里那句「要么 raid 错了,要么本来就不该分」的机器版说法,
+**答案是后者**,理由已经落在文件里。同理 1473 的 `tree?` 也是**按设计**永久报。
+
+🔬 **253 那条的负对照(它才是把「攻略拆开」坐实成真信号的东西)**:
+同一个作者(Tarlo)在**生存猎**页面把同一棵英雄树的并列写成**一个列表项**
+(`[li]Critical Strike and Haste[/li]`),而兽王页写成两项 + 正文明说有差距
+("the gap between your two highest secondary stats and Haste is much larger on AoE")。
+⇒ **这个拆是真读出来的,不是我们解析器的盲区。**
+
+**可能的成因(是假说,没坐实,已如实标在注释里)**:Method/Qenjua 单体那行写的是
+`Mastery > Haste => Crit > Versatility` —— 一个**多出来的 `=>`**,而那站别处的并列一律写 `=`。
+按并列读正好得到我们发的那一行,且我们的 mythic 行跟那页 AoE 行**逐字相同** ⇒ 抄写方向
+显然是 ST→raid / AoE→mythic。**证不了**:那页 Last Updated 是 08-23,在我们 08-13 抄写之后。
+⚠ 所以 253 改完仍挂 `provisional` —— **三个源对「顺序」本身就分歧**
+(Wowhead M>C>H>V · Method ST M>H>C>V · Icy Veins ST M>H>C>V),这是取舍不是修复。
+
+**顺手清掉 268 酒仙的两条 `tie-order`**:并列组照源的书写顺序重排
+(`versatility=crit=mastery`),**分档没动 ⇒ 权重和 raid/M+ 折叠都没动**,纯粹是让那两行
+不再永久刷噪音。
+
+📊 **本轮实测**(`python tools/scan_statpriority.py --cached`,数现跑别抄):
+`same 56 → 59` · `tie-order 2 → 0` · `else? 2 → 1` · **`DIFFERS` 16 不动 · `UNVERIFIED` 19 不动**。
++3 = 268 那两条 + 253 那条;`else?` 少的那条就是 253。
+`lua tools/test_statpriority.lua` 556 checks 0 failures;`--verify` 20 checks 0 failures。
+⚠ **`DIFFERS` 和 `UNVERIFIED` 一个都没少是预期的** —— 本轮只改了 1 行数据,
+其余全是注释;**数据订正的产出本来就不该体现在这两个数上。**
+
 ## 1.13.0:属性优先级可自定义(**未上过真机**)
 
 侧栏顶部那行右侧的齿轮 → 开编辑窗:4 项绿字属性排序(`>` / `=`)、团/米各一条、

@@ -171,6 +171,22 @@ ns.StatPriority = {
         date = "2026-08-22",
     },
     [1473] = { -- Augmentation
+        -- 2026-08-28: Wowhead ships one identical list for both hero trees
+        -- (M > C > H > V), so its page cannot be the origin of the asymmetry
+        -- below -- and its own prose says the two trees "may differ", which
+        -- its two identical boxes then do not. The asymmetry is transcribed
+        -- from Icy Veins (upd. 08-10, Saeldur), sentence by sentence:
+        --   "As a Chronowarden Crit is very slightly better than Haste but
+        --   they are extremely close."   -> 38: M > C > H > V
+        --   "As a Scalecommander they are equivalent."  -> 36: M > C=H > V
+        -- Corroboration that this row was read and not invented: the
+        -- threshold that used to sit here (mastery 1840, after which
+        -- mastery/crit/haste collapse together) is the same page's "until
+        -- you get close to the Second Stat DR around 1840 Mastery. At that
+        -- point it is approximately equal to Haste and Critical Strike
+        -- Chance." The number was dropped by the fully-static rewrite; the
+        -- order it came with is still correct. Method (upd. 08-25, Daylea)
+        -- independently writes "Mastery > Haste = Critical Strike > Vers".
         current = true,
         source = "Icy Veins / Wowhead",
         date = "2026-08-13",
@@ -188,12 +204,43 @@ ns.StatPriority = {
     -- Hunter
     ------------------------------------------------------------------
     [253] = { -- Beast Mastery
+        -- 2026-08-28: the Pack Leader raid row used to tie Crit and Haste.
+        -- No source says that. Unlike 73 and 1473 -- where the tie is what
+        -- the guides actually state -- this one has no origin we can find:
+        --   Wowhead (Tarlo) writes the two as separate list items, and its
+        --   prose asserts a real gap: "Pack Leader wants Weapon Damage,
+        --   followed by Agility, then Mastery, Critical Strike, Haste and
+        --   finally Versatility, in every situation" plus "the gap between
+        --   your two highest secondary stats and Haste is much larger on AoE
+        --   than on single-target". Negative control: on the SURVIVAL page
+        --   the same author writes the same hero tree's tie as one item,
+        --   "[li]Critical Strike and Haste[/li]" -- so the split here is a
+        --   real reading, not a parser blind spot.
+        --   Icy Veins never ties them either: "we recommend Crit > Haste as
+        --   a rule of thumb for general, all-content play" (changelog
+        --   16 Jul. 2026: "Clarified the Crit vs Haste rule of thumb").
+        --   The repo never recorded a reason: 253 appears only in the "not
+        --   done yet" lists of both research docs, then went straight into
+        --   the release matrix.
+        -- Likely mechanism (a hypothesis, not established): Method/Qenjua's
+        -- single-target line reads "Mastery > Haste => Crit > Versatility"
+        -- -- a stray "=>" where every other tie on that site is a plain "=".
+        -- Read as a tie it yields exactly the row we shipped, and the mythic
+        -- row matches that page's AoE line ("Crit > Vers = Haste") word for
+        -- word, so the transcription clearly went ST->raid, AoE->mythic.
+        -- Cannot be proven: that page's Last Updated is 08-23, after we
+        -- transcribed on 08-13.
+        -- Raid now follows Wowhead's Pack Leader list. Mythic is unchanged
+        -- (it is sourced -- only the AoE = M+ mapping is ours). provisional
+        -- because the three sources genuinely disagree on the order itself:
+        -- Wowhead M>C>H>V, Method ST M>H>C>V, Icy Veins ST M>H>C>V.
         current = true,
+        provisional = true,
         source = "Wowhead / Method",
-        date = "2026-08-13",
+        date = "2026-08-28",
         builds = {
             [43] = { -- Pack Leader
-                raid = { "mastery", { "crit", "haste" }, "versatility" },
+                raid = { "mastery", "crit", "haste", "versatility" },
                 mythic = { "mastery", "crit", { "haste", "versatility" } },
             },
             [44] = { -- Dark Ranger
@@ -249,8 +296,12 @@ ns.StatPriority = {
     -- Monk
     ------------------------------------------------------------------
     [268] = { -- Brewmaster; Raid survival, M+ combined damage baseline
+        -- 2026-08-28: tie group rewritten in the source's own order
+        -- (Wowhead: "Versatility, Critical Strike, Mastery"). Tiers are
+        -- unchanged, so weights and the raid/mythic collapse are unchanged
+        -- too -- this only stops the scanner reporting tie-order forever.
         current = true,
-        raid = { { "crit", "versatility", "mastery" }, "haste" },
+        raid = { { "versatility", "crit", "mastery" }, "haste" },
         mythic = { "crit", { "versatility", "mastery" }, "haste" },
         source = "Wowhead / Method",
         date = "2026-08-13",
@@ -531,6 +582,21 @@ ns.StatPriority = {
         date = "2026-08-13",
     },
     [73] = { -- Protection; general survival baseline
+        -- 2026-08-28: Wowhead's Survivability list splits Crit and Vers
+        -- (H > C > V > M), which is what our mythic row already says. We
+        -- keep the raid tie because the other two sources state it outright,
+        -- and because Wowhead's own prose does not match its own list -- it
+        -- groups 2+2 ("Defensively, Protection prefers Haste and Crit with a
+        -- good balance of Vers and Mastery"), not 1-1-1-1.
+        --   Icy Veins (upd. 08-10, Mwahi): "Versatility is roughly equal to
+        --   Critical Strike." Its widget draws a literal equals icon between
+        --   the two, arrows everywhere else.
+        --   Method (upd. 08-11, Nate): "Strength >> Haste > Crit = Vers >
+        --   Mastery for all situations."
+        -- The raid/M+ split is Icy Veins too: "Critical Strike increases in
+        -- value for Mythic+." Wowhead has no M+ box for this spec at all,
+        -- which is why the mythic row shows up under UNVERIFIED -- no source
+        -- contradicts it, one source simply never speaks to it.
         current = true,
         raid = { "haste", { "crit", "versatility" }, "mastery" },
         mythic = { "haste", "crit", "versatility", "mastery" },
