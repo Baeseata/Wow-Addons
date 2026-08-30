@@ -38,6 +38,10 @@ tainted by 'DodoInspect'`。
 
 **交叉封锁**:目标的 GUID 可读、名字 secret;计分板的 GUID secret、名字可读 ——
 暴雪故意让插件无法把"敌方目标"和"计分板某行"关联起来。这功能本就是它要挡的。
+> 🔴 **2026-08-30 更正:「目标的 GUID 可读」这半句已被真机证伪** —— `UnitGUID("target")`
+> 对一个**刚通过 `CanInspect` 的目标**返回了 secret string(第六颗雷)。整句留着是因为
+> 「暴雪要挡关联」那个意图仍然成立,**但别再拿它当「这个值可读」的依据** ——
+> 代码里那句错的注释正是从这半句抄下去的。**读任何 GUID 一律走 `ns.ReadableUnitGUID`。**
 
 **现行解法(别 regress 回去)**:
 - 职业名:用**可读的 `classToken`** 查常量表 `LOCALIZED_CLASS_NAMES_MALE`,
@@ -136,6 +140,62 @@ spec 那条没有。⇒ **同一条高危路径上可以有两种完全不同的
 本机验不了。两种都是 bug、修法相同,但严重度从「BugSack 报错」到「面板静默空白」都有可能 ——
 **别把「它会崩」当成已证实的事**。
 
+### 🔴 第六颗雷(2026-08-30,12.1,BugSack `TargetInfo.lua:402`)—— guard 装在了**安全的那一侧**
+
+    attempt to compare upvalue 'inspectPendingGUID'
+    (a secret string value, while execution tainted by 'DodoInspect')
+
+🔑 **判据整个躺在报错的 locals 里,一眼定案**:
+`guid="Player-115-08A1C4F5"`(**明文**,INSPECT_READY 的事件参数)对
+`inspectPendingGUID=<secret string>`(**secret**,我们自己存的那个)。
+而当时那行代码 guard 的是 `guid` —— **两边里安全的那一边**。
+
+**根因在 `RequestInspect()`,不在报错那一行**:`inspectPendingGUID = UnitGUID("target")` 裸存。
+`UnitGUID` 对一个**刚刚通过 `CanInspect("target")` 的目标**返回了 secret string
+(那道闸写的是 `not (CanInspect and CanInspect("target"))`,`not <secret>` 自己就会抛
+⇒ CanInspect 那次确实答的是明文,这一步排掉了)。
+
+⇒ **它同时证伪了两句写下来的前提**:本文上面「交叉封锁」那句**目标的 GUID 可读**,
+以及代码注释里那句 "inspect is friendly-only so both GUIDs are readable"。
+**后者是从前者抄下来的** —— 所以这次两个地方一起改,只改代码等于留着下一次。
+
+🔑 **它跟前五颗都不同族,值钱的就是这个差别**:这个插件别处**每一个** guard 都成立,
+因为那些值都是**同一个函数里往下几行就用掉**的临时值(`Inspect.lua` 的 `lvl`、
+`StatPriority.lua` 的 `id`/`idx`……全量扫过,见下)。而这一个**跨了事件边界** ——
+在 `RequestInspect` 里存进 upvalue,几帧之后在 `INSPECT_READY` 的 handler 里比较。
+**guard 没跟着一起跨过去,而那边是另一段代码、带着它自己的前提被写出来。**
+
+⇒ **可迁移心法(直接是一个 grep)**:
+**值一旦存进比函数活得长的变量,就必须在「存」那一刻 normalize(secret → nil),
+不能指望在「用」那一刻 guard。**
+`grep -rnE "^[[:space:]]+[a-zA-Z_][a-zA-Z0-9_.]* = (Unit|Get|C_|Is|Can)[A-Za-z_.]*\(" --include=*.lua .`
+—— 命中里凡是赋给**跨函数存活**的变量的,都得走 normalizer。
+**2026-08-30 全量跑过这条:整个插件只有 `TargetInfo.lua:352` 一处**,其余全是同函数内即用即挡。
+
+**修法 = 第四颗雷第 2 条的原样重演,所以这次配 guard**:那份正确写法**仓里早就有**
+(`InspectPanel.lua` 的 `ReadableUnitGUID`,secret → nil 在边界上化掉)——
+提升成 `ns.ReadableUnitGUID` 单一入口,`TargetInfo` 两处(352 存、159 计分板)都改走它。
+现在全仓**裸 `UnitGUID(` 调用点为零**(helper 自己那行除外),比较处两边都 guard 当第二道。
+
+🧪 **`tools/test_secretvalues.lua`(新,31 checks)**:静态扫源码,裸 `UnitGUID(` 只准出现在
+`InspectPanel.lua`。⚠ **必须用 frontier pattern `%f[%w_]UnitGUID%s*%(` 不能用子串** ——
+`ReadableUnitGUID(` 本身就以 `UnitGUID(` 结尾,子串匹配会把**每一个走 helper 的正确调用**
+判成违规(canon:子串匹配止于词中间 ⇒ 一定匹错)。文件里带两条自测证明它两个方向都灵。
+**A/B 两臂,各自先断言违规真种进去了**:① 把裸调用种回 `TargetInfo` → 红 1 条且**点名 TargetInfo**;
+② 把 `ns.ReadableUnitGUID` 的导出改个名 → 红「still exports」。两臂都已回读确认撤干净。
+⚠ **覆盖面 != 规则适用面**:它只管 `UnitGUID` 一个 API,`UnitClass` / `GetInspectSpecialization` /
+计分板字段仍然靠手写 guard。**绿 = 「没有裸 UnitGUID 漏出去」,不是「没有 secret 漏出去」**,
+这句话也写在那个文件的头部。
+
+⚠ **「现在能走到哪儿了」**(第四颗雷第 5 条那个必答题):崩在 402 意味着后面的
+`Render()` + `C_Timer.After(0, Render)` **那次没跑**,修完第一次跑得到。但 `Render()` 本来就在
+每次 `PLAYER_TARGET_CHANGED` 对同一个目标无条件执行(`IsPlayerTarget()` **不按阵营过滤**)
+⇒ **没有任何代码因此到达它以前到不了的状态**,这次不用怕换个行号复活。
+
+⚠ **仍然不知道的**:那次在什么场景触发(战场 / 竞技场 / 城里)没有记录,`Count: 1`。
+**别把「友方目标的 GUID 也会 secret」当成机制写进去** —— 目前只有一次观测,
+而修法对两种解释都成立。
+
 ## 掉落来源 + 部位候选面板(2026-08-14 写完并发版)
 
 > ⚠ **本节的横幅原来写的是「🚧 未发版 / 游戏内零验证」—— 那句已经不成立**
@@ -164,6 +224,14 @@ lua tools/test_gearrank.lua       # 60 项离线测试,必须 0 failures
 ```
 本机 `luac` / `lua` 已装(`~/AppData/Local/Programs/Lua/`),`luac -p <file>` 可做语法验证 ——
 **这是本插件第一次有可自动跑的验证手段,别丢掉**。
+
+**四个离线套件,改完全跑一遍**(⚠ **没有 CI,不跑就等于没有** —— 发版 workflow 只打包,不跑测试):
+```
+lua tools/test_secretvalues.lua   # 静态:裸 UnitGUID( 只准在 InspectPanel(第六颗雷)
+lua tools/test_statpriority.lua   # 属性优先级 / 玩家覆盖 / 数据表
+lua tools/test_gearrank.lua       # 排名规则 + 数据层
+lua tools/test_lootpanel.lua      # 掉落窗口的画的那条路(冒烟)
+```
 
 **零翻译原则**:数据文件只存 ID。物品名走 `C_Item.GetItemInfo`、副本/Boss 名走
 `EJ_GetInstanceInfo`/`EJ_GetEncounterInfo`、部位全名走全局串 `_G["INVTYPE_HEAD"]` ——

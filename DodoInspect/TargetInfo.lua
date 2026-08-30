@@ -156,8 +156,8 @@ local function GetPvPSpecName()
         (C_PvP.GetScoreInfoByPlayerGuid or C_PvP.GetScoreInfoByPlayerGUID)
     if instanceType == "pvp" and ScoreByGuid then
         local ok, spec = pcall(function()
-            local guid = UnitGUID("target")
-            if issecretvalue(guid) or not guid then return end
+            local guid = ns.ReadableUnitGUID("target")
+            if not guid then return end
             local info = ScoreByGuid(guid)
             local s = info and info.talentSpec
             if not issecretvalue(s) and type(s) == "string" and s ~= "" then
@@ -349,7 +349,13 @@ local function RequestInspect()
     if now - lastInspectRequestAt < 0.6 then return end
     lastInspectRequestAt = now
 
-    inspectPendingGUID = UnitGUID("target")
+    -- 2026-08-30 (BugSack, TargetInfo.lua:402): UnitGUID handed back a
+    -- SECRET string for a target that had just passed CanInspect above.
+    -- Normalize at the STORE, not at the use: this upvalue outlives the
+    -- function and is read from a different event handler, so a guard
+    -- written down there is a separate piece of code that can be -- and
+    -- was -- written against the wrong premise.
+    inspectPendingGUID = ns.ReadableUnitGUID("target")
     NotifyInspect("target")
 end
 
@@ -396,10 +402,14 @@ EVT:SetScript("OnEvent", function(_, event, ...)
 
     if event == "INSPECT_READY" then
         local guid = ...
-        -- inspect is friendly-only so both GUIDs are readable; guard the
-        -- event arg anyway so no future secret GUID can throw the compare
-        if not issecretvalue(guid) and inspectPendingGUID
-            and guid and guid ~= inspectPendingGUID then return end
+        -- The old comment here read "inspect is friendly-only so both
+        -- GUIDs are readable" and guarded only the event arg. 2026-08-30
+        -- proved the mirror image: the arg arrived PLAIN and the STORED
+        -- upvalue was the secret one. Both sides are checked now; the
+        -- store above also normalizes, so this is belt and braces.
+        -- Either side unreadable => do not filter, just render.
+        if not issecretvalue(guid) and not issecretvalue(inspectPendingGUID)
+            and inspectPendingGUID and guid and guid ~= inspectPendingGUID then return end
         Render()
         C_Timer.After(0, Render) -- traits may lag one frame behind
         return

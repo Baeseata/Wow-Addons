@@ -58,6 +58,12 @@ local function ReadableUnitGUID(unit)
     return nil
 end
 
+-- shared with TargetInfo.lua: this is the ONLY place allowed to call
+-- UnitGUID raw. Every other caller goes through here, so a secret GUID
+-- becomes nil at the boundary instead of travelling onwards.
+-- tools/test_secretvalues.lua enforces that.
+ns.ReadableUnitGUID = ReadableUnitGUID
+
 local function CurrentInspectableUnit()
     local unit = InspectFrame and InspectFrame.unit
     if not unit and UnitExists("target") then unit = "target" end
