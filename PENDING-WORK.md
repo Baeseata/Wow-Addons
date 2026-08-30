@@ -53,6 +53,17 @@
 3. **DodoBricks 在 HOME 没装**(repo 有、`D:/World of Warcraft/_retail_/Interface/AddOns/` 下没有)。
    它是 5 个已发布 CF 插件之一 ⇒ HOME 上没法给它做发版前冒烟测。装 = 需要完整重启客户端。
 
+4. **要不要把离线套件挂进发版 workflow**(2026-08-30 提,Jerry 未拍板)。
+   现在 `.github/workflows/curseforge-release.yml` **只打包,不跑任何测试** ⇒ 四个套件
+   (`test_secretvalues` / `test_statpriority` / `test_gearrank` / `test_lootpanel`)
+   全靠开发时手跑。而 `test_secretvalues` 是为第六颗雷立的**防复活**闸,
+   **一个没人跑的 guard 挡不住第七颗** —— 那颗雷本身就是「规则写了两周没人想起来」炸的。
+   - **代价**:一次误报会**卡住发版**。四个套件里三个要 `lua`(runner 上得装),
+     只有 `test_secretvalues` 是纯静态、可以退化成一条 `grep` step,零依赖。
+   - **最小可行**:只挂 `test_secretvalues` 那条 grep;其余三个仍手跑。
+   ⇒ **拍板要不要挂、挂几个。** 定了就落地,不定就保持现状(那也是一个选择,
+   只是要知道自己选的是「靠纪律」)。
+
 ## 🟢 给 DodoUnholy 补一条 guard(照抄 DodoXuefei 的现成写法)
 
 2026-08-24 从 `DodoUnholy/Rotation.lua` 删掉了 `ProbeCombatLog` 与 `/duh cl`
