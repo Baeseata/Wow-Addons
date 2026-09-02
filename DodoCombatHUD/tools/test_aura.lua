@@ -56,6 +56,51 @@ for _, list in ipairs({ ns.LUST, ns.RAID }) do
 end
 check("所有 spellID 都是正整数", bad, 0)
 
+-- ── CD_STACK_STYLE(0.13.5「当资源看」的叠层 buff)────────────────────
+-- ① 名单里的 ID 必须真的被某个专精用着。填了个没人用的 ID = 样式永远不生效,
+--    而「名单里写着」读起来跟「做好了」一模一样 —— 屏幕上看不出差别(那格根本不出现)。
+check("CD_STACK_STYLE 是表", type(ns.CD_STACK_STYLE), "table")
+local orphan, styled = 0, 0
+for id in pairs(ns.CD_STACK_STYLE or {}) do
+    styled = styled + 1
+    local used = false
+    for _, list in pairs(ns.SPEC_CDS) do
+        for _, sid in ipairs(list) do if sid == id then used = true break end end
+        if used then break end
+    end
+    if not used then orphan = orphan + 1; print(("     %d 不在任何 SPEC_CDS 列表里"):format(id)) end
+end
+check("CD_STACK_STYLE 里没有孤儿 ID", orphan, 0)
+check("CD_STACK_STYLE 非空(空了就是这功能被人删干净了)", styled > 0, true)
+
+-- ② 漩涡武器必须**排第一** = 固定在左一。0.13 的规矩是「第 N 个 ID 永远在第 N 格」⇒
+--    有人往前面插一个 ID,它就静默挪到第二格,而**屏幕上完全看不出这是 bug**
+--    (那格照常显示,只是位置不对)。这条断言是唯一会替它开火的东西。
+check("漩涡武器(344179)在增强萨的第一位 = 左一", ns.SPEC_CDS[ns.SPEC.SHA_ENH][1], 344179)
+check("漩涡武器进了 CD_STACK_STYLE", ns.CD_STACK_STYLE[344179], true)
+
+-- ── 升腾:三个专精**三个不同的 spellID**(元素 114050 / 增强 114051 / 恢复 114052)──
+-- 抄错的典型形状 = 复制上一行忘了改号 ⇒ 那格**永远空着**,而它跟「没点这个天赋」
+-- 在屏幕上分不开(两者都是空格子)。这条断言是唯一能把两者分开的东西。
+local ASCENDANCE = {
+    [ns.SPEC.SHA_ELE] = 114050,
+    [ns.SPEC.SHA_ENH] = 114051,
+    [ns.SPEC.SHA_RES] = 114052,
+}
+local ascWrong = 0
+for spec, want in pairs(ASCENDANCE) do
+    local got
+    for _, id in ipairs(ns.SPEC_CDS[spec] or {}) do
+        if ASCENDANCE[ns.SPEC.SHA_ELE] == id or ASCENDANCE[ns.SPEC.SHA_ENH] == id
+           or ASCENDANCE[ns.SPEC.SHA_RES] == id then got = id end
+    end
+    if got ~= want then
+        ascWrong = ascWrong + 1
+        print(("     spec %d 的升腾配成了 %s,该是 %d"):format(spec, tostring(got), want))
+    end
+end
+check("三个萨满专精各配各的升腾 ID", ascWrong, 0)
+
 print("== AuraList:没配过 → 内置表 ==")
 local shadow = 258
 local l, custom = ns.AuraList(nil, "dots", shadow)
@@ -231,7 +276,7 @@ local back = ns.VisibleAuraList(db5, "cds", SH)
 check("勾回来之后 20 在第 1 位", back[1], 20)
 check("10 在第 2 位", back[2], 10)
 
-print("== A/B(种回缺陷,下面四条必须都报 caught)==")
+print("== A/B(种回缺陷,下面每条都必须报 caught)==")
 -- 从**真文件**重新 load 一份改过的,不手抄 —— 手抄的那份会跟 bug 共享同一个误解。
 local rawsrc = assert(io.open("AuraSets.lua", "rb")):read("a")
 local function sub(from, to)
@@ -300,6 +345,25 @@ ab("ListMove 不检查越界",
 abError("specID=nil 时不早退(t[nil]=v)",
    sub("        if specID == nil then return nil end\n", ""),
    function(m) return m.SetAuraHidden({}, "cds", nil, 1, true) end)
+
+-- ⑤ 有人往增强萨列表前面插一个 ID ⇒ 漩涡武器**静默挪到第二格**。
+--    这是 0.13 固定格位那条规矩的直接后果,而屏幕上看不出来:那格照常显示、只是位置不对。
+ab("漩涡武器被挤出左一",
+   sub("%[SPEC%.SHA_ENH%]   = { 344179, 114051, 108271 }",
+       "[SPEC.SHA_ENH]   = { 114051, 344179, 108271 }"),
+   function(m) return m.SPEC_CDS[m.SPEC.SHA_ENH][1] end, 114051)
+
+-- ⑥ 样式名单里的 ID 跟列表里的对不上(改了一个忘了改另一个)⇒ 那格退回普通大招样式:
+--    倒计时回来了、层数缩回右下角。**两张表各自看都完全正常**,漂了没有任何单点读得出来。
+ab("CD_STACK_STYLE 跟 SPEC_CDS 漂了",
+   sub("%[344179%] = true,   %-%- 漩涡武器", "[3441790] = true,   -- 漩涡武器"),
+   function(m) return m.CD_STACK_STYLE[344179] end, nil)
+
+-- ⑦ 升腾的 ID 抄错成隔壁专精那个(复制上一行忘改号)⇒ 那格永远空着。
+ab("增强萨的升腾抄成了恢复萨那个号",
+   sub("%[SPEC%.SHA_ENH%]   = { 344179, 114051, 108271 }",
+       "[SPEC.SHA_ENH]   = { 344179, 114052, 108271 }"),
+   function(m) return m.SPEC_CDS[m.SPEC.SHA_ENH][2] end, 114052)
 
 print(("\n%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -139,6 +139,10 @@ local DEFAULTS = {
     cdFontSize   = 14,
     cdSpacing    = 2,
     cdYOffset    = 4,             -- 离施法条下沿多远
+    -- 「当资源看」那种叠层 buff(CD_STACK_STYLE)的层数字号,**按图标高的百分比**。
+    -- 相对而不是绝对:改图标大小时字号自动跟上,不用两处一起调。
+    -- 普通格的角标是 42%(StyleCount 里那个);居中要压得住图标,所以默认给到 92%。
+    stackFontPct = 92,
     -- ── 别人给我的增益(血条**右上角**,竖排三格)──────────────────
     -- 上面 1 格专给嗜血一族、下面 2 格流式装其余。分两个容器是刻意的:
     -- 「嗜血必须得有」如果靠 sortMethod 排对,就成了押在一个没验过的排序行为上的需求;
@@ -436,11 +440,89 @@ local function StyleCountdown(cd, fontKey)
     end)
 end
 
+-- 「当资源看」的叠层 buff 样式(0.13.5,倒计时开关 0.13.6 修):**层数居中放大 + 不画倒计时**。
+-- 名单在 `ns.CD_STACK_STYLE`(AuraSets.lua),判据是 **spellID 不是格位** —— 理由见那张表。
+--
+-- 🔴 为什么倒计时是「照常递给暴雪、只关它的显示开关」而不是「压根不递」:
+--    `SetDurationCooldown` 交出去就收不回来,而**同一颗 button 会被换专精后的下一个法术复用**
+--    ⇒ 不递的话「增强萨切成元素萨,第一格从此没倒计时」,而那读起来完全像 bug、
+--    想不到是上一个专精留下的。开关是**可逆**的,跟着 spellID 走。
+-- 🔴 **0.13.6 修的那个:别跟暴雪的显隐对抗,用它自己的开关。**
+--    第一版写的是 `SetScript("OnShow", cd.Hide)` + `SetAlpha(0)` + `Hide()` 三道 ——
+--    真机症状是**秒数照样画在正中间、把层数盖了个严实**。两个原因叠在一起:
+--    ① 三条包在**同一个 pcall** 里,第一条 `SetScript`(暴雪的受保护 button)一抛,
+--       后两条根本没执行 —— 「一个 catch 包多条语句」的 Lua 版,零报错;
+--    ② 就算它没抛,方向也是错的:关倒计时**有官方开关**,
+--       `DodoGrid/Auras.lua:263` / `DodoNameplate/Auras.lua:62` 早就在同一种
+--       CustomAuraButton 上用对了。**下次先 grep 自己的在产插件,别先想怎么对抗。**
+-- ⚠ `button:IsShown()` 是 secret(canon 坑 2)⇒ 这套东西**结构上没法自动验**,
+--    只能拿眼睛看 —— 上面那个 bug 就是这么漏到真机的:测试全绿,而它一个字都测不到。
+local function ApplyStackStyle(b, on, iconH)
+    if not b then return end
+    on = on and true or false
+    local pct = tonumber(DB and DB.stackFontPct) or 92
+    -- 🔴 **故意没有幂等检查,别再加回来。**(0.13.7 加过,当天就咬了。)
+    --    `StyleCount` 每次 restyle 都**无条件**把层数字号设回角标档(42%),而它排在本函数之前。
+    --    只要这里因为「参数没变」提前 return,字号就停在 42% ⇒ **比不做这个功能时还小**。
+    --    症状极毒:button 刚建那次是对的(走 MakeAuraInit),之后**任何一次 ApplyLayout**
+    --    (改设置 / 换目标 / 换专精)都会把它打回去 ⇒ 「时好时坏」,而两个函数单独看都对。
+    -- 🔑 通法:**两个函数写同一个属性,而其中一个是无条件的 ⇒ 另一个就不能有提前 return。**
+    --    幂等在这儿只省几次 SetFont(ApplyLayout 是低频的),换来一个会自己复发的 bug,不值。
+    --    你自己的 DodoGrid / DodoNameplate 也是每次无条件设,跟它们保持一致。
+    local fs = b.dchCount
+    if fs then
+        -- 一条一个 pcall,理由同下面 cd 那段:包在一起的话第一条抛掉后面全不执行,而且零报错。
+        pcall(function() fs:ClearAllPoints() end)
+        if on then
+            pcall(function() fs:SetPoint("CENTER", b, "CENTER", 0, 0) end)
+            pcall(function() fs:SetJustifyH("CENTER") end)
+            -- 居中要比角标大得多才压得住图标(角标是 42%)。可调:`/dch stackfont`。
+            pcall(function()
+                local path = fs:GetFont()
+                fs:SetFont(path or STANDARD_TEXT_FONT or "Fonts/FRIZQT__.TTF",
+                    math.max(10, math.floor((tonumber(iconH) or 32) * pct / 100)), "OUTLINE")
+            end)
+        else
+            pcall(function() fs:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 1, -1) end)
+            pcall(function() fs:SetJustifyH("RIGHT") end)
+            -- 🔴 **0.13.11:字号也必须在这儿归位,别指望 `StyleCount` 兜底。**
+            --    上面那段说「靠 StyleCount 无条件复位」—— 那只在 `ApplyLayout` 那条路上成立。
+            --    `ApplyCdFilters` 那条路**根本不经过 `StyleCount`**,而
+            --    `/dch cd add|del|<格号> <id>` 三条命令只调 `ApplyAuraFilters()`、
+            --    **没有**跟着 `ApplyLayout()`(hide/show/reset 三条是成对的,这三条漏了)
+            --    ⇒ 手动把某格从漩涡武器换成别的法术后,层数是个**缩在右下角的超大数字**,
+            --    要等下一次换专精 / 改滑条 / reload 才纠正。又一次「reload 一下就好了」。
+            -- 🔑 这是本节那条通法的**第三个实例**,所以这次用结构修而不是再加一个调用点:
+            --    **让这个函数在两个方向上都定义那个属性** ⇒ 谁先谁后都不影响结果。
+            --    复用 `StyleCount` 而不是把 0.42 抄第二遍 —— 同一个不变式两份手写实现迟早漂。
+            StyleCount(fs, iconH)
+        end
+    end
+    local cd = b.dchCD
+    if cd then
+        -- 🔴 **一条一个 pcall。** 0.13.5 第一版把三条包在同一个 pcall 里,
+        --    第一条(`SetScript`,在暴雪的受保护 button 上)一抛,**后两条根本没执行**
+        --    ⇒ 秒数照常画在正中间,把层数盖了个严实。
+        --    「一个 catch 包多条语句」在 Lua 里就长这样,而它零报错。
+        -- 🔑 而且对抗本身就是错的:关倒计时**有官方开关**,`DodoGrid/Auras.lua:263` 和
+        --    `DodoNameplate/Auras.lua:62` 早就在同一种 CustomAuraButton 上用对了
+        --    (`SetHideCountdownNumbers(a.showTimer == false)`)。canon:搬它,别重造它。
+        pcall(function() cd:SetHideCountdownNumbers(on) end)  -- 秒数(就是盖住层数那个)
+        pcall(function() cd:SetDrawSwipe(not on) end)         -- 转圈那片暗色
+        pcall(function() cd:SetDrawEdge(not on) end)          -- 转圈前沿那道亮边
+        -- ⚠ `not on` 不是 `false`:普通格从没设过 bling,默认就是开 ⇒ 写死 false
+        --    会顺手改掉**其他所有职业**那排的观感,而那不是这次要动的东西。
+        pcall(function() cd:SetDrawBling(not on) end)         -- 转完那下闪光
+    end
+end
+
 -- bucket 收本格创建过的按钮。**必须收** —— layout 的 elementWidth/Height 只管「怎么排」,
 -- 按钮自己的大小要自己 SetSize(DodoNameplate 也是分开设的)。不收的话 /dch dsize 改完
 -- 排列间距变了、图标没变 —— 那种半生效比完全不生效更难看出是 bug。
 -- keys = { w = "dotWidth", h = "dotHeight", font = "dotFontSize" } —— 三排各传各的。
-local function MakeAuraInit(bucket, keys)
+-- slot(可选)= 这一格的 slot 表。**只有自身增益排传** —— 传了才认得出「这格现在装的是谁」,
+--   因为 button 是暴雪按需建的,建的时候 filter 早推好了 ⇒ slot.spellID 已经是对的。
+local function MakeAuraInit(bucket, keys, slot)
     return function(button)
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", 1, -1)
@@ -484,6 +566,12 @@ local function MakeAuraInit(bucket, keys)
     button.dchKeys = keys      -- 同上:resize 时要知道这颗按钮归哪一排管
     button:SetSize(DB[keys.w], DB[keys.h])
     StyleCountdown(cd, keys.font)
+    -- 叠层样式:**必须在 StyleCountdown 之后** —— 那个会把倒计时字体重设一遍,
+    -- 顺序反了的话它会把我们刚藏起来的东西又碰一遍(现在不会,但别留这个坑)。
+    if slot then
+        ApplyStackStyle(button, ns.CD_STACK_STYLE and slot.spellID
+            and ns.CD_STACK_STYLE[slot.spellID], DB[keys.h])
+    end
     bucket[#bucket + 1] = button
     end
 end
@@ -697,6 +785,11 @@ local function BuildDots()
         --   我们这排是「**友方(自己)身上的 buff**」= 永远在准许区。
         for i = 1, (ns.CD_SLOTS or 8) do
             local bucket = {}
+            -- 🔴 slot 表**先建**,好让 initializeFrame 的闭包捕得住它 ——
+            --    暴雪按需建 button 时要回头问「这格现在装的是谁」(叠层样式按 spellID 判)。
+            --    先 pcall 再建 slot 的话闭包里那个 upvalue 恒为 nil,而症状是
+            --    「样式永远不生效」,跟名单填错分不开。
+            local slot = { container = nil, spellID = nil, buttons = bucket, mark = nil }
             local okc, cc = pcall(function()
                 local c = CreateFrame("AuraContainer", "DodoCombatHUDCd" .. i,
                     root, "CustomAuraContainerTemplate")
@@ -711,15 +804,16 @@ local function BuildDots()
                     sortMethod = AuraContainerSortMethod.Expiration,
                     sortDirection = AuraContainerSortDirection.Normal,
                     candidateFilters = { includeSpellIDs = {} },
-                    initializeFrame = MakeAuraInit(bucket, CD_KEYS),
+                    initializeFrame = MakeAuraInit(bucket, CD_KEYS, slot),
                     layout = { elementSpacing = 0, elementWidth = DB.cdWidth,
                                elementHeight = DB.cdHeight, layoutIndex = 1 },
                 })
                 return c
             end)
             if not okc then e1 = cc break end
-            cdRow.slots[i] = { container = cc, spellID = nil, buttons = bucket,
-                               mark = MakeSlotMark(root, tostring(i)) }
+            slot.container = cc
+            slot.mark = MakeSlotMark(root, tostring(i))
+            cdRow.slots[i] = slot
         end
         -- 嗜血 + 其余团队增益:**同一个容器的两个 group**(为什么见 MakeRightBox 上面那段)。
         -- lustBox / raidBox 保留成两个"视图":共享同一个 container,只是 group 名不同 ⇒
@@ -863,10 +957,18 @@ local function LayoutDots()
                 c:SetAuraGroupLayout("g", { elementSpacing = 0, elementWidth = cw,
                                             elementHeight = ch, layoutIndex = 1 })
             end)
+            -- 这一格现在装的是不是「当资源看」的叠层 buff。**每次 ApplyLayout 都重判** ——
+            -- button 会被换专精后的下一个法术复用,只在建的时候判一次的话样式会跟着上一个专精走。
+            local stack = ns.CD_STACK_STYLE and slot.spellID and ns.CD_STACK_STYLE[slot.spellID]
             for _, b in ipairs(slot.buttons) do
                 pcall(function() b:SetSize(cw, ch) end)
                 StyleCountdown(b.dchCD, "cdFontSize")
                 StyleCount(b.dchCount, ch)
+                -- ⚠ 必须排在上面两个之后:StyleCount 会把字号改回角标那档(42%),
+                --   而居中那档是 `DB.stackFontPct`(默认 92%)—— 反过来的话
+                --   「层数居中了但还是小字」,看起来像位置对了、字号忘了改,
+                --   想不到是两个函数在打架。(0.13.11 前这里写的是「0.62」,是个从没存在过的旧值。)
+                ApplyStackStyle(b, stack, ch)
             end
         end
     end
@@ -1100,6 +1202,18 @@ local function ApplyCdFilters()
                 Print("|cffff3333自身增益第 " .. i .. " 格 filter 推送失败|r(下次刷新重试):"
                     .. tostring(err))
             end
+        end
+        -- 🔴 **叠层样式跟着 `spellID` 走,不等下一次 `ApplyLayout`。**
+        --    样式的判据是 `slot.spellID`,而它是**这里**写的;`ApplyLayout` 里那次 restyle
+        --    只是顺带重申。两者顺序在某些路径上是反的(换专精:`ApplyLayout` 先跑,
+        --    读到的还是**上一个专精**的 spellID)⇒ 那次 restyle 会把按钮设成普通样式,
+        --    而之后**没有任何东西**会再来纠正 ⇒ 秒数回到正中间、层数缩回右下角。
+        -- ⚠ 症状特征是「**reload 一下就好了**」——因为 reload 重建了一切、把错状态冲掉。
+        --    canon:「重启一下就好」要问清它买到什么时候。**买到下一次换专精。**
+        -- 🔑 通法:**状态的应用要挂在「写这个状态的地方」,不是挂在「碰巧也会跑的地方」。**
+        local stack = ns.CD_STACK_STYLE and slot.spellID and ns.CD_STACK_STYLE[slot.spellID]
+        for _, b in ipairs(slot.buttons) do
+            ApplyStackStyle(b, stack, DB.cdHeight)
         end
         pcall(function() slot.container:SetEnabled(on and sid ~= nil) end)
     end
@@ -1545,6 +1659,8 @@ local function Help()
     Print("  /dch cd                     列出来 | cd 2 195181 改第 2 格 | cd add|del <id>")
     Print("  /dch cd hide|show <id>      不占格 / 放回来(配置和名次都留着)| cd reset 回内置")
     Print("  /dch cdw|cdh|cdfont|cdsp|cdy  宽 / 高 / 字号 / 间距 / 离施法条多远")
+    Print("  /dch stackfont 92           叠层 buff(漩涡武器…)层数字号,**按图标高的百分比**")
+    Print("  /dch stackdbg               叠层样式探针:每格的 spellID / 命中没命中 / 当前字号")
     Print("  ── 血条右上角:别人给我的增益(上 1 格嗜血 + 下 2 格流式)──")
     Print("  /dch buffs                  这两格 开/关")
     Print("  /dch lust                   嗜血那格:列出来 | lust add|del <id> | lust reset")
@@ -1773,6 +1889,39 @@ local function AuraCmd(kind, label, arg, slotted)
     end
 end
 
+-- ── 🔬 `/dch stackdbg` —— 叠层样式(CD_STACK_STYLE)到底有没有落到按钮上。
+-- 留着的理由:这套东西**结构上没法自动验**(`button:IsShown()` 是 secret,画出来什么样
+-- 测试一个字都够不着)⇒ 一旦「看着不对」,唯一的定性手段就是把判据链每一环的**当前值**打出来。
+-- canon 那条:症状是「功能不生效而代码看着没问题」时,先打判据链,别读代码。
+-- 只读明文字段(spellID / 字号 / 锚点),**一个 secret 都不碰**。
+local function StackDebug()
+    Print("---- 叠层样式探针 ----")
+    Print("  stackFontPct = " .. tostring(DB and DB.stackFontPct) ..
+          "   cdHeight = " .. tostring(DB and DB.cdHeight))
+    local styled = 0
+    for _ in pairs(ns.CD_STACK_STYLE or {}) do styled = styled + 1 end
+    Print("  CD_STACK_STYLE 有 " .. styled .. " 条" ..
+          (ns.CD_STACK_STYLE and ns.CD_STACK_STYLE[344179] and "(344179 在)" or
+           "|cffff3333(344179 不在!)|r"))
+    Print("  当前专精 curSpec = " .. tostring(curSpec))
+    for i, slot in ipairs((cdRow and cdRow.slots) or {}) do
+        local sid = slot.spellID
+        if sid or #slot.buttons > 0 then
+            local hit = sid and ns.CD_STACK_STYLE and ns.CD_STACK_STYLE[sid]
+            Print(("  第%d格 id=%s %s  命中=%s  已建按钮=%d")
+                :format(i, tostring(sid), sid and SpellLabel(sid) or "-",
+                        hit and "|cff33ff33是|r" or "|cffff3333否|r", #slot.buttons))
+            for j, b in ipairs(slot.buttons) do
+                local okf, _, size = pcall(function() return b.dchCount:GetFont() end)
+                local okp, pt = pcall(function() return b.dchCount:GetPoint() end)
+                Print(("      按钮%d 层数字号=%s 锚=%s"):format(j,
+                    okf and tostring(size) or "?", okp and tostring(pt) or "?"))
+            end
+        end
+    end
+    Print("  判读:命中=是 而字号≈cdHeight*pct/100、锚=CENTER ⇒ 样式生效了。")
+end
+
 -- ── 🔬 `/dch probe` —— aura filter 现在到底生没生效。**保留**,不是临时探针。
 -- 留着的理由:2026-08-16 那次「三格各画一个场景 buff」的**根因至今未知**(只拆掉了放大器,
 -- 见 ApplyBoxFilter 上面那段),复发时这是唯一能一步定性的手段。
@@ -1941,6 +2090,7 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
         Print(("%s:%s(只影响这一种资源,别的角色不受牵连)"):format(
             which, now and "|cffff3333隐藏|r" or "|cff33ff33显示|r"))
     elseif cmd == "probe"   then ProbeAuraFilters()
+    elseif cmd == "stackdbg" then StackDebug()
     elseif cmd == "bp"      then if ns.BoilingProbe then ns.BoilingProbe(arg) else Print("Boiling.lua 没加载") end
     elseif cmd == "health"  then Toggle("healthOn", "目标血条")
     elseif cmd == "cast"    then Toggle("castOn", "施法条")
@@ -2021,6 +2171,8 @@ SlashCmdList.DODOCOMBATHUD = function(msg)
     elseif cmd == "cdw"    then SetNum("cdWidth",      arg, 8, 120)
     elseif cmd == "cdh"    then SetNum("cdHeight",     arg, 8, 120)
     elseif cmd == "cdfont" then SetNum("cdFontSize",   arg, 8, 60)
+    -- 百分比而不是绝对字号:图标一改大小它自动跟上(跟 cdfont 那种绝对值是两种东西,别合并)
+    elseif cmd == "stackfont" then SetNum("stackFontPct", arg, 30, 200)
     elseif cmd == "cdsp"   then SetNum("cdSpacing",    arg, 0, 40)
     elseif cmd == "cdy"    then SetNum("cdYOffset",    arg, -50, 100)
     elseif cmd == "rw"     then SetNum("raidWidth",    arg, 8, 120)

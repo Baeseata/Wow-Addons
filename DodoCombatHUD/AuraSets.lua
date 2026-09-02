@@ -152,8 +152,13 @@ ns.SPEC_CDS = {
     -- 骨盾 / 鲜血女王的精华 / 吸血鬼之血 / 舞动符文武器 / 冰封之韧 / 反魔法护罩
     [SPEC.DK_FROST]  = { 51271, 48792, 48707 },           -- Pillar of Frost / Icebound / AMS
     [SPEC.DK_UNH]    = { 1233448, 42650, 48792, 48707 },  -- Dark Transformation / Army of the Dead / …
-    [SPEC.SHA_ELE]   = { 191634, 108271 },                -- Stormkeeper / Astral Shift
-    [SPEC.SHA_ENH]   = { 108271 },                        -- ⚠ 机器表里 Enhancement 的 Essential 一条都没命中
+    -- 🔴 升腾三个专精**三个不同的 spellID**:元素 114050 / 增强 114051 / 恢复 114052。
+    --    0.13.7 之前只有恢复配了 —— 另外两个不是"不该有",是**漏了**,而症状是那格永远空着,
+    --    跟"没点这个天赋"分不开。两个独立来源交叉验过(WeakAuras 模板 + NSRT 的 spells 库)。
+    [SPEC.SHA_ELE]   = { 191634, 114050, 108271 },        -- Stormkeeper / Ascendance / Astral Shift
+    -- 漩涡武器**排第一** = 固定在左一(0.13 起「第 N 个 ID 永远在第 N 格」)。
+    -- 它走 CD_STACK_STYLE 那套样式:层数居中 + 不画倒计时(见下面那张表)。
+    [SPEC.SHA_ENH]   = { 344179, 114051, 108271 },        -- Maelstrom Weapon / Ascendance / Astral Shift
     [SPEC.SHA_RES]   = { 114052, 108271 },                -- Ascendance / Astral Shift
     [SPEC.MAG_ARC]   = { 12051, 45438, 66 },              -- Evocation / Ice Block / Invisibility
     [SPEC.MAG_FIRE]  = { 190319, 45438 },                 -- Combustion / Ice Block
@@ -174,6 +179,19 @@ ns.SPEC_CDS = {
     [SPEC.EVO_DEV]   = { 375087, 363916 },                -- Dragonrage / Obsidian Scales
     [SPEC.EVO_PRE]   = { 370960, 363916 },                -- Emerald Communion / Obsidian Scales
     [SPEC.EVO_AUG]   = { 363916 },                        -- Obsidian Scales(增强给别人的都在团队增益表)
+}
+
+-- ── ②b 「当资源看」的叠层 buff:层数居中 + 不画倒计时(0.13.5)────────
+-- 🔴 判据是 **spellID**,不是格位。自身增益排的「左一」是**所有专精共用的第 1 格** ——
+--    按格位配样式会把每个职业的第一个大招都变成大数字,而那读起来完全像布局崩了。
+-- 🔑 为什么这类 buff 值得单独一套样式:玩家看它的方式跟看大招不一样 ——
+--    大招问的是「还剩几秒」,叠层资源问的是「现在几层」。倒计时在这儿是**噪音**:
+--    漩涡武器每次叠层都刷新持续时间,那个数字一直在跳而且没人看。
+-- ⚠ 层数是 secret,我们**读不到也比不了** ⇒ 「满 10 层变个色」这种做不了,
+--    暴雪那边什么行为就什么行为(canon 总钥匙:挡的是读了去算,不挡画给人看)。
+-- ⚠ 这张表只改**外观**,不改「哪一格显示什么」—— 后者仍然只归 SPEC_CDS 的顺序管。
+ns.CD_STACK_STYLE = {
+    [344179] = true,   -- 漩涡武器(增强萨,最多 10 层)
 }
 
 -- ── ③ 嗜血一族(单独一格,不跟任何东西抢位置)──────────────────────

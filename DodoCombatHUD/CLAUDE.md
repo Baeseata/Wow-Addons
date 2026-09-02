@@ -182,6 +182,95 @@ bar.channelingTickTime = bar.channelingDuration / bar.channelingTicks     -- 就
 - 面板拿 `ns.AuraList`(配置表,含隐藏的),HUD 拿 `ns.VisibleAuraList`(只有可见的)。
   **两个函数而不是一个开关**:一个函数两种语义,调用处迟早传错那个参数。
 
+### 0.13.5:漩涡武器 —— 「当资源看」的叠层 buff(层数居中 + 不画倒计时)
+
+**先记死一条,省下次一整轮调研:漩涡武器(Maelstrom Weapon,增强萨,`344179`)不是 PowerType,
+是个自身 buff。** 元素萨那个**主资源**「漩涡」(Maelstrom,`PowerType 11`)才是 ——
+两个中文名只差两个字,`Resource.lua` 顶上那句「漩涡是 0..100 的连续量」说的是**后者**。
+⇒ 往 `ns.DISCRETE_ORDER` 加它是**静默无效**的:那排靠 `UnitPowerMax > 0` 探测,而它没有 power type,
+探测器永远摸不到 ⇒ 不报错、不崩,那根条就是永远不出现。
+
+调研结论(2026-08-30,本机在产插件实证,别再查第二遍):
+- **Plater**(专业资源条)`specsWithResource` 19 个专精**零萨满**、`classPowerTypes` 8 个职业**无 SHAMAN**
+  ⇒ 它整套建在 `UnitPower` 上,结构上够不着这个 buff。
+- **WeakAuras**(本机是换皮的 `M33kAuras`,内部还叫 WeakAuras)把它当
+  `{ spell = 344179, type = "buff", unit = "player" }`,并且对 `auraData.stacks` 做
+  `issecretvalue` 门控、拿不到就当 0 —— **跟我们 `PlainNumber` 那条铁律撞出了同一个模式**。
+- ⇒ **没有任何插件把它做成"条"**,全是图标 + 角标数字。所以我们也走图标那条路。
+
+做法(`ns.CD_STACK_STYLE` in `AuraSets.lua` + `ApplyStackStyle` in 主文件):
+
+- 🔴 **判据是 spellID,不是格位。** 自身增益排的「左一」是**所有专精共用的第 1 格** ——
+  按格位配样式会把每个职业的第一个大招都变成居中大数字,而那读起来完全像布局崩了。
+- 🔴 **倒计时照常递给暴雪,只关它自己的显示开关**,不是「压根不递」。`SetDurationCooldown`
+  交出去收不回来,而**同一颗 button 会被换专精后的下一个法术复用** ⇒ 不递的话
+  「增强萨切成元素萨,第一格从此没倒计时」,完全像 bug、想不到是上一个专精留下的。
+  开关是可逆的,跟着 `slot.spellID` 走:`SetHideCountdownNumbers` / `SetDrawSwipe` /
+  `SetDrawEdge` / `SetDrawBling`,**一条一个 `pcall`**。
+- 🔴 **0.13.6 真机修的那个,两条教训各记一遍**(症状:**秒数画在正中间、把层数盖严实**):
+  1. **三条语句包在同一个 `pcall` 里** ⇒ 第一条 `SetScript`(在暴雪的受保护 button 上)一抛,
+     **后两条根本没执行**。「一个 catch 包多条语句」的 Lua 版,**零报错**。
+     ⇒ 凡对第三方框体的一串 setter,**一条一个 pcall**,最可能被拒的放最后。
+     📌 **这条 2026-09-02 已提升进 canon `rules/wow-addons.md`**(跨插件通用:DodoGrid /
+     DodoNameplate 也在同类受保护 button 上连着调 setter)—— 通用规则和那条 grep 看 canon,
+     这里只留本插件的实例。
+  2. **方向本身就错**:我去跟暴雪的 `Show()` 对抗(`OnShow` 守卫 + `SetAlpha(0)` + `Hide()`),
+     而关倒计时**有官方开关**,`DodoGrid/Auras.lua:263` 和 `DodoNameplate/Auras.lua:62`
+     **早就在同一种 CustomAuraButton 上用对了**。
+     ⇒ 🔑 **动手前先 grep 自己的在产插件**(canon 那条「第三个源」),别先想怎么对抗。
+- 🔴 **`ApplyStackStyle` 故意没有幂等检查,别再加回来**(0.13.7 加过,当天就咬了两次)。
+  `StyleCount` 每次 restyle 都**无条件**把层数字号设回角标档(42%),而它排在 `ApplyStackStyle`
+  之前。只要这里因为「参数没变」提前 return,字号就停在 42% ⇒ **比不做这个功能时还小**。
+  症状极毒:**button 刚建那次是对的**(走 `MakeAuraInit`),之后**任何一次 `ApplyLayout`**
+  (改设置 / 换目标 / 换专精)都会把它打回去 ⇒「时好时坏」,而两个函数单独看都对。
+  🔑 **通法:两个函数写同一个属性、其中一个是无条件的 ⇒ 另一个就不能有提前 return。**
+  幂等在这儿只省几次 `SetFont`(`ApplyLayout` 是低频的),换来一个会自己复发的 bug,不值。
+- **层数字号可调**:`/dch stackfont <30-200>`(`DB.stackFontPct`,默认 92)。
+  **按图标高的百分比,不是绝对字号** —— 改图标大小时自动跟上,不用两处一起调
+  (跟 `cdfont` 那种绝对值是两种东西,别合并)。`SetNum` 自己会调 `ApplyLayout`,改完当场生效。
+- **slot 表要先建再传给 `MakeAuraInit`** —— 闭包得捕得住它,否则那个 upvalue 恒为 nil,
+  症状是「样式永远不生效」,跟名单填错分不开。(同 0.9.0 `segHost` 那个坑的形状。)
+- 🔴 **`ApplyStackStyle` 有三个调用时机,一个都不能少**(0.13.10 补齐):
+  ① `MakeAuraInit`(button 新建)· ② `ApplyLayout` 的 restyle 循环(尺寸 / 字号变了)·
+  ③ **`ApplyCdFilters` 写完 `slot.spellID` 之后** ← 这个 0.13.9 之前是缺的。
+  **缺 ③ 的症状:换专精之后漩涡武器那格退回普通样式**(秒数回到正中间、层数缩右下角)。
+  因为样式的判据是 `slot.spellID`,而换专精时 `ApplyLayout` **先于** `ApplyCdFilters` 跑
+  ⇒ 那次 restyle 读到的还是**上一个专精**的 spellID,而之后没有任何东西会再来纠正。
+  ⚠ **特征签名 = 「reload 一下就好了」**(reload 重建一切、把错状态冲掉)——
+  canon:「重启一下就好」要问清**它买到什么时候**;这里买到**下一次换专精**。
+  🔑 **通法:状态的应用要挂在「写这个状态的地方」,不是挂在「碰巧也会跑的地方」。**
+- 🔴 **0.13.11:同一条通法的第三个实例,这次改用结构修。**
+  `ApplyStackStyle` 关样式时只归**位置**不归**字号** —— 上面那段说「靠 `StyleCount`
+  无条件复位」,而那只在 `ApplyLayout` 那条路上成立。`ApplyCdFilters` 那条路
+  **不经过 `StyleCount`**,且 `/dch cd add|del|<格号> <id>` 三条命令只调
+  `ApplyAuraFilters()`、**没有**跟着 `ApplyLayout()`(hide/show/reset 三条是成对的,
+  这三条漏了)⇒ 手动把某格从漩涡武器换成别的法术后,层数是个**缩在右下角的超大数字**,
+  要等下次换专精 / 改滑条 / reload 才纠正。**又一次「reload 一下就好了」。**
+  🔑 **修法选的是「让这个函数在两个方向上都定义那个属性」,不是「再给那三条命令补一个
+  `ApplyLayout()`」** —— 后者是第四个要记住的调用点,而前者让谁先谁后都不影响结果。
+  复用 `StyleCount` 而不是把 `0.42` 抄第二遍(同一不变式两份手写实现迟早漂)。
+  ☐ **no-guard,理由**:能扫的只有「`else` 分支里有没有 `StyleCount` 这个词」,
+  那是脆的文本匹配;而这次的修法把不变式收进了**一个函数内部**,拆掉它得显式删一行带注释的代码。
+- ⚠ 层数**是不是 secret 都不影响**:我们从不把它读进 Lua,走 `SetApplicationCount` 让暴雪自己写。
+  代价是「满 10 层变个色」这类做不了 —— 那需要拿 secret 做比较。
+
+🔴 **验证状态(2026-09-02 收尾时发现本节自相矛盾,如实标在这儿,别再往下传)**
+
+本节上面写着「0.13.6 **真机**修的那个(症状:秒数画在正中间、把层数盖严实)」,
+而这里原本写着「本机验不了:这个账号 8 个角色没有萨满」—— **两句不能同时为真**,
+除非 0.13.6 当时是拿**别的叠层 buff** 临时塞进 `CD_STACK_STYLE` 验的机制层(文档没说是这样)。
+收尾时去 `WTF` 查过:账号确实**正好 8 个角色**(Illidan),但 SavedVariables 里所有 `SHAMAN`
+命中都是**别人**(拾取记录 / 团队成员 / WeakAuras 模板),**证不出有没有自己的萨满号**。
+⇒ **这条待 Jerry 一句话定**:有增强萨号 = 下面三条判据现在就能看;没有 = 得等有号的人。
+
+不管哪种,**端到端从来没验过**是确定的:`tools/test_aura.lua` 那两条 A/B
+(「被挤出左一」/「两张表漂了」)守的是**数据**,守不到**样式真画出来什么样**
+(`button:IsShown()` 是 secret ⇒ 结构上就测不到)。
+判据三条:① 图标在自身增益排最左 ② 中间一个大数字跟着层数走 ③ 没有转圈、没有秒数。
+④(0.13.11 加)`/dch cd 1 <别的 spellID>` 换掉那格之后,层数字号**当场**缩回右下角小字,
+不需要 reload —— 这条是上面那个结构修的验收点。
+⑤ 元素萨升腾 `114050` / 恢复萨 `114052` 那格真的出得来(0.13.7 补的,同样没真机验)。
+
 ### 🔴 0.13.2 三条(都是「面板在撒谎 / 少给东西」)
 
 1. **沸点那一格必须画在编辑器列表里,当第 1 行,不能移不能删。**
