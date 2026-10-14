@@ -3,7 +3,7 @@
 ## Notes: Per-category nameplate styling with secure aura containers for Midnight 12.1.
 ## Notes-zhCN: 按类别美化姓名板，集成威胁、目标、施法及 12.1 安全光环容器。
 ## Author: Doodo
-## Version: 0.10.1
+## Version: 0.10.2
 ## SavedVariables: DodoNameplateDB
 ## IconTexture: Interface\AddOns\DodoNameplate\Media\Dodo.tga
 ## X-Category: Unit Frames

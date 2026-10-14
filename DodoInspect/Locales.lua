@@ -127,6 +127,7 @@ ns.Locales = {
         lootMiniClick  = "Click: this season's dungeon and raid drops.",
         lootMiniRight  = "Right-click: DodoInspect options.",
         lootMiniDrag   = "Drag: move around the minimap.",
+        lootMiniCombat = "DodoInspect: can't open the options in combat (Blizzard blocks it) -- they will open when combat ends.",
         priBuild      = "Build: %s",
         -- stat priority: player customization
         priCustomTag   = "C",
@@ -244,6 +245,7 @@ ns.Locales = {
         lootMiniClick  = "左键：本季大秘境 / 团本掉落。",
         lootMiniRight  = "右键：DodoInspect 设置。",
         lootMiniDrag   = "拖动：沿小地图移动。",
+        lootMiniCombat = "DodoInspect：战斗中打不开设置（暴雪会拦），脱战后自动打开。",
         priBuild      = "构建: %s",
         -- stat priority: player customization
         priCustomTag   = "自",
@@ -377,6 +379,7 @@ ns.Locales = {
         lootMiniClick  = "Clic : butin des donjons et raids de la saison.",
         lootMiniRight  = "Clic droit : options de DodoInspect.",
         lootMiniDrag   = "Glisser : deplacer autour de la minicarte.",
+        lootMiniCombat = "DodoInspect : impossible d'ouvrir les options en combat (Blizzard le bloque) -- elles s'ouvriront a la fin du combat.",
         priBuild      = "Build : %s",
         -- stat priority: player customization
         priCustomTag   = "P",
@@ -494,6 +497,7 @@ ns.Locales = {
         lootMiniClick  = "Clic: botin de mazmorras y bandas de la temporada.",
         lootMiniRight  = "Clic derecho: opciones de DodoInspect.",
         lootMiniDrag   = "Arrastrar: mover alrededor del minimapa.",
+        lootMiniCombat = "DodoInspect: no se pueden abrir las opciones en combate (Blizzard lo bloquea) -- se abriran al terminar el combate.",
         priBuild      = "Build: %s",
         -- stat priority: player customization
         priCustomTag   = "P",

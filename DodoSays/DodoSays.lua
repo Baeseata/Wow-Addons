@@ -170,6 +170,46 @@ local function inCombat()
 	return InCombatLockdown() and true or false
 end
 
+-- Never touch Settings.OpenToCategory in combat. Underneath it is the protected
+-- OpenSettingsPanel(); an addon calling it under combat lockdown is refused by
+-- the client with ADDON_ACTION_BLOCKED -- that is NOT a Lua error, so pcall
+-- cannot catch it; the only fix is to check before calling. (Hit live
+-- 2026-10-13 by DodoGuanzhu in a raid; same pattern as DodoGuanzhu/Options.lua.)
+-- In combat: say so once, remember the request, open on PLAYER_REGEN_ENABLED.
+-- Returns true = deferred. BuildOptions sits behind the gate too: on a first
+-- open it registers the category, which is the same settings system.
+-- Offline test: `lua test/test_settings_combat_gate.lua` from the repo root.
+local pendingOpen, regenFrame
+local function deferWhileInCombat(retry)
+	if not inCombat() then
+		pendingOpen = nil
+		return false
+	end
+	if not pendingOpen then
+		print("|cff88ccffDodoSays|r can't open the options in combat (Blizzard blocks it) -- they will open when combat ends.")
+	end
+	pendingOpen = retry
+	if not regenFrame then
+		regenFrame = CreateFrame("Frame")
+		regenFrame:SetScript("OnEvent", function(self)
+			self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+			-- Still locked this frame? retry goes through deferWhileInCombat
+			-- again and just re-queues, without a second chat line.
+			if pendingOpen then pendingOpen() end
+		end)
+	end
+	regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	return true
+end
+
+local function openOptions()
+	if deferWhileInCombat(openOptions) then return end
+	ns.BuildOptions()
+	if Settings and ns.settingsCategory then
+		Settings.OpenToCategory(ns.settingsCategory:GetID())
+	end
+end
+
 local HELP = {
 	"|cff88ccffDodoSays|r  -- Azta'rec memory game",
 	"  |cffffd100/ds cross|r|cffffd100 square diamond circle|r   tap that quarter",
@@ -247,10 +287,7 @@ local function slash(msg)
 		print("|cff88ccffDodoSays|r board " .. (ns.db.locked and "locked." or "unlocked."))
 
 	elseif cmd == "config" then
-		ns.BuildOptions()
-		if Settings and ns.settingsCategory then
-			Settings.OpenToCategory(ns.settingsCategory:GetID())
-		end
+		openOptions()
 
 	elseif cmd == "trace" then
 		if rest == "off" then

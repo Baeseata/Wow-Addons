@@ -318,7 +318,37 @@ function ns.InitOptions()
 	sub(L.page_other, ns.GROUP.FRIENDLY, false)
 end
 
+-- Never touch Settings.OpenToCategory in combat. Underneath it is the protected OpenSettingsPanel();
+-- an addon calling it under combat lockdown gets refused by the client with ADDON_ACTION_BLOCKED --
+-- that is NOT a Lua error, so pcall cannot catch it; the only fix is to check before calling.
+-- (Hit live 2026-10-13 by DodoGuanzhu in a raid; same pattern as DodoGuanzhu/Options.lua.)
+-- In combat: say so once, remember the request, open on PLAYER_REGEN_ENABLED. Returns true = deferred.
+-- Offline test: `lua test/test_settings_combat_gate.lua` from the repo root.
+local pendingOpen, regenFrame
+local function DeferWhileInCombat(retry)
+	if not InCombatLockdown() then
+		pendingOpen = nil
+		return false
+	end
+	if not pendingOpen then
+		print("|cff66ccffDodoNameplate|r " .. ((ns.L and ns.L.msg_combatOpen)
+			or "Can't open the options in combat (Blizzard blocks it) -- they will open when combat ends."))
+	end
+	pendingOpen = retry
+	if not regenFrame then
+		regenFrame = CreateFrame("Frame")
+		regenFrame:SetScript("OnEvent", function(self)
+			self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+			-- Still locked this frame? retry goes through DeferWhileInCombat again and just re-queues.
+			if pendingOpen then pendingOpen() end
+		end)
+	end
+	regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	return true
+end
+
 function ns.OpenOptions()
+	if DeferWhileInCombat(ns.OpenOptions) then return end
 	if category and Settings and Settings.OpenToCategory then
 		Settings.OpenToCategory(category:GetID())
 	end

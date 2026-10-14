@@ -4,7 +4,7 @@
 ## Title: DodoGatherMate
 ## Notes: 自动记录采集节点位置并在地图上显示
 ## Author: Doodo
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: DodoGatherMateDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

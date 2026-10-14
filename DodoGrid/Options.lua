@@ -325,7 +325,35 @@ function ns.InitOptions()
 	Settings.RegisterCanvasLayoutSubcategory(category, BuildDispelPage(), "驱散")
 end
 
+-- 🔴 战斗中不许碰 Settings.OpenToCategory:它底下是受保护的 OpenSettingsPanel(),战斗锁定期间
+--    被插件调用会被 C 层拦下、发 ADDON_ACTION_BLOCKED —— 不是 Lua 报错,pcall 接不住,只能事前判。
+--    (2026-10-13 DodoGuanzhu 团本真机实撞;同款写法见 DodoGuanzhu/Options.lua 的 ns.Options.Open。)
+--    ⇒ 战斗中打开:提示一次 + 记下来,脱战(PLAYER_REGEN_ENABLED)补开。返回 true = 这次推迟了。
+--    离线测试:repo 根目录 `lua test/test_settings_combat_gate.lua`。
+local pendingOpen, regenFrame
+local function DeferWhileInCombat(retry)
+	if not InCombatLockdown() then
+		pendingOpen = nil
+		return false
+	end
+	if not pendingOpen then
+		print("|cff66ccffDodoGrid|r: 战斗中打不开设置面板(暴雪会拦),脱战后自动帮你打开。")
+	end
+	pendingOpen = retry
+	if not regenFrame then
+		regenFrame = CreateFrame("Frame")
+		regenFrame:SetScript("OnEvent", function(self)
+			self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+			-- 这一帧要是还锁着,retry 会再走一遍 DeferWhileInCombat,只把待办重新记上(不重复提示)。
+			if pendingOpen then pendingOpen() end
+		end)
+	end
+	regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	return true
+end
+
 function ns.OpenOptions()
+	if DeferWhileInCombat(ns.OpenOptions) then return end
 	if category and Settings and Settings.OpenToCategory then
 		Settings.OpenToCategory(category:GetID())
 	end

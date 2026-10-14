@@ -66,6 +66,8 @@ local enUS = {
 	sld_auraW        = "Icon width",
 	sld_auraH        = "Icon height",
 	chk_auraTimer    = "Show countdown number",
+	-- Chat line when the options are asked for in combat (Options.lua, DeferWhileInCombat)
+	msg_combatOpen   = "Can't open the options in combat (Blizzard blocks it) -- they will open when combat ends.",
 }
 
 local zhCN = {
@@ -125,6 +127,7 @@ local zhCN = {
 	sld_auraW        = "图标宽度",
 	sld_auraH        = "图标高度",
 	chk_auraTimer    = "显示倒计时数字",
+	msg_combatOpen   = "战斗中打不开设置(暴雪会拦),脱战后自动打开。",
 }
 
 local locales = { enUS = enUS, zhCN = zhCN }

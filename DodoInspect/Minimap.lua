@@ -27,6 +27,46 @@ local _, ns = ...
 
 local button
 
+-- Never touch Settings.OpenToCategory in combat. Underneath it is the
+-- protected OpenSettingsPanel(); an addon calling it under combat lockdown
+-- is refused by the client with ADDON_ACTION_BLOCKED -- that is NOT a Lua
+-- error, so pcall cannot catch it; the only fix is to check before calling.
+-- (Hit live 2026-10-13 by DodoGuanzhu in a raid, from its minimap button --
+-- the exact path this button's right-click takes. Same pattern as
+-- DodoGuanzhu/Options.lua.) In combat: say so once, remember the request,
+-- open on PLAYER_REGEN_ENABLED. Returns true = deferred.
+-- Offline test: `lua test/test_settings_combat_gate.lua` from the repo root.
+local pendingOpen, regenFrame
+local function DeferWhileInCombat(retry)
+    if not InCombatLockdown() then
+        pendingOpen = nil
+        return false
+    end
+    if not pendingOpen then
+        print((ns.L and ns.L.lootMiniCombat)
+            or "DodoInspect: can't open the options in combat -- they will open when combat ends.")
+    end
+    pendingOpen = retry
+    if not regenFrame then
+        regenFrame = CreateFrame("Frame")
+        regenFrame:SetScript("OnEvent", function(self)
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            -- Still locked this frame? retry goes through DeferWhileInCombat
+            -- again and just re-queues, without a second chat line.
+            if pendingOpen then pendingOpen() end
+        end)
+    end
+    regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    return true
+end
+
+local function OpenOptions()
+    if DeferWhileInCombat(OpenOptions) then return end
+    if Settings and Settings.OpenToCategory and ns.OptionsCategory then
+        Settings.OpenToCategory(ns.OptionsCategory)
+    end
+end
+
 -- Derived from the minimap rather than written down: addons and UI scale
 -- both resize it, and a constant that is right on this machine is
 -- exactly the kind of thing that puts the button in the wrong place on
@@ -143,9 +183,7 @@ function ns.SetupMinimapButton()
 
     button:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            if Settings and Settings.OpenToCategory and ns.OptionsCategory then
-                Settings.OpenToCategory(ns.OptionsCategory)
-            end
+            OpenOptions()
             return
         end
         ns.ToggleLootPanel()

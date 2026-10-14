@@ -4,7 +4,7 @@
 ## Title: DodoCursor
 ## Notes: doodo的鼠标光标装饰小助手
 ## Author: Doodo
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: DodoCursorDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

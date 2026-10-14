@@ -110,6 +110,20 @@ OMEN 那一行由 Jerry 提供，**HOME 上验不了** —— 在 OMEN 上干活
 具体到这个仓库：版本号 / 最新 tag / 「尚未实现」/「已全部发版」/ 插件个数 / 行数
 —— 一律换成「查 TOC 的 `## Version`」「查 CF Files 页」「查 `git log`」这种指路。
 
+### 6. 「打开设置面板」一律先过战斗闸 —— 改完跑 `lua test/test_settings_combat_gate.lua`
+
+`Settings.OpenToCategory` 底下是受保护的 `OpenSettingsPanel()`:战斗中被插件调用会被拦成
+`ADDON_ACTION_BLOCKED`,**不是 Lua 报错、pcall 接不住**(2026-10-13 DodoGuanzhu 团本里小地图图标实撞)。
+⇒ 每个打开设置的入口(slash / 小地图右键 / 按钮)都在调用**之前**判 `InCombatLockdown()`:
+战斗中提示一次 + 记下来,`PLAYER_REGEN_ENABLED` 补开。写法照 `DodoGuanzhu/Options.lua` 的
+`ns.Options.Open`,其余插件各自一份同形的 `DeferWhileInCombat`(插件互不依赖,所以是抄不是共用)。
+
+- **测试在 repo 根**(不属于任何一个插件,所以不在任何插件的 `test/` 里):
+  `lua test/test_settings_combat_gate.lua`(repo 根目录跑)。它加载每个插件**真的**源文件、从真入口打开,
+  外加一道**静态盘点** —— 仓里**新**冒出来的 `OpenToCategory` / `SettingsPanel` 引用没登记进它的 `CASES` 就红。
+  ⇒ **新插件加「打开设置」= 照抄闸 + 往 `CASES` 里加一条**,不加它会替你红。
+- ⚠ 它也是**没人跑就不开火**的那一类(发版 workflow 不跑测试,见根目录 `PENDING-WORK.md` 第 4 条)。
+
 ---
 
 ## CurseForge：谁在上面、新插件怎么登记
