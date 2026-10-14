@@ -87,8 +87,19 @@ local function isSecret(v)
     return ok and secret == true
 end
 
+-- 🔴 C_SpellBook 优先:裸 IsPlayerSpell / IsSpellKnownOrOverridesKnown 住在弃用兼容包
+-- Blizzard_DeprecatedSpellBook 里,整包受 CVar loadDeprecationFallbacks 控制(12.1.5 已整包删了
+-- 10 个同类包)⇒ 它们一没,这里每个技能都判「没学」,出招图标整排静默空着。
+-- 两条判据跟暴雪那个兼容垫片逐字相同:IsSpellKnown(id, Player) 与
+-- IsSpellInSpellBook(id, Player, includeOverrides = true)。裸全局只留作更老客户端的回落。
 local function Known(spellID)
     if not spellID then return false end
+    if C_SpellBook and C_SpellBook.IsSpellKnown and Enum and Enum.SpellBookSpellBank then
+        local bank = Enum.SpellBookSpellBank.Player
+        if C_SpellBook.IsSpellKnown(spellID, bank) then return true end
+        if C_SpellBook.IsSpellInSpellBook and C_SpellBook.IsSpellInSpellBook(spellID, bank, true) then return true end
+        return false
+    end
     if IsPlayerSpell and IsPlayerSpell(spellID) then return true end
     if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellID) then return true end
     return false

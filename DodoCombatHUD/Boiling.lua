@@ -74,6 +74,20 @@ local function call(fn, ...)
     return describe(v)
 end
 
+-- 「沸点天赋点了没」。🔴 C_SpellBook 优先:裸 `IsPlayerSpell` 住在弃用兼容包
+-- `Blizzard_DeprecatedSpellBook` 里,整包受 CVar `loadDeprecationFallbacks` 控制 ——
+-- 玩家关了它,这个全局**今天**就是 nil;而这里一 nil,这一格就静默不出现,
+-- 判据读起来跟「没点天赋」一模一样。12.1.5 已经整包删了 10 个这种兼容包(物品那包就在里面)。
+-- 语义跟暴雪那个兼容垫片逐字相同:IsSpellKnown(spellID, SpellBookSpellBank.Player)。
+-- ⚠ DodoXuefei/Core.lua 有一份同样的(两份实现,改一边要改两边)。
+local function TalentKnown(spellID)
+    if C_SpellBook and C_SpellBook.IsSpellKnown and Enum and Enum.SpellBookSpellBank then
+        return C_SpellBook.IsSpellKnown(spellID, Enum.SpellBookSpellBank.Player)
+    end
+    if type(IsPlayerSpell) == "function" then return IsPlayerSpell(spellID) end
+    return nil
+end
+
 -- SecrecyLevel 是个 enum,光打数字看不懂。反查一次名字,拿不到就退回数字。
 local SECRECY = {}
 do
@@ -127,8 +141,8 @@ local function Static()
         end
     end
     emit(("  专精=%s(血 DK 应为 %d)  战斗中=%s"):format(describe(specID), SPEC_BLOOD, tostring(InCombatLockdown())))
-    emit(("  沸点天赋 IsPlayerSpell(%d)=%s   ← 这条 false 的话下面全部无效"):format(
-        ID.talent, call(IsPlayerSpell, ID.talent)))
+    emit(("  沸点天赋 已学(%d)=%s   ← 这条 false 的话下面全部无效"):format(
+        ID.talent, call(TalentKnown, ID.talent)))
 
     -- ① 决定显示层长什么样的那一问。Never ⇒ 明文读、自己画;别的 ⇒ 只能交给暴雪容器。
     if C_Secrets then
@@ -835,7 +849,7 @@ local function eligible()
     local ok2, id = pcall(getInfo, idx)
     if not ok2 or id ~= SPEC_BLOOD then return false end
 
-    local ok3, known = pcall(IsPlayerSpell, ID.talent)
+    local ok3, known = pcall(TalentKnown, ID.talent)
     return ok3 and known == true
 end
 
@@ -1008,7 +1022,7 @@ local function Why()
         if ok and idx then local ok2, id = pcall(getInfo, idx); if ok2 then sid = id end end
     end
     emit(("     专精 = %s(血 DK 要 %d)"):format(describe(sid), SPEC_BLOOD))
-    emit("  ④ 沸点天赋 IsPlayerSpell(" .. ID.talent .. ") = " .. call(IsPlayerSpell, ID.talent))
+    emit("  ④ 沸点天赋 已学(" .. ID.talent .. ") = " .. call(TalentKnown, ID.talent))
     emit("  ⇒ |cffffff00eligible() = " .. tostring(eligible()) .. "|r")
     emit("  ⑤ 战斗中 = " .. tostring(InCombatLockdown()))
     local anchorOK = false
@@ -1083,7 +1097,7 @@ ns.BoilingEligible = function()
     local ok2, id = pcall(getInfo, idx)
     if not ok2 then return false, "问不出专精" end
     if id ~= SPEC_BLOOD then return false, "只有血 DK 有这一格" end
-    local ok3, known = pcall(IsPlayerSpell, ID.talent)
+    local ok3, known = pcall(TalentKnown, ID.talent)
     if not (ok3 and known == true) then return false, "没点「沸点」天赋" end
     return true
 end

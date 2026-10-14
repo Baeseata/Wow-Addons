@@ -124,6 +124,15 @@ OMEN 那一行由 Jerry 提供，**HOME 上验不了** —— 在 OMEN 上干活
   ⇒ **新插件加「打开设置」= 照抄闸 + 往 `CASES` 里加一条**,不加它会替你红。
 - ⚠ 它也是**没人跑就不开火**的那一类(发版 workflow 不跑测试,见根目录 `PENDING-WORK.md` 第 4 条)。
 
+### 7. 弃用兼容包里的全局一律 `C_` 优先 —— 改完跑 `lua test/test_deprecated_fallbacks.lua`
+
+`Blizzard_Deprecated*` 这批兼容包整包受 CVar `loadDeprecationFallbacks` 控制:玩家关掉它,
+`IsPlayerSpell` / `GetSpecialization` / `RaidNotice_AddMessage` 这类**今天**就是 nil;12.1.5 还一次整包删了 10 个
+(物品那包就在里面)。⇒ 写成 `(C_X and C_X.F) or F` / `if C_X.F then … elseif F then …`,裸全局只作回落。
+- 根目录那个测试是静态守卫:表里的名字只要被裸用、前后 12 行内又没有对应的正式写法就红。
+  **暴雪新弃用一批要人往它的 `DEPRECATED` 表里加**(来源:wow-ui-source 的 `Blizzard_Deprecated*/` 各文件)。
+- 豁免必须写可核实的理由(现在只有一条:DodoSays 战斗日志那条死分支)。
+
 ---
 
 ## CurseForge：谁在上面、新插件怎么登记

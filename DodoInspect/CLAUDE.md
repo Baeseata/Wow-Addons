@@ -58,7 +58,11 @@ tainted by 'DodoInspect'`。
 只读**你自己的**物品(玩家银行=自己的容器;公会银行=公会物品链接,均**永不 secret**)。**🆕 1.5.0 起 `StatRatings` 是唯一读战斗属性 API 的文件**
 (`GetCombatRating`;玩家自己的属性**仅战斗中 secret**)—— 进战斗直接 bail(根本不调用)+ `issecretvalue` 兜底
 + 整段 `pcall`,战斗中冻结显示、脱战刷新。现实终态:战场敌方只能
-显示种族 + 职业;竞技场专精走 `GetArenaOpponentSpec`,不受影响。
+显示种族 + 职业;~~竞技场专精走 `GetArenaOpponentSpec`,不受影响~~ —— **12.1.5 起它恒返回 secret**
+(契约 `SecretReturns = true`,暴雪 `UnitFrameUtil.lua` 注释原话 "always returns secrets"),
+`SpecNameByID` 把 secret 当 nil ⇒ **竞技场对手专精那一栏现在恒为空,不崩**。想救回来 = 暴雪新给的安全委托
+`UnitFrameUtil.UpdateArenaOpponentSpecDisplayName(fontString, arenaIndex, ...)` 往一个**单独的** FontString
+里写(secret 串拼不进信息行);插件调不调得动它**没真机验过**。
 
 ### 🔴 第四颗雷(2026-08-11,12.1,BugSack `12x`):`StatPriority.lua:47` 的 `id > 0`
 `ns.InspectSpecID` 少了 `issecretvalue` guard,`GetInspectSpecialization("target")` 对**敌对玩家**

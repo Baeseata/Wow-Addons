@@ -184,7 +184,16 @@ local function refreshWindow()
 end
 
 local function announce(mapName)
-    RaidNotice_AddMessage(RaidWarningFrame, string.format("DodoAirdrop：%s 空投已刷新！", mapName), ChatTypeInfo["RAID_WARNING"])
+    -- 🔴 RaidWarningUtil 优先:裸 RaidNotice_AddMessage 只是弃用兼容包 Blizzard_DeprecatedRaidWarning
+    -- 里的一层垫片(就是转调 RaidWarningUtil.AddMessage),整包受 CVar loadDeprecationFallbacks 控制
+    -- (12.1.5 已整包删了 10 个同类包)。它一没,这里**在空投刷新那一刻**直接 Lua 报错,
+    -- 下面的音效和红字提示也一并不出。
+    local msg = string.format("DodoAirdrop：%s 空投已刷新！", mapName)
+    if RaidWarningUtil and RaidWarningUtil.AddMessage then
+        RaidWarningUtil.AddMessage(msg, ChatTypeInfo["RAID_WARNING"])
+    elseif RaidNotice_AddMessage then
+        RaidNotice_AddMessage(RaidWarningFrame, msg, ChatTypeInfo["RAID_WARNING"])
+    end
     if UIErrorsFrame then
         UIErrorsFrame:AddMessage(string.format("DodoAirdrop：%s 空投已刷新！", mapName), 1, 0.1, 0.1, 1.0)
     end

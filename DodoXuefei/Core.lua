@@ -107,6 +107,20 @@ local function call(fn, ...)
     return describe(v)
 end
 
+-- 「沸点天赋点了没」。🔴 C_SpellBook 优先:裸 `IsPlayerSpell` 住在弃用兼容包
+-- `Blizzard_DeprecatedSpellBook` 里,整包受 CVar `loadDeprecationFallbacks` 控制 ——
+-- 玩家关了它,这个全局**今天**就是 nil;而这里一 nil,这一格就静默不出现,
+-- 判据读起来跟「没点天赋」一模一样。12.1.5 已经整包删了 10 个这种兼容包(物品那包就在里面)。
+-- 语义跟暴雪那个兼容垫片逐字相同:IsSpellKnown(spellID, SpellBookSpellBank.Player)。
+-- ⚠ DodoCombatHUD/Boiling.lua 有一份同样的(两份实现,改一边要改两边)。
+local function TalentKnown(spellID)
+    if C_SpellBook and C_SpellBook.IsSpellKnown and Enum and Enum.SpellBookSpellBank then
+        return C_SpellBook.IsSpellKnown(spellID, Enum.SpellBookSpellBank.Player)
+    end
+    if type(IsPlayerSpell) == "function" then return IsPlayerSpell(spellID) end
+    return nil
+end
+
 local function Print(msg) print("|cffff66cc" .. ADDON .. "|r " .. msg) end
 
 -- 装了 DodoProbe 就顺手落盘一份(探测式,没装也不崩)。给 Jerry 排查用,
@@ -676,7 +690,7 @@ local function eligible()
     local ok2, id = pcall(getInfo, idx)
     if not ok2 or id ~= SPEC_BLOOD then return false end
 
-    local ok3, known = pcall(IsPlayerSpell, ID.talent)
+    local ok3, known = pcall(TalentKnown, ID.talent)
     return ok3 and known == true
 end
 
@@ -704,7 +718,7 @@ Why = function()
         if ok and idx then local ok2, id = pcall(getInfo, idx); if ok2 then sid = id end end
     end
     emit(("  ③ 专精 = %s(血 DK 要 %d)"):format(describe(sid), SPEC_BLOOD))
-    emit("  ④ 沸点天赋 IsPlayerSpell(" .. ID.talent .. ") = " .. call(IsPlayerSpell, ID.talent))
+    emit("  ④ 沸点天赋 已学(" .. ID.talent .. ") = " .. call(TalentKnown, ID.talent))
     emit("  ⇒ |cffffff00eligible() = " .. tostring(eligible()) .. "|r")
     emit("  ⑤ 战斗中 = " .. tostring(InCombatLockdown()))
     emit(("  ⑥ 格子建了=%s 显示中=%s 吃鼠标=%s"):format(
@@ -820,7 +834,7 @@ ns.WhyNotShown = function()
     local ok2, id = pcall(getInfo, idx)
     if not ok2 then return "现在问不出当前专精。" end
     if id ~= SPEC_BLOOD then return "这个专精不是血 DK —— 只有血 DK 有沸点。" end
-    local ok3, known = pcall(IsPlayerSpell, ID.talent)
+    local ok3, known = pcall(TalentKnown, ID.talent)
     if not (ok3 and known == true) then return "血 DK,但**没点沸点天赋** —— 点上就自动出现。" end
     return nil
 end

@@ -546,6 +546,7 @@ local KNOWN = {   -- 真·WoW 全局,桩里没实现也正常(代码全部 nil-s
     ActionButtonSpellAlertManager = true, GameTooltip = true, Settings = true,
     UIParent = true, STANDARD_TEXT_FONT = true, GetSpecialization = true,
     GetSpecializationInfo = true, GetAddOnMetadata = true, IsPlayerSpell = true,
+    C_SpellBook = true, Enum = true,
     InCombatLockdown = true, GetTime = true, issecretvalue = true, CreateFrame = true,
     SlashCmdList = true, DodoProbeLog = true, DodoXuefeiDB = true,
     SLASH_DODOXUEFEI1 = true, SLASH_DODOXUEFEI2 = true,
@@ -686,6 +687,21 @@ do
             "诊断命令自己炸了 —— 它恰恰是别人出事时唯一的抓手")
         ok_("/dxf w 64 不炸", pcall(function() G.SlashCmdList["DODOXUEFEI"]("w 64") end), "斜杠改尺寸炸了")
         ok_("SetSlotShown(false) 不炸", pcall(function() nsX.SetSlotShown(false) end), "收起路径炸了")
+
+        -- 🔴 弃用兼容包关掉的世界(CVar loadDeprecationFallbacks = 0):裸 IsPlayerSpell 不存在,
+        --    只剩 C_SpellBook。上面所有用例都**默认裸全局在** ⇒ 这条路此前零覆盖,
+        --    而它坏掉的样子是「沸点那格静默不出现」,跟「没点天赋」一模一样。
+        ok_("准备:显示开着、没解锁", pcall(function() nsX.SetSlotShown(true); nsX.SetUnlocked(false) end), "准备步骤炸了")
+        rawset(G, "IsPlayerSpell", nil)
+        local talentKnown, bankAsked = true, nil
+        rawset(G, "Enum", { SpellBookSpellBank = { Player = 0, Pet = 1 } })
+        rawset(G, "C_SpellBook", { IsSpellKnown = function(_, bank) bankAsked = bank; return talentKnown end })
+        check("兼容包关掉 + 点了天赋 -> 没有「为什么不显示」", nsX.WhyNotShown(), nil)
+        check("问的是玩家法术书(Player = 0),不是宠物", bankAsked, 0)
+        talentKnown = false
+        local why = nsX.WhyNotShown()
+        check("负对照:兼容包关掉 + 没点天赋 -> 报的是「没点沸点天赋」",
+            type(why) == "string" and why:find("没点沸点天赋", 1, true) ~= nil, true)
     end
 
     -- 未知全局对账。**这是"桩不许兜底"的落地** —— 名字打错了会在这儿冒出来。

@@ -497,6 +497,8 @@ A/B 验过(把 `SetCdRowPad(0)` 那句删掉,三条红、正对照仍绿)。
 暴雪的准入规则(canon `rules/wow-addons.md` 抄自 `AuraContainerUtil.CanApplyIdentityCandidateFilters`)
 **只禁两格:友方身上的 debuff、敌方身上的 buff**。DoT 这排正是「HARMFUL 挂在 `target` 上」——
 ⇒ **目标是友方、或压根没目标时,`includeSpellIDs` 落进被禁那格,被静默丢掉**(不抛错,`pcall` 看不见)。
+✅ **12.1.5 起暴雪那边也修了**:落进被禁那格不再「全放行」而是**全拒绝**(详 canon `rules/wow-addons.md`
+「12.1.5 翻面了」那段)⇒ 下面那道 fail-closed 闸现在是双保险,**别当多余删** —— 它还管着「换目标重推」那半。
 而 0.11.0 之前:filter 只在 `ApplyAuraFilters` 里推,那个函数只在**开局 / 换专精 / 动设置**时跑;
 `PLAYER_TARGET_CHANGED` 只调 `RefreshDots()`(刷数据,不重推 filter)。
 ⇒ 登录那一刻若没敌对目标,这排就**永久**停在「没有 candidate filter」= 全放行 = 三格画同样的东西。

@@ -625,6 +625,41 @@ local f2 = frameByName("DodoBoilingSlot")
 check("老键 on=false 被无视,照样出现", f2 ~= nil and f2.__shown == true, true)
 check("|cff33ff99顺手|r:老键被清掉,不留着骗人", _G.DodoCombatHUDDB.bpSlot.on == nil, true)
 
+-- 🔴 弃用兼容包关掉的世界(CVar loadDeprecationFallbacks = 0):裸 IsPlayerSpell /
+-- GetSpecialization / GetSpecializationInfo 全不存在,只剩 C_* 那一套。
+-- 上面每一节都**默认裸全局在** ⇒ 这条路此前零覆盖,而它坏掉的样子是
+-- 「沸点那格静默不出现」,读起来跟「没点天赋」一模一样。12.1.5 已经整包删了 10 个兼容包。
+realprint("[J3] 弃用兼容包关掉:只剩 C_SpellBook / C_SpecializationInfo")
+setup(true); out = {}; frames = {}; fired = nil
+inCombat, overlayed = false, false
+specID, hasTalent = 250, true
+local savedDeprecated = { _G.IsPlayerSpell, _G.GetSpecialization, _G.GetSpecializationInfo }
+_G.IsPlayerSpell, _G.GetSpecialization, _G.GetSpecializationInfo = nil, nil, nil
+local bankAsked
+_G.Enum = _G.Enum or {}
+_G.Enum.SpellBookSpellBank = { Player = 0, Pet = 1 }
+_G.C_SpellBook = { IsSpellKnown = function(_, bank) bankAsked = bank; return hasTalent end }
+_G.C_SpecializationInfo = { GetSpecialization = function() return 1 end,
+                            GetSpecializationInfo = function() return specID end }
+local nsJ3 = loadBoiling()
+_G.DodoCombatHUDDB = { cdsOn = true }
+run(nsJ3.BoilingEvaluate)
+local f3 = frameByName("DodoBoilingSlot")
+check("兼容包关掉 + 血 DK + 点了天赋 ⇒ 照样出现", f3 ~= nil and f3.__shown == true, true)
+check("问的是玩家法术书(Player = 0),不是宠物", bankAsked == 0, true)
+hasTalent = false
+run(nsJ3.BoilingEvaluate)
+check("|cff33ff99负对照|r:兼容包关掉 + 没点天赋 ⇒ 收起来", not (f3 ~= nil and f3.__shown == true), true)
+do
+    local ok, why = nsJ3.BoilingEligible()
+    check("面板:兼容包关掉 + 没点天赋 ⇒ 报的是「没点沸点天赋」",
+        ok == false and type(why) == "string" and why:find("没点", 1, true) ~= nil, true)
+end
+hasTalent = true
+_G.IsPlayerSpell, _G.GetSpecialization, _G.GetSpecializationInfo =
+    savedDeprecated[1], savedDeprecated[2], savedDeprecated[3]
+_G.C_SpellBook, _G.C_SpecializationInfo = nil, nil
+
 realprint("[K] 容器的 initializeFrame")
 check("initializeFrame 一次都没抛", #initErrors == 0)
 for _, e in ipairs(initErrors) do realprint("        |cff抛错|r " .. e) end
