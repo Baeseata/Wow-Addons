@@ -1,10 +1,10 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoGatherMate
 ## Notes: 自动记录采集节点位置并在地图上显示
 ## Author: Doodo
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: DodoGatherMateDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

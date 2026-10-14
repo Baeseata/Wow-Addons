@@ -1,8 +1,8 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Title: DodoGrid
 ## Notes: Healer-focused party/raid frames. Secret-Values safe. Party + Blizzard-style raid grid.
 ## Author: Doodo
-## Version: 0.6.0
+## Version: 0.6.1
 ## SavedVariables: DodoGridDB
 ## Group: Dodo
 ## OptionalDeps: Dodo

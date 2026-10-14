@@ -1,10 +1,10 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoCursor
 ## Notes: doodo的鼠标光标装饰小助手
 ## Author: Doodo
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: DodoCursorDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

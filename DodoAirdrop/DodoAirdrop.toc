@@ -1,10 +1,10 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoAirdrop
 ## Notes: Tracks war mode airdrop talking head alerts and records last seen times per map.
 ## Author: Doodo
-## Version: 0.3.1
+## Version: 0.3.2
 ## SavedVariables: DodoAirdropDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

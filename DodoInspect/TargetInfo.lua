@@ -133,7 +133,12 @@ local function GetPvPSpecName()
     if instanceType == "arena" then
         local n = (GetNumArenaOpponentSpecs and GetNumArenaOpponentSpecs()) or 0
         for i = 1, n do
-            if UnitIsUnit("target", "arena" .. i) then
+            -- UnitIsUnit is SecretWhenUnitComparisonRestricted: a secret
+            -- answer must not reach the boolean test. 12.1.5 also documents
+            -- GetArenaOpponentSpec as SecretReturns; SpecNameByID already
+            -- turns a secret specID into nil.
+            local same = UnitIsUnit("target", "arena" .. i)
+            if not issecretvalue(same) and same then
                 local specID = GetArenaOpponentSpec and GetArenaOpponentSpec(i)
                 return SpecNameByID(specID)
             end

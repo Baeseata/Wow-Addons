@@ -983,6 +983,19 @@ git diff --stat "DodoInspect-v$V"..HEAD -- DodoInspect/
 —— 那个洞只能靠上面那条命令。⚠ 想在开发中途把号停在一个非发布值(`1.14.0-dev` 之类)也行,
 但 **CF 收不收这种串没验过**,真要用先 `workflow_dispatch` 跑一次 dry-run。
 
+## 1.14.0:12.1.5 兼容(2026-10-13)+ 1.13.1 之后 main 上的全部功能
+
+- 🔴 **12.1.5 删了 `Blizzard_DeprecatedItemScript`**(Gethe `09b9db7`→`18c6d67` 整包 `D`)⇒ 裸全局
+  `GetItemInfoInstant` / `IsEquippableItem` / `GetItemInfo` / `GetDetailedItemLevelInfo` 不再存在。
+  `ItemInfo.lua` 新增 `ns.ItemInfoInstant` / `ns.IsEquippableItem`(**每次调用时**解析 `C_Item.X or _G.X`),
+  `ItemInfo` / `Bags` / `Bank` / `SidePanel` 四处裸调用改走它。⇒ **以后别再写裸的物品全局**,同族的
+  `Blizzard_DeprecatedSpecialization` / `SpellBook` 还活着但随时可能被删。
+- `TargetInfo` 竞技场分支:`UnitIsUnit` 结果先 `issecretvalue` 再布尔测试。
+- TOC Interface 追加 120105。
+- 一起发出去的:掉落窗口第 3-5 步、属性优先级两轮复核、第六颗 secret 雷修复(都早已在 main)。
+- ⚠ **证据级别**:暴雪 12.1.5 源码静态对比 + 四个离线套件 + 一次 A/B(只有 `C_Item` 的环境里旧
+  `ItemInfo.lua` 报 `attempt to call a nil value (global 'GetItemInfoInstant')`,新版不报)。**没上过 12.1.5 真机。**
+
 ## 1.13.1:S2 开季后的攻略数据复核(2026-08-22)
 
 改了 **3 个专精**,其余 37 个**核过没变**。⚠ 三条的性质不一样,别当成一批:

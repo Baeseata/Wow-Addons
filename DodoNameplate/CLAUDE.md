@@ -50,8 +50,9 @@ the repo root. What it does, so nobody has to guess:
 - Project id: read from the TOC's `## X-Curse-Project-ID` first, falling back to a hardcoded map for
   the older addons. This addon declares its own (`1587138`), so the workflow needs no edit for it.
 - Game versions: the TOC `## Interface` list is turned into CurseForge game-version names, and an
-  unknown name is a hard failure. This addon declares only `120100` **on purpose** (it needs 12.1
-  APIs; claiming older clients would ship it to clients it crashes on).
+  unknown name is a hard failure. This addon declares only 12.1-family builds (`120100, 120105`
+  since the 12.1.5 maintenance) **on purpose** (it needs 12.1 APIs; claiming 12.0 clients would
+  ship it to clients it crashes on).
 - Packaging is an allowlist — `*.lua`, `*.toc`, `README.md`, `LICENSE`, media — minus `test/`,
   `tools/` and `CLAUDE.md`. **`README.md` reaches users**; the dev docs do not.
 - The annotated tag's message becomes the CurseForge changelog (Markdown), so tag with
@@ -62,7 +63,7 @@ the repo root. What it does, so nobody has to guess:
 ## Current status
 
 - **Product**: WoW Retail Midnight nameplate replacement with category-specific layouts and secret-safe state displays.
-- **Release**: Interface 120100, patch 12.1. **Which version shipped = `## Version` in
+- **Release**: Interface = the TOC line (12.1 family only), patch 12.1. **Which version shipped = `## Version` in
   `DodoNameplate.toc`; what has been published = `git tag -l 'DodoNameplate-*' | sort -V`**
   (`sort -V`, not `tail` — tags sort as strings, so `v0.10.0` lands *before* `v0.9.1`). No number is
   written on this line any more: it said `v0.9.1` while the addon was already on 0.10.0. The v0.9.0

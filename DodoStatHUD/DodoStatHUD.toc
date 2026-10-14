@@ -1,10 +1,10 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoStatHUD
 ## Notes: dodo的属性显示小助手
 ## Author: Doodo
-## Version: 1.1.0
+## Version: 1.1.1
 ## SavedVariables: DodoStatHUDDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

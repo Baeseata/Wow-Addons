@@ -124,7 +124,7 @@ local OFFHAND_WEAPON_LOCS = {
 local function IsEnchantableSlot(slotID, itemLink)
     if ns.Config.ENCHANTABLE_SLOTS[slotID] then return true end
     if slotID == 17 and itemLink then
-        local _, _, _, equipLoc = GetItemInfoInstant(itemLink)
+        local _, _, _, equipLoc = ns.ItemInfoInstant(itemLink)
         return OFFHAND_WEAPON_LOCS[equipLoc] or false
     end
     return false

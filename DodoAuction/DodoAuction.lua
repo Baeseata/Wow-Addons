@@ -51,8 +51,11 @@ local function GetItemNameIcon(itemID)
   local name = (C_Item and C_Item.GetItemNameByID) and C_Item.GetItemNameByID(itemID) or nil
   local icon = (C_Item and C_Item.GetItemIconByID) and C_Item.GetItemIconByID(itemID) or nil
 
-  if not name then
-    local n, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemID)
+  -- 12.1.5 removed the bare GetItemInfo global (deprecation shim deleted);
+  -- C_Item.GetItemInfo has the same returns.
+  local getInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
+  if not name and type(getInfo) == "function" then
+    local n, _, _, _, _, _, _, _, _, tex = getInfo(itemID)
     name = n
     icon = icon or tex
   end

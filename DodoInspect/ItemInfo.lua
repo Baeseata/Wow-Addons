@@ -3,6 +3,24 @@
 
 local _, ns = ...
 
+-- 12.1.5 deleted Blizzard_DeprecatedItemScript, the shim that defined the bare
+-- globals GetItemInfoInstant / IsEquippableItem / GetItemInfo /
+-- GetDetailedItemLevelInfo as aliases of their C_Item.* namesakes (and only
+-- when the loadDeprecationFallbacks CVar was on). C_Item first, bare global
+-- only as a fallback for older clients. Resolved per call, not cached at load,
+-- so a nil here can never freeze in.
+function ns.ItemInfoInstant(item)
+    local fn = (C_Item and C_Item.GetItemInfoInstant) or _G.GetItemInfoInstant
+    if type(fn) ~= "function" or not item then return nil end
+    return fn(item)
+end
+
+function ns.IsEquippableItem(item)
+    local fn = (C_Item and C_Item.IsEquippableItem) or _G.IsEquippableItem
+    if type(fn) ~= "function" or not item then return false end
+    return fn(item) and true or false
+end
+
 local QUALITY_POOR   = (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0
 local QUALITY_COMMON = (Enum and Enum.ItemQuality and Enum.ItemQuality.Common) or 1
 
@@ -105,7 +123,7 @@ end
 -- Localized short slot label for an item link, or nil.
 function ns.GetSlotLabel(itemLink)
     if not itemLink then return nil end
-    local _, _, _, equipLoc = GetItemInfoInstant(itemLink)
+    local _, _, _, equipLoc = ns.ItemInfoInstant(itemLink)
     if not equipLoc or equipLoc == "" then return nil end
     return ns.L and ns.L.slots[equipLoc] or nil
 end
@@ -153,7 +171,7 @@ function ns.GetTypeTag(bagID, slot, itemLink, quality, isEquippable)
         end
     end
 
-    local _, _, _, _, _, classID, subclassID = GetItemInfoInstant(itemLink)
+    local _, _, _, _, _, classID, subclassID = ns.ItemInfoInstant(itemLink)
 
     if IsQuestItem(bagID, slot, classID) then return "quest" end
 

@@ -281,8 +281,12 @@ local function getBestRewardChoiceIndex()
         local priceSource = itemLink or itemID
         local sellPrice
 
-        if priceSource and type(GetItemInfo) == "function" then
-            local _, _, _, _, _, _, _, _, _, _, vendorSell = GetItemInfo(priceSource)
+        -- 12.1.5 removed the bare GetItemInfo global (deprecation shim deleted).
+        -- Without C_Item here every choice reads as "not cached yet" and the
+        -- best-reward pick waits forever instead of choosing.
+        local getInfo = (C_Item and C_Item.GetItemInfo) or _G.GetItemInfo
+        if priceSource and type(getInfo) == "function" then
+            local _, _, _, _, _, _, _, _, _, _, vendorSell = getInfo(priceSource)
             sellPrice = vendorSell
         end
 

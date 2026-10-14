@@ -98,7 +98,7 @@ local function ApplyGuildBankOverlay(button, link)
     end
 
     local quality = ns.GetLinkQuality(link)
-    local isEquippable = IsEquippableItem(link) and true or false
+    local isEquippable = ns.IsEquippableItem(link)
 
     -- gear shows its item level (top-left); everything else, plus junk
     -- gear when the junk filter is on, shows a type tag (top-right)

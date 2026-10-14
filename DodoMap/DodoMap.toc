@@ -1,10 +1,10 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoMap
 ## Notes: Shows player coordinates and lets you set temporary waypoints by coordinate.
 ## Author: Doodo
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: DodoMapDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 

@@ -27,7 +27,7 @@ function ns.ApplyItemOverlay(itemButton, bagID, slot)
 
     local info = C_Container.GetContainerItemInfo(bagID, slot)
     local quality = info and info.quality
-    local isEquippable = IsEquippableItem(itemLink) and true or false
+    local isEquippable = ns.IsEquippableItem(itemLink)
 
     -- gear worth wearing shows its item level (top-left corner);
     -- everything else shows a type tag (top-right) instead

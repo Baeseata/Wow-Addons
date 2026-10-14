@@ -1,10 +1,10 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120005, 120007, 120100, 120105
 ## Group: Dodo
 ## OptionalDeps: Dodo
 ## Title: DodoRush
 ## Notes: A crowd-runner minigame -- strafe with A/D to pick gates, grow your crowd, and smash through waves of red enemies. How far can you run?
 ## Author: Doodo
-## Version: 0.1.1
+## Version: 0.1.2
 ## SavedVariables: DodoRushDB
 ## IconTexture: Interface\AddOns\Dodo\Media\Dodo.tga
 
