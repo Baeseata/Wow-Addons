@@ -843,8 +843,29 @@ local function EnsurePanel()
     end
 end
 
+-- 战斗中被点了「打开设置」⇒ 记一笔,脱战那一刻补开(PLAYER_REGEN_ENABLED 分支,文件末尾)。
+local openAfterCombat = false
+
 ns.Options = {
     Open = function()
+        -- 🔴 战斗中**不许碰** `Settings.OpenToCategory`。它底下是 C 层的 `OpenSettingsPanel()`,
+        --    战斗锁定期间被插件调用会被拦 —— **而 pcall 拦不住这种事**:它不是 Lua 报错,
+        --    是 C 层拒绝执行 + 发一个 ADDON_ACTION_BLOCKED,pcall 照样返回 ok=true。
+        --    真机实证(2026-10-13 HOME 团本,BugSack):
+        --      [ADDON_ACTION_BLOCKED] 插件 'DodoGuanzhu' 尝试调用保护功能 'OpenSettingsPanel()'
+        --      Minimap.lua:116 → Options.lua(本函数里那个 pcall)→ Blizzard_Settings.lua:144
+        --    症状 = 「图标点不开」+ BugSack 一条,下面那句「打开设置面板出错」**一次都没打印**。
+        --    跟 StepAside 不碰 HideUIPanel 是同一条规矩,当初只守了「关」那一头。
+        -- ⚠ 闸必须在 EnsurePanel **之前**:面板没建过的话(Open 早于 PLAYER_LOGIN 被叫到),
+        --    那里的 RegisterCanvasLayoutCategory / RegisterAddOnCategory 一样是在碰设置系统。
+        if InCombatLockdown() then
+            if not openAfterCombat then
+                ns.Print("战斗中打不开设置面板(暴雪会拦),脱战后自动帮你打开。")
+            end
+            openAfterCombat = true
+            return
+        end
+        openAfterCombat = false
         EnsurePanel()
         if not (category and Settings and Settings.OpenToCategory) then
             ns.Print("打不开设置面板(暴雪的 Settings API 没就位)。先用 |cffffd100/dgz help|r 那套命令。")
@@ -887,6 +908,14 @@ init:SetScript("OnEvent", function(_, event)
         Refresh()
         -- 脱战再补一发延迟的:Macro 可能正在这一帧把战斗中排队的宏写掉(然后 ClearDirty),
         -- 而它跟我谁先收到这个事件没有保证。
-        if event == "PLAYER_REGEN_ENABLED" then RefreshSoon() end
+        if event == "PLAYER_REGEN_ENABLED" then
+            RefreshSoon()
+            -- 战斗中被点过「打开设置」⇒ 现在补开。Open 自己会再判一次 InCombatLockdown,
+            -- 万一这一帧还锁着,它只是把待办重新记上,不会去碰设置系统。
+            if openAfterCombat then
+                local ok, err = pcall(ns.Options.Open)
+                if not ok then ns.Print("打开设置面板出错:" .. tostring(err)) end
+            end
+        end
     end
 end)
