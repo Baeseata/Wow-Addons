@@ -110,13 +110,14 @@ end
 -- a second copy of one fact: the two drift, both read as correct on their
 -- own, and nothing in the addon can say which one is right.
 --
--- Mythic+ mode lists DUNGEONS (8 this season). Raid mode lists BOSSES
--- (9 this season, across two instances) -- a raid is not one card, because
--- what a player is asking is "what does THIS boss drop".
+-- Mythic+ mode lists DUNGEONS. Raid mode lists BOSSES, across every raid
+-- in LootMeta.raids -- a raid is not one card, because what a player is
+-- asking is "what does THIS boss drop". (Counts live in the test, not
+-- here: a number in a comment is stale the first time the roster moves.)
 --
 -- `groupFirst` marks the first boss of each instance so the panel can put
--- the raid name above it. Nine boss names with no headings read as one
--- raid, and this season they are not.
+-- the raid name above it. Boss names with no headings read as one raid,
+-- and this season they are not.
 --
 -- A boss that drops nothing we know about gets no card. That is right for
 -- a loot browser and worth saying out loud: "9 bosses" here means "9

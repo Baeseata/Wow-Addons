@@ -42,6 +42,13 @@ PINNED_BUILD = None
 RAIDS = {
     1320: "The Venomous Abyss",
     1317: "The Tidebound Grotto",
+    # 12.1.5 (2026-10-13). Single boss, like the Grotto. Mythic drops on
+    # the Myth track at 3/6 and tops out at 6/6 (334), NOT 344: its items
+    # carry IblGroupPointsModSetID 4366 under group 618, same as Venomous
+    # Abyss #1-#6, while the two 344 bosses (#7/#8) carry 2970. So it stays
+    # OUT of GearRank.NINE_SIX_SOURCES. Early PTR builds did drop 344 here;
+    # pages that still say so are stale.
+    1324: "The Unbinding of Kith'ix",
 }
 DUNGEONS = {
     1322: "Altar of Fangs",

@@ -886,7 +886,10 @@ do
     -- Reverse assertions first. Every loop below runs over these, so
     -- empty lists would let the whole section pass proving nothing.
     checkEqual(#mythic, 8, "mythic mode offers one card per dungeon")
-    checkEqual(#raid, 9, "raid mode offers one card per boss that drops gear")
+    -- 10 = Venomous Abyss 8 + Tidebound Grotto 1 + Kith'ix 1 (12.1.5).
+    -- Pinned on purpose: a raid added or dropped from gen_loot.RAIDS has to
+    -- turn this red, so the roster change is a decision someone made.
+    checkEqual(#raid, 10, "raid mode offers one card per boss that drops gear")
 
     -- An unknown mode must not answer with nothing. The window always
     -- has a mode; a nil list there would draw an empty left column and

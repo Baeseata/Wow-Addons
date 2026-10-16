@@ -1,5 +1,5 @@
 -- DodoInspect - Data/StatPriority.lua
--- Current Patch 12.1 PvE secondary-stat guidance, keyed by specID.
+-- Current Patch 12.1.5 PvE secondary-stat guidance, keyed by specID.
 --
 -- DATA ONLY, ASCII ONLY. Only entries with current=true are visible.
 -- provisional=true marks a best-effort source-of-record where current
@@ -87,19 +87,17 @@ ns.StatPriority = {
         date = "2026-08-25",
     },
     [1480] = { -- Devourer
+        -- 2026-10-16 (12.1.5): both sources collapsed the old 2 trees x 2
+        -- content grid into one order. Wowhead: "Stat priorities are more
+        -- unified across both trees following the 12.1.5 changes", and lists
+        -- M > H > C > V for Annihilator and Void-Scarred alike (the
+        -- Void-Scarred haste-breakpoint form is gone). Icy Veins (Voodoo /
+        -- Wordup, upd. 10-12, tagged 12.1.5) gives the same order for both
+        -- trees with no raid / M+ split.
         current = true,
-        source = "Icy Veins / Wowhead",
-        date = "2026-08-13",
-        builds = {
-            [124] = { -- Annihilator
-                raid = { "haste", "mastery", "crit", "versatility" },
-                mythic = { "mastery", "haste", "crit", "versatility" },
-            },
-            [126] = { -- Void-Scarred
-                raid = { "haste", "crit", "mastery", "versatility" },
-                mythic = { "haste", "mastery", "crit", "versatility" },
-            },
-        },
+        raid = { "mastery", "haste", "crit", "versatility" },
+        source = "Wowhead / Icy Veins (Voodoo, Wordup)",
+        date = "2026-10-16",
     },
 
     ------------------------------------------------------------------
@@ -164,11 +162,17 @@ ns.StatPriority = {
         -- (C > H > M > V) and Wowhead lists only the damage-leaning one. House
         -- rule is healers default to healing output, which equals the raid
         -- order, so this collapses to 1x1. provisional: M+ sources disagree.
+        -- 2026-10-16 (12.1.5): Wowhead flipped its Raid box to C > M > H > V
+        -- (Crit: "Strongest secondary stat"). Method (Cryve, upd. 10-13) and
+        -- Icy Veins (Mytholxgy, upd. 10-12) both still lead with Mastery for
+        -- raid and healing-focused M+. 2-to-1, so the row does not move and
+        -- Wowhead leaves the source line; the scanner keeps printing DIFFERS
+        -- here and that is expected.
         current = true,
         provisional = true,
         raid = { "mastery", "crit", "haste", "versatility" },
-        source = "Wowhead / Method (Cryve)",
-        date = "2026-08-22",
+        source = "Method (Cryve) / Icy Veins (Mytholxgy)",
+        date = "2026-10-16",
     },
     [1473] = { -- Augmentation
         -- 2026-08-28: Wowhead ships one identical list for both hero trees
@@ -483,18 +487,34 @@ ns.StatPriority = {
         date = "2026-08-28",
     },
     [261] = { -- Subtlety
+        -- 2026-10-16: the author re-edited on 10-15 -- two days AFTER the
+        -- 12.1.5 patch-day bulk republish, so this one is a real edit. Three
+        -- of the four cells still read M > H > V > C; Trickster Single Target
+        -- now reads M > H > C > V. Icy Veins (Eleem, upd. 10-12, a different
+        -- author, so an independent vote) keeps M > H > V > C for both trees.
+        -- Trickster raid therefore ships Crit and Versatility tied -- the
+        -- weaker claim both pages support. Deathstalker and Trickster M+ do
+        -- not move. Goals live at the top level, so both trees keep them.
         -- 2026-08-22: page was rewritten 08-19 into a 2x2 grid (Deathstalker /
-        -- Trickster x Single Target / Mythic+). All four cells are identical,
-        -- so this stays 1x1. Versatility moved ahead of Crit, and the split
-        -- Haste targets (raid 1100 / M+ 650-700) collapsed into a flat ~700.
+        -- Trickster x Single Target / Mythic+). All four cells were identical
+        -- then. Versatility moved ahead of Crit, and the split Haste targets
+        -- (raid 1100 / M+ 650-700) collapsed into a flat ~700.
         current = true,
         provisional = true,
-        raid = { "mastery", "haste", "versatility", "crit" },
         goals = {
             { stat = "haste", value = 700, unit = "rating" },
         },
-        source = "Wowhead (fuu1)",
-        date = "2026-08-22",
+        source = "Wowhead (fuu1) / Icy Veins (Eleem)",
+        date = "2026-10-16",
+        builds = {
+            [53] = { -- Deathstalker
+                raid = { "mastery", "haste", "versatility", "crit" },
+            },
+            [51] = { -- Trickster
+                raid = { "mastery", "haste", { "versatility", "crit" } },
+                mythic = { "mastery", "haste", "versatility", "crit" },
+            },
+        },
     },
 
     ------------------------------------------------------------------
@@ -533,11 +553,18 @@ ns.StatPriority = {
         },
     },
     [264] = { -- Restoration; healing throughput baseline
+        -- 2026-10-16 (12.1.5): Wowhead (Harreks) now ties Haste and
+        -- Versatility, and the prose was rewritten to match: Versatility
+        -- "presents a similar value to Haste", and the balance between the
+        -- two "can be a tricky one". Icy Veins (Seksixeny, upd. 10-12) writes
+        -- C > V > H > M. Both put Crit first and Mastery last; the tie is the
+        -- weaker claim both pages support, so it ships. Still provisional:
+        -- the two sources do not agree on the middle pair.
         current = true,
         provisional = true,
-        raid = { "crit", "haste", "versatility", "mastery" },
-        source = "Wowhead (Harreks)",
-        date = "2026-08-13",
+        raid = { "crit", { "haste", "versatility" }, "mastery" },
+        source = "Wowhead (Harreks) / Icy Veins (Seksixeny)",
+        date = "2026-10-16",
     },
 
     ------------------------------------------------------------------

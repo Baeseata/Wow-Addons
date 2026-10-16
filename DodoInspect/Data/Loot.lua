@@ -180,9 +180,9 @@ ns.ChallengeMap = {
 }
 
 ns.LootMeta = {
-    build = "12.1.0.69299",
-    date = "2026-08-22",
-    raids = { [1317] = true, [1320] = true },
+    build = "12.1.5.70391",
+    date = "2026-10-16",
+    raids = { [1317] = true, [1320] = true, [1324] = true },
     dungeons = { [1030] = true, [1041] = true, [1202] = true, [1304] = true, [1309] = true, [1311] = true, [1313] = true, [1322] = true },
 }
 
@@ -261,7 +261,7 @@ ns.LootData = {
     [268260] = { 1320, 2882, 4, "SI", "mastery", 4818, "haste", 2182, nil },
     [268261] = { 1320, 2887, 6, "AI", "crit", 4856, "haste", 2144, nil },
     [268264] = { 1320, 2887, 6, "AGI", "mastery", 4611, "crit", 2389, nil },
-    [268265] = { 1320, 2895, 8, nil, "crit", 17500, nil, nil, 1 },
+    [268265] = { 1320, 2895, 8, nil, "crit", 4375, "mastery", 4375, 1 },
     [270160] = { 1320, 2894, 3, "SA", nil, nil, nil, nil, 1 },
     [270161] = { 1320, 2882, 4, "INT", nil, nil, nil, nil, 1 },
     [270162] = { 1320, 2888, 1, "INT", nil, nil, nil, nil, 1 },
@@ -281,8 +281,20 @@ ns.LootData = {
     [271093] = { 1320, 2895, 8, "AGI", "crit", 7000, nil, nil, 1 },
     [271874] = { 1320, 2895, 8, "INT", "mastery", 7000, nil, nil, nil },
     [271875] = { 1320, 2895, 8, "AI", "haste", 7000, nil, nil, nil },
-    [271876] = { 1320, 2895, 8, "AI", "crit", 7000, nil, nil, nil },
-    [271878] = { 1320, 2895, 8, "SI", "mastery", 7000, nil, nil, nil },
+    [271876] = { 1320, 2895, 8, "AI", "mastery", 7000, nil, nil, nil },
+    [271878] = { 1320, 2895, 8, "SI", "crit", 7000, nil, nil, nil },
+
+    -- The Unbinding of Kith'ix
+    [280617] = { 1324, 2896, 1, "SA", nil, nil, nil, nil, 1 },
+    [280799] = { 1324, 2896, 1, "STR", nil, nil, nil, nil, 1 },
+    [280835] = { 1324, 2896, 1, "INT", nil, nil, nil, nil, 1 },
+    [281029] = { 1324, 2896, 1, nil, "mastery", 12750, "haste", 4750, 1 },
+    [281056] = { 1324, 2896, 1, "INT", "mastery", 3800, "crit", 3200, 1 },
+    [281215] = { 1324, 2896, 1, "SAI", nil, nil, nil, nil, 1 },
+    [281235] = { 1324, 2896, 1, "INT", "mastery", 4877, "crit", 2123, nil },
+    [281236] = { 1324, 2896, 1, "AI", "haste", 4974, "crit", 2026, nil },
+    [281238] = { 1324, 2896, 1, "AI", "crit", 4888, "mastery", 2112, nil },
+    [281239] = { 1324, 2896, 1, "SI", "mastery", 4900, "haste", 2100, nil },
 
     -- Temple of Sethraliss
     [158366] = { 1030, 2144, 3, nil, "crit", 10000, "mastery", 7500, nil },
