@@ -593,6 +593,8 @@ lua tools/test_gearrank.lua               # 必须 0 failures
 **生成器里那三条断言别删**,每条对应一个实测过的坑:
 1. **spec slug 从 bloodmallet 自己的 `classes_specs.js` 取,不手打** —— slug 写错和该专精真没数据
    **返回一模一样的 `{"status":"error"}`**,手打清单会产出读起来完全像真缺口的假阴性。
+   跟 `SPEC_IDS` 的名单比对**故意是单向的**(2026-10-16 起):只在上游 = 报错退出;只在我们这边 = 没数据、照常跑
+   (原因和 A/B 见「12.1.5 数据复核」节)。
 2. **所有 payload 的 `simc_settings.tier` 必须一致** —— 🔴 端点会**不吭声地端出上赛季数据**
    (实测德鲁伊平衡的 `phials` 是 `tier=MID1`),HTTP 200、格式全对、没有任何字段说它过期。
    漏了这条就会静默发布上赛季的排名。
@@ -1014,13 +1016,32 @@ git diff --stat "DodoInspect-v$V"..HEAD -- DodoInspect/
   `268265` 17500 暴击 → 暴击/精通各 4375 · `271876` / `271878` 副属性互换 · `271093` 主手 → 单手。
 - `test_gearrank.lua` 的 boss 卡片数 9 → 10(那条是故意钉死的反空转断言,名单变了它就该红)。
 
-**这轮撞到、还没处理的三件事**:
-1. 🔴 **饰品表没重生成**:bloodmallet 10-14 已按 12.1.5 重模拟,但**还没有基希克斯那 3 个饰品**
-   (按 ID 和名字都搜过);而且它的专精名单**删掉了 7 个治疗** ⇒ `gen_trinkets.py` 的名单守卫当场报错。
-   窄修法:「只在我们这边」(治疗)降级成「没数据」,「只在上游」继续报错 —— 拼错的 slug 一定会成对
-   出现在两边,所以查错能力不丢。**动守卫前先问 Jerry。** 新饰品现在是 unranked(排在有排名的后面)。
-2. ⚠ **扫描器读不懂 `[tab name="Mythic+"]`**:敏锐贼页面把分页标签用回来了(1.13.1 那节说 `[tab ` 出现 0 次,已不成立),
-   扫描器把 M+ 那格也归进 raid bucket,于是印 `bucket?`。人工核过是对的,工具缺口。
+**这轮撞到的三件事**(1、2 同日在另一个 session 处理完,3 是现状不是待办):
+1. ✅ **饰品表已重生成**(原因:bloodmallet 10-14 按 12.1.5 重模拟,专精名单**删掉了 7 个治疗**,
+   `gen_trinkets.py` 的名单守卫当场报错)。**守卫窄修,Jerry 同意**:「只在上游」照旧报错退出;
+   「只在我们这边」降级成「没数据」照常跑并打印出来 —— 拼错的 slug 一定会成对出现在两边,
+   正确那个落在「只在上游」,所以查错能力不丢。脚本头部 assertion 1 的说明同步改了。
+   - **A/B**:`SPEC_IDS` 种拼错的 `priest/shadoww`(先断言种进去了)→ 照样 `only upstream: priest/shadow` + exit 1;
+     还原后逐字节一致。
+   - **正式跑**:覆盖 **17 → 29 / 40**,29 个 payload 全是 `MID2`、时间戳全是 `2026-10-14`;`poolSize` 42 → 45。
+     没数据的 11 个 = 被删的 7 个治疗 + 平衡德 / 守护德 / 湮灭唤魔 / 增辉唤魔(在名单上,端点不给数据)。
+   - 🔴 **基希克斯那 3 个饰品(280617 / 280835 / 281215)bloodmallet 仍然没有**(10-16 下午复查:
+     敏锐贼 / 火法 / 防战三个 payload 里按 ID 和名字都是 0 命中)⇒ 它们在每个已覆盖专精下都是 unranked,
+     排在有排名的后面。**等 bloodmallet 补上再重跑生成器,别手塞。**
+   - 连带:`test_gearrank.lua` 里那个「没数据的专精」原先**写死 71 武器战**,这次武器战有数据了 ⇒ 红 3 条
+     (数据刷新,不是回归)。改成从数据里**挑**最小的未覆盖 specID(现在是 65),外加一条「至少还有一个未覆盖」;
+     A/B:强行挑 258(有覆盖)→ 精确红那 3 条。675 checks 0 failures。
+2. ✅ **扫描器认 `[tab name=...]` 了**(assertion 9 的第二个信号,`tab_name()`):tab 名照 `BUCKET_TOKENS`
+   那套当 bucket 信号(补了无连字符的 `single target`);规则跟框标题一样 —— 认不出的 tab 报出来、不并进 raid,
+   标题和 tab 说法打架的报出来、不比。
+   - 🔑 **顺带抓到第二个洞**:tab 不进去重 key 时,死亡猎手 ST / M+ 两个 tab 里**同标题同顺序**的两个框
+     被当成「页面重复嵌入」**吞掉了一个**。现在 tab 进 key。
+   - **结果**:`--cached --only 261` 诡诈 M+ 那行 `bucket?` → **`same`**;死亡猎手 M+ 那格现形为 `same-fb`
+     (53 只发 raid 行,运行时回落)。全量 `--cached` **只有 261 变了**:`bucket? 3→2 · same 60→61 ·
+     same-fb 0→1 · UNVERIFIED 18→17`,`DIFFERS` 14 不动。`--verify` 20 → **29 checks 0 failures**,
+     新增 9 条走真 `parse_page`,含一对 A/B(不读 tab → `bucket?`,读 → `same`)。
+   - ⚠ 诡诈 raid 仍报 `DIFFERS` 是**按设计**:Wowhead ST 写 `C>V`,我们发的是跟 IV 取交集的 `V=C`。
+   - ⚠ `same-fb` 第一次在真数据上开火 —— 8-28 那节「`same-fb` 开火 0 次」到此不成立。
 3. ⚠ **Icy Veins 挂了 Cloudflare 人机验证**:curl / WebFetch 一律 403(8 月还能 curl)。
    **Browser pane 能正常打开**(没出交互式验证码,别去点任何验证),用 `javascript_tool` 读 `innerText`
    取 `Last Updated` 和列表;Method 同法(它本来就是 JS 渲染)。
@@ -1061,7 +1082,7 @@ git diff --stat "DodoInspect-v$V"..HEAD -- DodoInspect/
 python tools/scan_statpriority.py            # 抓 40 页 + 跟 Data/StatPriority.lua 逐行 diff
 python tools/scan_statpriority.py --cached   # 复用上次抓的,改解析器时用
 python tools/scan_statpriority.py --only 263 # 单个专精
-python tools/scan_statpriority.py --verify   # 20 条离线分支检查,不联网也不读缓存
+python tools/scan_statpriority.py --verify   # 29 条离线分支检查,不联网也不读缓存(2026-10-16 起含 tab)
 ```
 
 它吐一张表:每个专精的 `dateModified` · 形状 · 每条 order · **box 标题** · **subTreeID** ·
@@ -1082,6 +1103,7 @@ python tools/scan_statpriority.py --verify   # 20 条离线分支检查,不联�
    `-A "Mozilla/5.0 (Windows NT 10.0; … Chrome/120 …)"` → **403 Request blocked**(CloudFront)。
    ⇒ **就用 `Mozilla/5.0`,别「改进」它。**
 3. 🔴 **「分不分内容 = `[tab name=`」已经不成立** —— `[tab ` 在**当前 40 页里出现 0 次**。
+   (⚠ 2026-10-15 起 261 又用回了 tab;两种写法现在并存,扫描器两个都认,见「12.1.5 数据复核」节第 2 条。)
    内容分格现在一律是**并排的两个框**:`[box border=true]` 或 `[div style="border:…"]`,
    框头一个 `[center]` 标题。⚠ **这正是 1468 恩护那次栽的坑的一般形式**,现在有判据了 ——
    **标题就是答案**,它长这样:

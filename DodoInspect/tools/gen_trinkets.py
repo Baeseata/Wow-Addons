@@ -21,6 +21,12 @@ THREE ASSERTIONS THAT MUST NOT BE REMOVED (each is a real trap, measured):
      not typed here. A wrong slug and a genuinely absent spec return the
      identical {"status":"error"}, so a hand-typed list produces false
      "missing" entries that read exactly like real gaps.
+     The roster check against SPEC_IDS is deliberately one-sided
+     (2026-10-16, Jerry OK'd): a spec ONLY UPSTREAM is fatal; a spec ONLY
+     HERE is reported as "no data" and the run goes on. bloodmallet dropped
+     all 7 healers from its roster for 12.1.5, and they never had data
+     anyway. Typo detection is not lost: a mistyped slug always comes in a
+     pair, and its correct twin lands in the fatal "only upstream" bucket.
 
   2. Every payload must report the SAME simc tier. The endpoint happily
      serves last season's data for specs that have not been re-simmed --
@@ -202,15 +208,23 @@ def main():
     slugs = authoritative_slugs()
     print("bloodmallet roster: %d specs" % len(slugs))
 
+    # Assertion 1, two directions on purpose. A spec that only bloodmallet
+    # knows is fatal: it is either new to the game or a slug we mistyped.
+    # A spec that only WE know is just "no data" -- the same outcome as a
+    # spec on the roster that answers {"status":"error"}. A mistyped slug is
+    # still caught, because the real slug then shows up "only upstream".
     unknown = [s for s in slugs if s not in SPEC_IDS]
-    extra = [s for s in SPEC_IDS if s not in slugs]
-    if unknown or extra:
+    absent = [s for s in SPEC_IDS if s not in slugs]
+    if unknown:
         print("ERROR: spec roster drifted from SPEC_IDS in this script.")
         for s in unknown:
             print("   only upstream: %s/%s" % s)
-        for s in extra:
+        for s in absent:
             print("   only here:     %s/%s" % s)
         return 1
+    if absent:
+        print("not on bloodmallet's roster (no data): %d: %s"
+              % (len(absent), ", ".join("%s/%s" % s for s in absent)))
 
     pool, loot_spec_ids = our_trinkets()
     print("trinkets in Data/Loot.lua: %d" % len(pool))
@@ -220,7 +234,7 @@ def main():
         print("   there-not-here: %s" % sorted(loot_spec_ids - set(SPEC_IDS.values())))
         return 1
 
-    rows, tiers, skipped = [], set(), []
+    rows, tiers, skipped = [], set(), ["%s/%s" % s for s in absent]
     for cls, spec in slugs:
         data, err = fetch_spec(cls, spec, pool)
         if err:
@@ -252,7 +266,7 @@ def main():
     rows.sort(key=lambda r: r[0])
     tier = tiers.pop()
     print("\ncovered %d/%d specs, tier %s; no data for %d: %s"
-          % (len(rows), len(slugs), tier, len(skipped), ", ".join(skipped) or "-"))
+          % (len(rows), len(SPEC_IDS), tier, len(skipped), ", ".join(skipped) or "-"))
 
     text = render(rows, tier, len(pool))
     text.encode("utf-8")            # verify encodable BEFORE truncating the file

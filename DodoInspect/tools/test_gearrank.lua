@@ -541,6 +541,20 @@ end
 --------------------------------------------------------------------
 loadAddonFile("Data/Trinkets.lua")
 
+-- The uncovered spec is PICKED from the data, not typed. It used to be a
+-- literal 71 (arms warrior), and the 2026-10-16 regeneration turned it red:
+-- bloodmallet started simulating arms, which is a data refresh, not a
+-- regression. Lowest specID in ns.SpecGear that Data/Trinkets.lua leaves out.
+local uncoveredSpec
+do
+    local ids = {}
+    for specID in pairs(ns.SpecGear) do
+        if not ns.TrinketRank[specID] then ids[#ids + 1] = specID end
+    end
+    table.sort(ids)
+    uncoveredSpec = ids[1]
+end
+
 do
     -- Every spec in the generated table must exist in ns.SpecGear. The two
     -- lists are written by different tools; this is the only place they meet.
@@ -555,9 +569,12 @@ do
     -- nil rather than an empty table -- the panel says different things.
     local covered = ns.TrinketOrder(258)          -- shadow priest
     check(covered ~= nil, "TrinketOrder answers for a covered spec (258)")
-    check(ns.TrinketOrder(71) == nil,
+    check(uncoveredSpec ~= nil,
+          "Data/Trinkets.lua leaves at least one spec uncovered (if it ever "
+          .. "covers all of them, the uncovered-spec checks need a fake spec)")
+    check(uncoveredSpec ~= nil and ns.TrinketOrder(uncoveredSpec) == nil,
           "TrinketOrder returns nil, not an empty table, for an uncovered "
-          .. "spec (71 arms warrior has no simulation data)")
+          .. "spec (" .. tostring(uncoveredSpec) .. " has no simulation data)")
     check(ns.TrinketOrder(nil) == nil, "TrinketOrder tolerates a nil specID")
 
     -- Reverse assertion: without this, an empty ns.TrinketRank would pass
@@ -614,7 +631,11 @@ do
     -- this panel's header is what a ranking looks like. There is no
     -- second-best order to fall back on here.
     orderUnderTest = { "haste", "crit", "mastery", "versatility" }
-    local rows, unranked = ns.SlotCandidates("INVTYPE_TRINKET", 71, nil, "raid")
+    local rows, unranked = {}, 0
+    if uncoveredSpec then       -- nil already failed loudly above
+        rows, unranked = ns.SlotCandidates("INVTYPE_TRINKET", uncoveredSpec,
+                                           nil, "raid")
+    end
     check(rows ~= nil,
           "uncovered spec returns a list rather than nil (nil means 'cannot "
           .. "rank this slot at all' and prints a different message)")

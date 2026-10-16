@@ -278,7 +278,10 @@ def box_label(u, ol_start):
     the heading is the only thing that tells them apart. Reading the boxes and
     guessing was how spec 1468 shipped a Raid/Mythic+ pair as two hero trees
     in 1.13.0. Related: `[tab name=` -- which CLAUDE.md named as the
-    content-split marker -- occurs ZERO times across all 40 current pages.
+    content-split marker -- occurred ZERO times across all 40 pages on
+    2026-08-27. That stopped being true on 2026-10-15 (261 Subtlety put
+    every box inside tabs again), so a tab is now read as its own signal:
+    see tab_name() and assertion 9.
     """
     boxes = [m.start() for m in BOX_RE.finditer(u) if m.start() < ol_start]
     if not boxes:
@@ -291,6 +294,27 @@ def box_label(u, ol_start):
     if subs:
         text = (text + " / " + subs[-1].strip()).strip(" /")
     return text or None
+
+
+# The tab sits OUTSIDE the box, so box_label() never sees it:
+#     [tabs uniform=true name=stats][tab name=\"Single Target\" icon=...]
+#       ... [box][center]Trickster Stat Priority[/center] [ol]...[/ol] ...
+#     [/tab][tab name=\"Mythic+\" icon=...] ... same two boxes ... [/tab]
+# The quotes are still JSON-escaped after unescape() (it only undoes \/), so
+# the name is matched with or without a backslash in front of each quote.
+TAB_OPEN_RE = re.compile(r'\[tab name=(?:\\?"([^"\\]*)\\?"|([^\s\]]+))')
+
+
+def tab_name(u, ol_start):
+    """The [tab name=...] this [ol] sits in, or None when it is in no tab."""
+    opens = list(TAB_OPEN_RE.finditer(u, 0, ol_start))
+    if not opens:
+        return None
+    between = u[opens[-1].end():ol_start]
+    if "[/tab]" in between or "[/tabs]" in between:
+        return None
+    m = opens[-1]
+    return (m.group(1) if m.group(1) is not None else m.group(2)).strip() or None
 
 
 def parse_page(html, allowed):
@@ -329,6 +353,7 @@ def parse_page(html, allowed):
             skipped += 1
             continue
         label = box_label(u, m.start())
+        tab = tab_name(u, m.start())
         # The heading is authoritative; symbol proximity is the fallback.
         # Measured: the Feral page repeats druid-of-the-claw where the
         # Wildstalker box is, and only the heading gets it right.
@@ -348,12 +373,17 @@ def parse_page(html, allowed):
                          % (slug or "no tree", " > ".join(
                              "=".join(g) for g in order)))
             continue
-        key = (label, slug, tuple(tuple(g) for g in order))
+        # The tab is part of the identity: two tabs that hold the same
+        # heading and the same order are two claims (ST and M+), not one
+        # page embedded twice. Without it, 261 Deathstalker's M+ box was
+        # silently deduped into its Single Target twin.
+        key = (label, tab, slug, tuple(tuple(g) for g in order))
         if key in seen:           # Wowhead embeds the body twice per page
             continue
         seen.add(key)
         orders.append({"tree": slug, "subTreeID": allowed.get(slug),
-                       "label": label, "order": order, "goals": goals})
+                       "label": label, "tab": tab, "order": order,
+                       "goals": goals})
     return {
         "date": date.group(1) if date else None,
         "trees": sorted(set(n for _, n in mine)),
@@ -440,9 +470,18 @@ def render(order):
 #
 # Measured label census, all 40 pages 2026-08-28: 84 boxes, every one of them
 # either carries one of these tokens or is a bare "<Hero Tree> Stat Priority".
+#
+# 2026-10-16: the same tokens are read off the enclosing [tab name=...] too
+# (tab_name). 261 Subtlety moved its content split OUT of the box headings
+# and into tabs, so both of its boxes read "<Hero Tree> Stat Priority" and the
+# bare-heading rule filed the Mythic+ tab under raid -- `bucket?` on a row
+# that was in fact correct. Same rules as for headings: a tab that matches no
+# token is reported, never folded into raid; a heading and a tab that name
+# DIFFERENT buckets are reported, never resolved by picking one.
 BUCKET_TOKENS = [
     ("mythic+", "mythic"), ("aoe", "mythic"),
-    ("raid", "raid"), ("single-target", "raid"), ("all situations", "raid"),
+    ("raid", "raid"), ("single-target", "raid"), ("single target", "raid"),
+    ("all situations", "raid"),
     ("survivability", "raid"), ("defensive", "raid"),
     ("dps", None), ("offensive", None),
 ]
@@ -452,7 +491,16 @@ def alpha(s):
     return re.sub(r"[^a-z]", "", (s or "").lower())
 
 
-def bucket_of(label, slug):
+def token_bucket(text):
+    """-> (matched?, bucket). Bucket None with matched=True = unmodelled axis."""
+    low = (text or "").lower()
+    for token, bucket in BUCKET_TOKENS:
+        if token in low:
+            return True, bucket
+    return False, None
+
+
+def bucket_of(label, slug, tab=None):
     """-> ("raid" | "mythic" | None, complaint). None = an axis we do not model.
 
     A heading that matches no token counts as the general order ONLY if
@@ -461,17 +509,29 @@ def bucket_of(label, slug):
     silently folding an unknown heading into raid is the exact bug this
     assertion exists to undo, and a new Wowhead heading must not be able to
     re-enter through the default.
+
+    `tab` is the enclosing [tab name=...], if any. It refines a bare heading
+    (whose `raid` is only a default) and must agree with an explicit one.
+    A heading on an axis we do not model stays `no-model` whatever the tab.
     """
-    low = (label or "").lower()
-    for token, bucket in BUCKET_TOKENS:
-        if token in low:
-            return bucket, None
-    rest = alpha(label).replace(alpha(slug), "", 1)
-    for word in ("statpriority", "priority", "stat"):
-        rest = rest.replace(word, "", 1)
-    if not rest:
-        return "raid", None
-    return None, "unrecognised box heading, not compared: %r" % label
+    hit, bucket = token_bucket(label)
+    if hit and bucket is None:
+        return None, None
+    if not hit:
+        rest = alpha(label).replace(alpha(slug), "", 1)
+        for word in ("statpriority", "priority", "stat"):
+            rest = rest.replace(word, "", 1)
+        if rest:
+            return None, "unrecognised box heading, not compared: %r" % label
+    if tab is None:
+        return (bucket if hit else "raid"), None
+    tab_hit, tab_bucket = token_bucket(tab)
+    if not tab_hit:
+        return None, "unrecognised tab name, not compared: %r" % tab
+    if hit and tab_bucket != bucket:
+        return None, ("box heading %r and tab %r disagree, not compared"
+                      % (label, tab))
+    return tab_bucket, None
 
 
 def tiers(text):
@@ -533,11 +593,13 @@ def verify():
     """`--verify`. Every verdict below is a branch that live data may not
     reach today (`same-fb` and `no-row` reach it zero times as of
     2026-08-28), and an unexercised branch is a claim nobody has checked.
-    The last two checks are the A/B for assertion 9 itself, kept runnable
-    instead of living only in a commit message."""
-    bad = []
+    The two A/B pairs (mythic rows compared at all; tabs read as a bucket
+    signal) are assertion 9 itself, kept runnable instead of living only in
+    a commit message."""
+    bad, ran = [], []
 
     def check(name, ok, note=""):
+        ran.append(name)
         bad.append(name) if not ok else None
         print("  %-52s %s  %s" % (name, "PASS" if ok else "FAIL", note))
 
@@ -586,8 +648,49 @@ def verify():
     check("NEW comparison can (this is the load-bearing one)",
           verdict_for(FLAT, "0", "mythic", "d > c > b > a")[0] == "same"
           and verdict_for(corrupt, "0", "mythic", "d > c > b > a")[0] == "DIFFERS")
+
+    # Tabs as a bucket signal (2026-10-16, 261 Subtlety). The page is run
+    # through the real parse_page, quotes JSON-escaped exactly as served.
     print()
-    print("%d checks, %d failures" % (7 + 11 + 2, len(bad)))
+    print("tabs (assertion 9, second signal)")
+    box = (r"[box border=true][center][b]Trickster Stat Priority[/b][/center]"
+           r"[ol][li]Mastery[/li][li]Haste[/li][li]%s[/li][li]%s[/li][/ol][/box]")
+    page = (r'[tabs name=stats][tab name=\"Single Target\" icon=x]'
+            + box % ("Crit", "Versatility")
+            + r'[/tab][tab name=\"Mythic+\" icon=y]'
+            + box % ("Crit", "Versatility")
+            + r"[/tab][/tabs]" + box % ("Versatility", "Crit"))
+    orders = parse_page(page, {"trickster": 51})["orders"]
+    check("tab name read through the escaped quotes",
+          [o["tab"] for o in orders] == ["Single Target", "Mythic+", None],
+          "got %r" % [o["tab"] for o in orders])
+    check("same list in two tabs = two claims, not one", len(orders) == 3,
+          "got %d" % len(orders))
+    got = [bucket_of(o["label"], o["tree"], o["tab"])[0] for o in orders]
+    check("tab files the box: ST -> raid, M+ -> mythic, none -> raid",
+          got == ["raid", "mythic", "raid"], "got %r" % got)
+    check("an unquoted tab name is read too",
+          tab_name("[tab name=Raid][ol]", 15) == "Raid")
+    check("an unknown tab is NOT folded into raid",
+          bucket_of("Trickster Stat Priority", "trickster", "Delves")[0] is None)
+    check("heading and tab that disagree are not compared",
+          bucket_of("Preservation Raid Stat Priority", None, "Mythic+")[0] is None)
+    check("an unmodelled heading stays no-model under a tab",
+          bucket_of("DPS Stat Priority", None, "Mythic+") == (None, None))
+    # A/B, the live 261 shape: shipped raid row has a tie, mythic row has
+    # the guide's M+ order. Ignoring the tab files that box under raid.
+    sub = {("51", "raid"): "m > h > v=c", ("51", "mythic"): "m > h > v > c"}
+    before = verdict_for(sub, "51", bucket_of("Trickster Stat Priority",
+                                               "trickster")[0], "m > h > v > c")[0]
+    after = verdict_for(sub, "51", bucket_of("Trickster Stat Priority",
+                                              "trickster", "Mythic+")[0],
+                        "m > h > v > c")[0]
+    check("A/B: without the tab the M+ box reads bucket?",
+          before == "bucket?", "got %r" % before)
+    check("A/B: with the tab it reads same (load-bearing)",
+          after == "same", "got %r" % after)
+    print()
+    print("%d checks, %d failures" % (len(ran), len(bad)))
     return len(bad)
 def main():
     ap = argparse.ArgumentParser()
@@ -643,26 +746,29 @@ def main():
         for o in r["orders"]:
             guide = render(o["order"])
             tree_key = str(o["subTreeID"]) if o["subTreeID"] else "0"
-            bucket, complaint = bucket_of(o.get("label"), o.get("tree"))
+            bucket, complaint = bucket_of(o.get("label"), o.get("tree"),
+                                          o.get("tab"))
             verdict, detail, key = verdict_for(mine, tree_key, bucket, guide)
             if key:
                 touched.add((s["id"],) + key)
             tally[verdict] = tally.get(verdict, 0) + 1
-            print("%s %-34s %-9s %-26.26s %s(%s/%s)" %
+            print("%s %-34s %-9s %-26.26s %s(%s/%s)%s" %
                   (head if first else " " * 57, guide, verdict,
                    o.get("label") or "-", o["tree"] or "no-tree", tree_key,
-                   bucket or "?"))
+                   bucket or "?",
+                   "  [tab %s]" % o["tab"] if o.get("tab") else ""))
             first = False
             if complaint or detail:
                 print("%s   -> %s" % (" " * 57, complaint or detail))
             if bucket is None:
                 # An exemption that is not counted is an exemption nobody
                 # ever re-reads. Both kinds land in UNVERIFIED below.
-                unverified.append("%-5s %-13s %s: %s" % (
+                unverified.append("%-5s %-13s %s: %s%s" % (
                     s["id"], s["spec"],
-                    "unrecognised heading" if complaint
+                    "unrecognised (or conflicting) heading / tab" if complaint
                     else "guide box on an axis we do not model",
-                    o.get("label")))
+                    o.get("label"),
+                    " [tab %s]" % o["tab"] if o.get("tab") else ""))
         if not r["orders"]:
             print("%s %s" % (head, "(no usable stat list; %d lists skipped)" % r["skipped"]))
         for n in r["notes"]:
