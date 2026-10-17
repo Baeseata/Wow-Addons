@@ -736,6 +736,9 @@ local ART_LEFT = { 0, 0.09375 }
 local ART_MID = { 0.09375, 0.53125 }
 local ART_RIGHT = { 0.53125, 0.62109375 }
 local CAP_W = 12
+-- Narrowest the stretched middle is ever drawn: the floor FitFace has
+-- always used, and the width the face starts at before it is measured.
+local MIN_FACE_W = 8
 
 -- Room the face needs on either side of the label text. Both panels widen
 -- their slot column by this, and the face then spans that column exactly.
@@ -788,6 +791,14 @@ local function SkinSlotLabel(row, button)
     mid:SetPoint("CENTER", row.slot, "CENTER", 0, 0)
     mid:SetPoint("TOP", row.slot, "TOP", 0, 3)
     mid:SetPoint("BOTTOM", row.slot, "BOTTOM", 0, -3)
+    -- A width from the start, before FitFace has measured anything. The
+    -- anchors above pin only the centre and the height, so an unsized
+    -- texture falls back to the art file's own width -- 128px, plus the
+    -- two caps, about three times the slot column. That is what a 12.1.5
+    -- report showed when the refresh died before FitFace ever ran: a row
+    -- of wide red bars spilling left over the character frame. The
+    -- smallest face FitFace itself would draw is the safe floor.
+    mid:SetWidth(MIN_FACE_W)
     if ok then
         left:SetPoint("RIGHT", mid, "LEFT", 0, 0)
         left:SetPoint("TOP", mid, "TOP", 0, 0)
@@ -807,20 +818,31 @@ end
 --
 -- GetStringWidth answers 0 before the string has been laid out, so an
 -- early call leaves the previous width alone rather than collapsing the
--- face to nothing.
+-- face to nothing -- once there IS a previous, measured width. Until the
+-- first measurement the face fills its cell instead: the cell is sized
+-- for this face (ns.SLOT_FACE_PAD), so that is never wrong by more than
+-- "a bit wide", where leaving it alone would mean whatever width the
+-- texture happened to have.
 -- Small, because the caps already contribute 12px of bevel on each side.
 local FACE_TEXT_PAD = 2
 
 local function FitFace(button)
     if not button.skin then return end
-    local textW = button.label:GetStringWidth()
-    if not textW or textW <= 0 then return end
     local cellW = button.label:GetWidth() or 0
     local caps = button.skinArt and CAP_W * 2 or 0
     local widest = cellW - caps
-    local want = textW + FACE_TEXT_PAD
-    if widest > 8 and want > widest then want = widest end
-    button.skin[2]:SetWidth(math.max(8, want))
+    local textW = button.label:GetStringWidth()
+    local want
+    if textW and textW > 0 then
+        want = textW + FACE_TEXT_PAD
+        if widest > MIN_FACE_W and want > widest then want = widest end
+        button.faceMeasured = true
+    elseif button.faceMeasured then
+        return
+    else
+        want = widest
+    end
+    button.skin[2]:SetWidth(math.max(MIN_FACE_W, want))
 end
 
 local function ApplyButtonLook(button)
@@ -849,9 +871,12 @@ local function ApplyButtonLook(button)
     end
 end
 
+-- One button's error must not leave the rest unsized: this runs near the
+-- end of both panel refreshes, and the faces are what an aborted refresh
+-- leaves visibly broken. See ns.SafeCall.
 function ns.UpdateSlotButtonStates()
     for _, button in ipairs(slotButtons) do
-        if button:IsShown() then ApplyButtonLook(button) end
+        if button:IsShown() then ns.SafeCall(ApplyButtonLook, button) end
     end
 end
 

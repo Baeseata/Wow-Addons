@@ -352,21 +352,10 @@ function ns.RebuildInspectPanel()
     ns.UpdateInspectPanel()
 end
 
-function ns.UpdateInspectPanel()
-    if not panel or not panel:IsShown() then return end
-    -- The panel describes the INSPECTED player. Blizzard leaves .unit nil
-    -- in some refresh timings, and "target" has always been the fallback
-    -- because an inspect is nearly always aimed at your target -- but the
-    -- unqualified fallback pointed this friendly-only path at whatever
-    -- happens to be targeted, hostile players included, and their fields
-    -- are secret values. Only accept a target you could actually inspect;
-    -- ns.InspectSpecID guards the read regardless.
-    local unit = CurrentInspectableUnit()
-    if not unit then
-        ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
-        return
-    end
-
+-- The stat priority line for the inspected unit. Split out of the refresh
+-- below only so it can run isolated (ns.SafeCall); the gating it does is
+-- unchanged.
+local function RefreshPriorityHeader(unit)
     -- Gate BEFORE the spec lookup, not inside the header update: the
     -- arguments would be evaluated either way. See ns.StatPriorityActive.
     if ns.StatPriorityActive() then
@@ -384,6 +373,27 @@ function ns.UpdateInspectPanel()
     else
         ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
     end
+end
+
+function ns.UpdateInspectPanel()
+    if not panel or not panel:IsShown() then return end
+    -- The panel describes the INSPECTED player. Blizzard leaves .unit nil
+    -- in some refresh timings, and "target" has always been the fallback
+    -- because an inspect is nearly always aimed at your target -- but the
+    -- unqualified fallback pointed this friendly-only path at whatever
+    -- happens to be targeted, hostile players included, and their fields
+    -- are secret values. Only accept a target you could actually inspect;
+    -- ns.InspectSpecID guards the read regardless.
+    local unit = CurrentInspectableUnit()
+    if not unit then
+        ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
+        return
+    end
+
+    -- Each piece isolated, same as the character side panel: the face
+    -- sizing and the row layout at the end must run even when one row,
+    -- or the header, throws. See ns.SafeCall.
+    ns.SafeCall(RefreshPriorityHeader, unit)
 
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped there.
@@ -399,7 +409,7 @@ function ns.UpdateInspectPanel()
         row.shown = visible
         if visible then
             row:Show()
-            UpdateRow(row, unit)
+            ns.SafeCall(UpdateRow, row, unit)
         else
             row:Hide()
         end

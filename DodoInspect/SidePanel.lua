@@ -757,15 +757,7 @@ function ns.RebuildSidePanel()
     ns.UpdateSidePanel()
 end
 
-function ns.UpdateSidePanel()
-    if not panel or not panel:IsShown() then return end
-
-    -- Collapsed hides every row regardless of what it would otherwise show.
-    -- Without this any refresh -- an equipment change is enough -- pops the
-    -- rows back out of a panel the player has put away, because the branch
-    -- below shows them unconditionally.
-    local collapsed = ns.SidePanelCollapsed()
-
+local function RefreshPriorityHeader(collapsed)
     -- Same gate-before-lookup shape as InspectPanel. Your own spec is
     -- never secret, so here it only avoids pointless work while the
     -- feature is off -- but keep the two panels reading identically.
@@ -788,6 +780,23 @@ function ns.UpdateSidePanel()
     else
         ns.UpdateStatPriorityHeader(panel, nil, nil, nil, FS, PANEL_W)
     end
+end
+
+function ns.UpdateSidePanel()
+    if not panel or not panel:IsShown() then return end
+
+    -- Collapsed hides every row regardless of what it would otherwise show.
+    -- Without this any refresh -- an equipment change is enough -- pops the
+    -- rows back out of a panel the player has put away, because the branch
+    -- below shows them unconditionally.
+    local collapsed = ns.SidePanelCollapsed()
+
+    -- Every piece below is isolated (ns.SafeCall): the steps at the END of
+    -- this function -- sizing the button faces and laying the rows out
+    -- under the header -- are what keep the panel readable, and they must
+    -- run even when one row's data throws. See ns.SafeCall for the 12.1.5
+    -- report that showed what the panel looks like when they do not.
+    ns.SafeCall(RefreshPriorityHeader, collapsed)
 
     for _, row in ipairs(rows) do
         -- hide the off-hand row entirely when nothing is equipped
@@ -798,7 +807,7 @@ function ns.UpdateSidePanel()
         row.shown = visible
         if visible then
             row:SetShown(not collapsed)
-            UpdateRow(row)
+            ns.SafeCall(UpdateRow, row)
         else
             row:Hide()
         end

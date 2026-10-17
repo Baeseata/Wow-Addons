@@ -12,6 +12,33 @@ function ns.IsEnabled(flag)
     return not db or db[flag] ~= false
 end
 
+-- Run ONE independent piece of a panel refresh (a single row, a single
+-- slot button, the priority header) so its error is still REPORTED --
+-- geterrorhandler is what BugSack and the default error frame listen
+-- on -- but cannot abort the pieces after it. Returns xpcall's results.
+--
+-- Why this exists (2026-10-17): on 12.1.5 a pre-1.14.0 build died on the
+-- off-hand row, the last row of the side panel, because a removed item
+-- global was called there. The panel's last two steps never ran -- the
+-- slot button faces never sized to their labels (so each one drew at the
+-- art file's full width, spilling over the character frame) and the rows
+-- were never re-laid out under the stat priority line (so the line sat
+-- on top of the head and neck rows). One bad row took the whole layout
+-- with it. Isolated, it costs one row.
+--
+-- Two fixed arguments rather than varargs: that is all the callers need,
+-- and it keeps unpack (a 5.1 global, table.unpack in the offline tests)
+-- out of a path that runs for every row on every refresh.
+local function ReportError(err)
+    local handler = geterrorhandler and geterrorhandler()
+    if handler then handler(err) end
+    return err
+end
+
+function ns.SafeCall(fn, a, b)
+    return xpcall(function() return fn(a, b) end, ReportError)
+end
+
 -- Per-panel font size, read from SavedVariables with the Config default
 -- as the fallback, clamped to the configured bounds. The character side
 -- panel (SidePanel) and the inspect side panel (InspectPanel) each have
